@@ -33,6 +33,15 @@ fn signed_transfer(payer: u32, to_key: Hash, amount: u128, fee: u128, nonce: u64
     Transfer { from_pubkey, to_key, amount, fee, nonce, expiry, sig }
 }
 
+fn signed_withdrawal(payer: u32, target_lock_hash: Hash, amount: u128, nonce: u64, expiry: u64) -> Withdrawal {
+    let sk = secret(payer);
+    let from_pubkey = sig::pubkey(&sk);
+    let from_key = key_of_pubkey(&from_pubkey);
+    let msg = withdraw_msg(CHAIN_ID, &pool_id(), &from_key, &target_lock_hash, amount, nonce, expiry);
+    let (_pk, sig) = sig::sign(&sk, &msg);
+    Withdrawal { from_pubkey, target_lock_hash, amount, nonce, expiry, sig }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
@@ -50,20 +59,33 @@ fn main() {
     let deposits = (1..=n).map(|i| Deposit { to_key: key_for(i), amount: 1_000_000_000 }).collect();
     apply(&mut st, &Batch { current_epoch: 0, deposits, ..Default::default() }).unwrap();
 
-    // `dw` mode adds a real on-chain deposit to the measured batch (for the Phase 2b-3
-    // deposit-binding fixture); fixtures then go under fixtures/dw/.
+    // `dw` => measured batch has a real deposit (fixtures/dw/). `wd` => deposit +
+    // withdrawal (fixtures/wd/); the withdrawal target is the lock hash the wd_target
+    // helper wrote, so the test can build the matching output cell.
     let dw = args.iter().any(|a| a == "dw");
+    let wd = args.iter().any(|a| a == "wd");
     let dep_key = key_for(777);
     let dep_amount: u128 = 300_000_000;
-    let deposits = if dw { vec![Deposit { to_key: dep_key, amount: dep_amount }] } else { vec![] };
-    let out_dir = if dw { "fixtures/dw" } else { "fixtures" };
+    let wd_amount: u128 = 100_000_000;
+    let deposits = if dw || wd { vec![Deposit { to_key: dep_key, amount: dep_amount }] } else { vec![] };
+    let mut wd_target = [0u8; 32];
+    let withdrawals = if wd {
+        let h = std::fs::read("fixtures/wd/target_lock_hash.bin")
+            .expect("run `cargo run --bin wd_target` first");
+        wd_target.copy_from_slice(&h);
+        // payer 1 withdraws after its transfer (nonce 1).
+        vec![signed_withdrawal(1, wd_target, wd_amount, 1, 100)]
+    } else {
+        vec![]
+    };
+    let out_dir = if wd { "fixtures/wd" } else if dw { "fixtures/dw" } else { "fixtures" };
 
     // Each payer pays a shared recipient => touches n payers + 1 recipient leaf.
     let recipient = key_for(1_000_000);
     let transfers = (1..=n)
         .map(|i| signed_transfer(i, recipient, 1_000, 1, 0, 100))
         .collect();
-    let batch = Batch { current_epoch: 1, deposits, transfers, ..Default::default() };
+    let batch = Batch { current_epoch: 1, deposits, transfers, withdrawals };
 
     let witness = st.build_witness(&batch);
     let prev = st.pool;
@@ -95,7 +117,7 @@ fn main() {
         fs::write(format!("{out_dir}/public_values.bin"), &pv_bytes).unwrap();
         fs::write(format!("{out_dir}/vkey.txt"), &vkey).unwrap();
         fs::write(format!("{out_dir}/circuit_version.txt"), SP1_CIRCUIT_VERSION).unwrap();
-        if dw {
+        if dw || wd {
             // deposit.bin = to_key(32) ‖ amount(16 BE), for the test to build the deposit cell.
             let mut dep = Vec::with_capacity(48);
             dep.extend_from_slice(&dep_key);
@@ -103,7 +125,15 @@ fn main() {
             fs::write(format!("{out_dir}/deposit.bin"), &dep).unwrap();
             println!("deposit to_key=0x{} amount={dep_amount}", hex::encode(dep_key));
         }
-        println!("GROTH16+VERIFIED n_transfers={n} dw={dw}");
+        if wd {
+            // withdrawal.bin = target_lock_hash(32) ‖ amount(16 BE).
+            let mut w = Vec::with_capacity(48);
+            w.extend_from_slice(&wd_target);
+            w.extend_from_slice(&wd_amount.to_be_bytes());
+            fs::write(format!("{out_dir}/withdrawal.bin"), &w).unwrap();
+            println!("withdrawal target=0x{} amount={wd_amount}", hex::encode(wd_target));
+        }
+        println!("GROTH16+VERIFIED n_transfers={n} dw={dw} wd={wd}");
         println!("vkey={vkey}");
         println!("circuit_version={SP1_CIRCUIT_VERSION}");
         println!("proof_bytes={} public_values_bytes={}", proof_bytes.len(), pv_bytes.len());

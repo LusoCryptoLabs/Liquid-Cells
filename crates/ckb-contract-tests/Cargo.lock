@@ -1004,6 +1004,7 @@ name = "liquid-cells-ckb-tests"
 version = "0.0.0"
 dependencies = [
  "ckb-testtool",
+ "hex",
 ]
 
 [[package]]

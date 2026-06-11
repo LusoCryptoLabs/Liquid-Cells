@@ -9,7 +9,14 @@ edition = "2021"
 [lib]
 path = "src/lib.rs"
 
-[dev-dependencies]
+# Helper that computes the withdrawal lock hash the proof must commit (so the test can
+# build the identical output lock). ckb-testtool is a normal dep so the bin can use it.
+[[bin]]
+name = "wd_target"
+path = "src/bin/wd_target.rs"
+
+[dependencies]
 ckb-testtool = "0.13"
+hex = "0.4"
 
 [workspace]

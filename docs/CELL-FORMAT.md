@@ -62,6 +62,9 @@ pool's funds), so capacity deltas track accounting deltas.
   dedicated fee output) is a refinement.
 * **DA** (`da_commitment`) is not in the public values yet — Phase 4 adds it to the STF
   and binds `keccak(diff_blob)` here.
-* **Withdrawal test coverage.** The deposit path is covered by integration tests; the
-  withdrawal path is symmetric in the contract but its test needs lock-hash
-  coordination (the proof must commit the exact lock hash the test builds) — added next.
+
+Both the deposit and withdrawal paths are covered by integration tests. The withdrawal
+test uses a fixed, deterministic target lock (`crates/ckb-contract-tests` `withdraw_lock`)
+shared by the `wd_target` helper (which the proof commits) and the test (which builds the
+output) — `Context::build_script` can't be used for this because its hash varies per
+`Context`.

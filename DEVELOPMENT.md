@@ -8,6 +8,30 @@ decided, what is next.
 
 ---
 
+## 2026-06-11 — Phase 2b-4: withdrawal-path coverage (lock-hash coordination)
+
+**Landed**
+- `crates/ckb-contract-tests` `wd_target` bin + `withdraw_lock()` (a fixed,
+  deterministic `Script`) — the withdrawal target lock hash the proof must commit,
+  shared by the helper and the test. (`Context::build_script` is **not** usable: it
+  deploys with a type-id, so its script hash varies per `Context` — that bug surfaced
+  first as a lock-hash mismatch.)
+- Host `wd` mode: a checkpoint batch with a real **deposit + transfer + withdrawal**;
+  `fixtures/wd/` regenerated (deposit `0xeab422a6…`/3e8, withdrawal target
+  `0x1bf0d8bf…`/1e8), Groth16-verified.
+- `tests/withdrawal.rs` — comprehensive deposit-input + withdrawal-output checkpoint:
+  positive (full pairing) + adversarial (wrong withdrawal lock, wrong amount, missing
+  output), plus an in-test assert that the built lock hash equals the proven target.
+- **14/14 integration tests green** (5 anchor + 5 deposit + 4 withdrawal). The contract
+  is unchanged — its withdrawal folding from 2b-3 is now exercised end-to-end.
+
+**Open (Phase 2b-5)**
+- L1 tx-fee handling; DA (`da_commitment`, Phase 4 STF change).
+- Deploy to Pudge (genesis anchor cell + the type script as a code cell) and a minimal
+  sequencer that builds real checkpoint txs.
+
+---
+
 ## 2026-06-11 — Phase 2b-3: deposit/withdrawal binding + value conservation
 
 **Decision:** implicit cell format ([docs/CELL-FORMAT.md](docs/CELL-FORMAT.md)) — a
