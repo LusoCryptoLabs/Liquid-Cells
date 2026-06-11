@@ -50,12 +50,20 @@ fn main() {
     let deposits = (1..=n).map(|i| Deposit { to_key: key_for(i), amount: 1_000_000_000 }).collect();
     apply(&mut st, &Batch { current_epoch: 0, deposits, ..Default::default() }).unwrap();
 
+    // `dw` mode adds a real on-chain deposit to the measured batch (for the Phase 2b-3
+    // deposit-binding fixture); fixtures then go under fixtures/dw/.
+    let dw = args.iter().any(|a| a == "dw");
+    let dep_key = key_for(777);
+    let dep_amount: u128 = 300_000_000;
+    let deposits = if dw { vec![Deposit { to_key: dep_key, amount: dep_amount }] } else { vec![] };
+    let out_dir = if dw { "fixtures/dw" } else { "fixtures" };
+
     // Each payer pays a shared recipient => touches n payers + 1 recipient leaf.
     let recipient = key_for(1_000_000);
     let transfers = (1..=n)
         .map(|i| signed_transfer(i, recipient, 1_000, 1, 0, 100))
         .collect();
-    let batch = Batch { current_epoch: 1, transfers, ..Default::default() };
+    let batch = Batch { current_epoch: 1, deposits, transfers, ..Default::default() };
 
     let witness = st.build_witness(&batch);
     let prev = st.pool;
@@ -82,12 +90,20 @@ fn main() {
             native_pv,
             "groth16 output diverged from native"
         );
-        fs::create_dir_all("fixtures").expect("mkdir fixtures");
-        fs::write("fixtures/groth16_proof.bin", &proof_bytes).unwrap();
-        fs::write("fixtures/public_values.bin", &pv_bytes).unwrap();
-        fs::write("fixtures/vkey.txt", &vkey).unwrap();
-        fs::write("fixtures/circuit_version.txt", SP1_CIRCUIT_VERSION).unwrap();
-        println!("GROTH16+VERIFIED n_transfers={n}");
+        fs::create_dir_all(out_dir).expect("mkdir fixtures dir");
+        fs::write(format!("{out_dir}/groth16_proof.bin"), &proof_bytes).unwrap();
+        fs::write(format!("{out_dir}/public_values.bin"), &pv_bytes).unwrap();
+        fs::write(format!("{out_dir}/vkey.txt"), &vkey).unwrap();
+        fs::write(format!("{out_dir}/circuit_version.txt"), SP1_CIRCUIT_VERSION).unwrap();
+        if dw {
+            // deposit.bin = to_key(32) ‖ amount(16 BE), for the test to build the deposit cell.
+            let mut dep = Vec::with_capacity(48);
+            dep.extend_from_slice(&dep_key);
+            dep.extend_from_slice(&dep_amount.to_be_bytes());
+            fs::write(format!("{out_dir}/deposit.bin"), &dep).unwrap();
+            println!("deposit to_key=0x{} amount={dep_amount}", hex::encode(dep_key));
+        }
+        println!("GROTH16+VERIFIED n_transfers={n} dw={dw}");
         println!("vkey={vkey}");
         println!("circuit_version={SP1_CIRCUIT_VERSION}");
         println!("proof_bytes={} public_values_bytes={}", proof_bytes.len(), pv_bytes.len());

@@ -8,6 +8,34 @@ decided, what is next.
 
 ---
 
+## 2026-06-11 — Phase 2b-3: deposit/withdrawal binding + value conservation
+
+**Decision:** implicit cell format ([docs/CELL-FORMAT.md](docs/CELL-FORMAT.md)) — a
+deposit is any non-anchor **input** (`data[0..32]`=to_key, capacity=amount); a
+withdrawal is any non-anchor **output** (lock_hash, capacity). No marker contract.
+
+**Landed**
+- `crates/ckb-contract` now recomputes the commitments from the real cells with keccak
+  (`sha3`, same fold as `liquid_cells_stf::fold_commit`):
+  `deposits_commitment` over non-anchor inputs, `withdrawals_commitment` over non-anchor
+  outputs; both must equal the proof's. Plus conservation, both checked before the
+  pairing: **accounting** `prev_total + Σdep − Σwd == new_total` and **solvency**
+  `anchor_out.capacity − anchor_in.capacity == Σdep − Σwd`.
+- Host `dw` mode + `fixtures/dw/` — a regenerated Groth16 proof of a checkpoint with a
+  **real deposit** (to_key `0xeab422a6…`, amount 3e8), verified.
+- `crates/ckb-contract-tests/tests/deposit.rs` — **5 deposit tests** (positive +
+  tampered to_key / tampered amount / missing deposit cell / broken anchor capacity).
+- **10/10 integration tests green** (the 5 transfer-only anchor tests still pass — the
+  new checks are no-ops when there are no deposit/withdrawal cells).
+
+**Open (Phase 2b-4)**
+- Withdrawal-path *test* (contract logic is symmetric and already in place) — needs the
+  proof to commit the exact lock hash the test builds (lock-hash coordination).
+- L1 tx-fee handling; DA (`da_commitment` → Phase 4 STF change). Deploy to Pudge +
+  minimal sequencer building real checkpoint txs.
+
+---
+
 ## 2026-06-11 — Phase 2b-2: real type script + mock-tx integration tests
 
 **Landed**

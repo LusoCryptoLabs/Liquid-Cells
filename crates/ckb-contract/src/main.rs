@@ -26,8 +26,13 @@
 use alloc::vec::Vec;
 use bn::{pairing_batch, AffineG1, AffineG2, Fq, Fq2, Fr, Gt, G1, G2};
 use ckb_std::ckb_constants::Source;
-use ckb_std::high_level::{load_cell_data, load_witness_args};
+use ckb_std::error::SysError;
+use ckb_std::high_level::{
+    load_cell_capacity, load_cell_data, load_cell_lock_hash, load_cell_type_hash, load_script_hash,
+    load_witness_args,
+};
 use sha2::{Digest, Sha256};
+use sha3::Keccak256;
 
 ckb_std::entry!(program_entry);
 ckb_std::default_alloc!();
@@ -73,6 +78,8 @@ const PV_PREV_ROOT: usize = 40;
 const PV_PREV_SEQ: usize = 72;
 const PV_NEW_ROOT: usize = 80;
 const PV_NEW_SEQ: usize = 112;
+const PV_DEP_COMMIT: usize = 120;
+const PV_WD_COMMIT: usize = 152;
 const PV_PREV_TOTAL: usize = 184;
 const PV_NEW_TOTAL: usize = 200;
 const PV_FEE_DELTA: usize = 216;
@@ -249,6 +256,69 @@ fn rd_u128(b: &[u8], off: usize) -> u128 {
     a.copy_from_slice(&b[off..off + 16]);
     u128::from_be_bytes(a)
 }
+fn keccak(bytes: &[u8]) -> [u8; 32] {
+    let mut o = [0u8; 32];
+    o.copy_from_slice(&Keccak256::digest(bytes));
+    o
+}
+/// Must match liquid_cells_stf::transition::fold_commit: keccak(acc ‖ key ‖ amount_be).
+fn fold_commit(acc: &[u8; 32], key: &[u8; 32], amount: u128) -> [u8; 32] {
+    let mut b = [0u8; 80];
+    b[..32].copy_from_slice(acc);
+    b[32..64].copy_from_slice(key);
+    b[64..].copy_from_slice(&amount.to_be_bytes());
+    keccak(&b)
+}
+
+/// Recompute the deposits/withdrawals commitments from the real cells, and sum their
+/// amounts. Implicit format: a **deposit** is any non-anchor INPUT (credits
+/// `data[0..32]` = to_key by its capacity); a **withdrawal** is any non-anchor OUTPUT
+/// (pays its `lock_hash` its capacity). The anchor is the cell whose type script is
+/// this one.
+fn fold_cells(self_hash: &[u8; 32]) -> Result<([u8; 32], [u8; 32], i128, i128), i8> {
+    let mut dep = keccak(b"LIQUIDCELLS/v1/deposits-commitment");
+    let mut sum_dep: i128 = 0;
+    let mut i = 0usize;
+    loop {
+        match load_cell_capacity(i, Source::Input) {
+            Ok(cap) => {
+                let th = load_cell_type_hash(i, Source::Input).map_err(|_| 50i8)?;
+                if th.as_ref() != Some(self_hash) {
+                    let data = load_cell_data(i, Source::Input).map_err(|_| 50i8)?;
+                    if data.len() < 32 {
+                        return Err(51);
+                    }
+                    let mut key = [0u8; 32];
+                    key.copy_from_slice(&data[..32]);
+                    dep = fold_commit(&dep, &key, cap as u128);
+                    sum_dep += cap as i128;
+                }
+                i += 1;
+            }
+            Err(SysError::IndexOutOfBound) => break,
+            Err(_) => return Err(50),
+        }
+    }
+    let mut wd = keccak(b"LIQUIDCELLS/v1/withdrawals-commitment");
+    let mut sum_wd: i128 = 0;
+    let mut j = 0usize;
+    loop {
+        match load_cell_capacity(j, Source::Output) {
+            Ok(cap) => {
+                let th = load_cell_type_hash(j, Source::Output).map_err(|_| 52i8)?;
+                if th.as_ref() != Some(self_hash) {
+                    let lh = load_cell_lock_hash(j, Source::Output).map_err(|_| 52i8)?;
+                    wd = fold_commit(&wd, &lh, cap as u128);
+                    sum_wd += cap as i128;
+                }
+                j += 1;
+            }
+            Err(SysError::IndexOutOfBound) => break,
+            Err(_) => return Err(52),
+        }
+    }
+    Ok((dep, wd, sum_dep, sum_wd))
+}
 
 /// Pin the public values to the anchor cells. Cheap; runs before the proof verify so
 /// a tampered transaction is rejected without paying for the BN254 pairing.
@@ -379,5 +449,41 @@ fn program_entry() -> i8 {
     if b != 0 {
         return b;
     }
+
+    // Recompute deposits/withdrawals commitments from the real cells, bind them to the
+    // proof, and check value conservation (accounting + real capacity). Still cheap.
+    let self_hash = match load_script_hash() {
+        Ok(h) => h,
+        Err(_) => return 54,
+    };
+    let (dep_c, wd_c, sum_dep, sum_wd) = match fold_cells(&self_hash) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
+    if dep_c[..] != pv[PV_DEP_COMMIT..PV_DEP_COMMIT + 32] {
+        return 55;
+    }
+    if wd_c[..] != pv[PV_WD_COMMIT..PV_WD_COMMIT + 32] {
+        return 56;
+    }
+    // accounting: prev_total + Σdeposits − Σwithdrawals == new_total
+    let prev_total = rd_u128(pv, PV_PREV_TOTAL) as i128;
+    let new_total = rd_u128(pv, PV_NEW_TOTAL) as i128;
+    if prev_total + sum_dep - sum_wd != new_total {
+        return 57;
+    }
+    // solvency: the anchor's real capacity delta must equal Σdeposits − Σwithdrawals.
+    let in_cap = match load_cell_capacity(0, Source::GroupInput) {
+        Ok(c) => c as i128,
+        Err(_) => return 58,
+    };
+    let out_cap = match load_cell_capacity(0, Source::GroupOutput) {
+        Ok(c) => c as i128,
+        Err(_) => return 58,
+    };
+    if out_cap - in_cap != sum_dep - sum_wd {
+        return 58;
+    }
+
     verify_sp1_groth16(proof, pv)
 }
