@@ -126,6 +126,7 @@ fn dec_witness(r: &mut R) -> Result<Witness, CodecError> {
 
 fn enc_batch(o: &mut Vec<u8>, b: &Batch) {
     o.extend_from_slice(&b.current_epoch.to_be_bytes());
+    o.extend_from_slice(&b.fee_withdrawal.to_be_bytes());
     put_len(o, b.deposits.len());
     for d in &b.deposits {
         o.extend_from_slice(&d.to_key);
@@ -153,6 +154,7 @@ fn enc_batch(o: &mut Vec<u8>, b: &Batch) {
 }
 fn dec_batch(r: &mut R) -> Result<Batch, CodecError> {
     let current_epoch = r.u64()?;
+    let fee_withdrawal = r.u128()?;
     let nd = r.u32()? as usize;
     let mut deposits = Vec::with_capacity(nd);
     for _ in 0..nd {
@@ -183,7 +185,7 @@ fn dec_batch(r: &mut R) -> Result<Batch, CodecError> {
             sig: r.a64()?,
         });
     }
-    Ok(Batch { current_epoch, deposits, transfers, withdrawals })
+    Ok(Batch { current_epoch, fee_withdrawal, deposits, transfers, withdrawals })
 }
 
 // ---- public entry points ----
@@ -224,6 +226,7 @@ pub fn decode_public_values(bytes: &[u8]) -> Result<PublicValues, CodecError> {
         new_total: r.u128()?,
         fee_delta: r.u128()?,
         current_epoch: r.u64()?,
+        fee_withdrawal: r.u128()?,
     };
     r.finish()?;
     Ok(pv)

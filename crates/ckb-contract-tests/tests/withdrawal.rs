@@ -29,6 +29,7 @@ const PV_NEW_SEQ: usize = 112;
 const PV_PREV_TOTAL: usize = 184;
 const PV_NEW_TOTAL: usize = 200;
 const PV_FEE_DELTA: usize = 216;
+const PV_FEE_WD: usize = 240;
 
 fn rd_u64(b: &[u8], o: usize) -> u64 {
     let mut a = [0u8; 8];
@@ -75,9 +76,11 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let prev_total = rd_u128(&pv, PV_PREV_TOTAL);
     let new_total = rd_u128(&pv, PV_NEW_TOTAL);
     let fee_delta = rd_u128(&pv, PV_FEE_DELTA);
+    let fee_wd = rd_u128(&pv, PV_FEE_WD);
 
     let prev_anchor = anchor(&prev_root, prev_seq, prev_total, 0);
-    let new_anchor = anchor(&new_root, new_seq, new_total, fee_delta);
+    // new_fee_acc = prev_fee_acc(0) + fee_delta − fee_withdrawal.
+    let new_anchor = anchor(&new_root, new_seq, new_total, fee_delta - fee_wd);
     let in_cap = prev_total as u64; // anchor capacity == pool total
     let out_cap = new_total as u64;
 

@@ -37,13 +37,16 @@ root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE)
 ```
 
 Invariant the script maintains: **anchor capacity == pool total** (the anchor holds the
-pool's funds), so capacity deltas track accounting deltas.
+pool's funds), so capacity deltas track accounting deltas. `total = Σ balances + fee_acc`:
+`fee_acc` is the sequencer's accumulated in-pool fee revenue, held inside the anchor until
+drawn (see *L1 fee* below).
 
 ## What the type script enforces (in order)
 
 1. **Anchor continuity** (cheap): exactly one anchor in / out; `pool_id`/`chain_id`
    baked; `new_seq == prev_seq + 1`; input anchor data `== prev_*`, output `== new_*`;
-   `new.fee_acc == prev.fee_acc + fee_delta`.
+   `new.fee_acc == prev.fee_acc + fee_delta − fee_withdrawal`, with
+   `fee_withdrawal ≤ prev.fee_acc + fee_delta`.
 2. **Commitments from real cells** (cheap, keccak): recompute
    `deposits_commitment = fold(non-anchor inputs: to_key, capacity)` and
    `withdrawals_commitment = fold(non-anchor outputs: lock_hash, capacity)` (same
@@ -51,15 +54,34 @@ pool's funds), so capacity deltas track accounting deltas.
    the proof's commitments. ⇒ the proof can only credit/debit recipients that
    correspond to real cells, with the amounts those cells carry.
 3. **Conservation** (cheap):
-   * accounting: `prev_total + Σdeposits − Σwithdrawals == new_total`;
-   * solvency: `anchor_out.capacity − anchor_in.capacity == Σdeposits − Σwithdrawals`.
+   * accounting: `prev_total + Σdeposits − Σwithdrawals − fee_withdrawal == new_total`;
+   * solvency: `anchor_out.capacity − anchor_in.capacity == Σdeposits − Σwithdrawals −
+     fee_withdrawal`.
 4. **Validity** (expensive, last): the SP1 Groth16 proof of the public values verifies.
+
+## L1 fee
+
+A CKB checkpoint transaction must leave a positive miner fee (`Σinputs − Σoutputs > 0`).
+The pool funds it with a proven **`fee_withdrawal`** — CKB the sequencer draws from its
+own accumulated fee revenue:
+
+* The in-circuit STF caps `fee_withdrawal ≤ prev.fee_acc + fee_delta` (this batch's fee
+  revenue plus what was banked before). Because `total = Σ balances + fee_acc` and the
+  draw reduces `total` and `fee_acc` by the same amount, **`Σ balances` is invariant** —
+  an L1 fee can never be skimmed from a user deposit. That bound is *proven*, and the
+  anchor re-checks it (step 1) before trusting the cell.
+* Since the only inputs are the anchor + deposit cells and the only outputs are the
+  anchor + withdrawal cells, the solvency identity (step 3) forces
+  `Σinputs − Σoutputs == fee_withdrawal`: the checkpoint's miner fee is **exactly** the
+  proven draw, no more. The sequencer cannot over-skim and pocket the difference (any
+  surplus would have to be a withdrawal output, which is counted).
+
+So the fee is the sequencer's own revenue, bounded and pinned on-chain; a checkpoint with
+no fee revenue available simply sets `fee_withdrawal = 0` and must be fee-bumped some
+other way (e.g. a future explicit sequencer-funded input).
 
 ## Open items
 
-* **L1 tx fee.** v1 assumes the anchor capacity delta is exactly `Σdep − Σwd` (no fee
-  skimmed from the pool). A fee mechanism (operator funds fee from `fee_acc`, or a
-  dedicated fee output) is a refinement.
 * **DA** (`da_commitment`) is not in the public values yet — Phase 4 adds it to the STF
   and binds `keccak(diff_blob)` here.
 

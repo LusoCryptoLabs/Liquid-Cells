@@ -101,6 +101,11 @@ pub struct Batch {
     pub deposits: Vec<Deposit>,
     pub transfers: Vec<Transfer>,
     pub withdrawals: Vec<Withdrawal>,
+    /// L1 fee draw: CKB the sequencer extracts from the pool's *accumulated fees*
+    /// (`fee_acc` + this batch's `fee_delta`) to fund the checkpoint's on-chain miner
+    /// fee. Bounded by fee revenue in [`crate::transition::prove_transition`], so it can
+    /// never touch user balances; it reduces `total` and `fee_acc` by the same amount.
+    pub fee_withdrawal: u128,
 }
 
 /// On-chain anchor cell contents.
@@ -139,12 +144,16 @@ pub struct PublicValues {
     pub new_total: u128,
     pub fee_delta: u128,
     pub current_epoch: u64,
+    /// CKB drawn from accumulated fees to fund the L1 miner fee (see [`Batch::
+    /// fee_withdrawal`]). `new_total = prev_total + Σdeposits − Σwithdrawals −
+    /// fee_withdrawal`, and `new_fee_acc = prev_fee_acc + fee_delta − fee_withdrawal`.
+    pub fee_withdrawal: u128,
 }
 
 impl PublicValues {
     /// Canonical byte encoding (what the guest commits as public input).
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(32 + 8 + 32 + 8 + 32 + 8 + 32 + 32 + 16 + 16 + 16 + 8);
+        let mut b = Vec::with_capacity(32 + 8 + 32 + 8 + 32 + 8 + 32 + 32 + 16 + 16 + 16 + 8 + 16);
         b.extend_from_slice(&self.pool_id);
         b.extend_from_slice(&self.chain_id.to_be_bytes());
         b.extend_from_slice(&self.prev_root);
@@ -157,6 +166,7 @@ impl PublicValues {
         b.extend_from_slice(&self.new_total.to_be_bytes());
         b.extend_from_slice(&self.fee_delta.to_be_bytes());
         b.extend_from_slice(&self.current_epoch.to_be_bytes());
+        b.extend_from_slice(&self.fee_withdrawal.to_be_bytes());
         b
     }
 }

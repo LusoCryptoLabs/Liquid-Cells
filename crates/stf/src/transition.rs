@@ -13,11 +13,14 @@
 //!
 //!   1. **No debit without a signature** — a leaf's balance only decreases via a
 //!      `Transfer`/`Withdrawal` carrying a valid signature from that leaf's owner.
-//!   2. **Value conservation** — `total` only changes by deposits (+) and
-//!      withdrawals (−); fees move *within* the pool into `fee_acc`. Because the
-//!      pre-state root is bound and every step uses checked arithmetic, the
+//!   2. **Value conservation** — `total` only changes by deposits (+), withdrawals
+//!      (−), and the sequencer's `fee_withdrawal` (−); in-pool fees move *within* the
+//!      pool into `fee_acc`, and the `fee_withdrawal` draws back down out of `fee_acc`
+//!      to pay the L1 miner fee. Because the pre-state root is bound, the draw is
+//!      capped at accumulated fee revenue, and every step uses checked arithmetic, the
 //!      relation `Σ balances + fee_acc == total` is preserved transitively from
-//!      genesis without re-summing the whole tree.
+//!      genesis without re-summing the whole tree — and user balances are never the
+//!      source of an L1 fee.
 //!
 //! The full-tree [`State`] is the sequencer/test view: it builds a witness from the
 //! complete tree, runs the identical [`prove_transition`] logic, and keeps its tree
@@ -213,6 +216,17 @@ fn transition_inner(
 
     let ops = apply_ops(&mut work, prev, batch)?;
 
+    // L1 fee draw. The sequencer may extract up to the pool's accumulated fee revenue
+    // (`prev.fee_acc + fee_delta`) to fund the checkpoint's on-chain miner fee. Capping
+    // at fee revenue is what makes "an L1 fee can never be skimmed from a user balance"
+    // a *proven* fact: the draw reduces `total` and `fee_acc` by the same amount, so
+    // `Σ balances` is invariant under it.
+    let fee_available = prev.fee_acc.checked_add(ops.fee_delta).ok_or(StfError::Overflow)?;
+    if batch.fee_withdrawal > fee_available {
+        return Err(StfError::InsufficientFees);
+    }
+    let new_total = ops.new_total.checked_sub(batch.fee_withdrawal).ok_or(StfError::Overflow)?;
+
     // Recompute new_root from the same siblings (key set, hence layout, is unchanged).
     let new_root = if tk.is_empty() {
         prev.root
@@ -231,9 +245,10 @@ fn transition_inner(
         deposits_commitment: ops.deposits_commitment,
         withdrawals_commitment: ops.withdrawals_commitment,
         prev_total: prev.total,
-        new_total: ops.new_total,
+        new_total,
         fee_delta: ops.fee_delta,
         current_epoch: batch.current_epoch,
+        fee_withdrawal: batch.fee_withdrawal,
     };
     Ok((pv, work))
 }
@@ -294,7 +309,13 @@ pub fn apply(state: &mut State, batch: &Batch) -> Result<PublicValues, StfError>
     state.pool.root = pv.new_root;
     state.pool.seq = pv.new_seq;
     state.pool.total = pv.new_total;
-    state.pool.fee_acc = state.pool.fee_acc.checked_add(pv.fee_delta).ok_or(StfError::Overflow)?;
+    state.pool.fee_acc = state
+        .pool
+        .fee_acc
+        .checked_add(pv.fee_delta)
+        .ok_or(StfError::Overflow)?
+        .checked_sub(pv.fee_withdrawal)
+        .ok_or(StfError::Overflow)?;
 
     // The witness-derived root must equal the independently recomputed full-tree root.
     debug_assert_eq!(state.smt.root(), pv.new_root, "witness/full-tree root divergence");

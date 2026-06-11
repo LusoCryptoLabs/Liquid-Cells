@@ -80,12 +80,16 @@ fn main() {
     };
     let out_dir = if wd { "fixtures/wd" } else if dw { "fixtures/dw" } else { "fixtures" };
 
-    // Each payer pays a shared recipient => touches n payers + 1 recipient leaf.
+    // Each payer pays a shared recipient (fee 3) => touches n payers + 1 recipient leaf.
     let recipient = key_for(1_000_000);
     let transfers = (1..=n)
-        .map(|i| signed_transfer(i, recipient, 1_000, 1, 0, 100))
+        .map(|i| signed_transfer(i, recipient, 1_000, 3, 0, 100))
         .collect();
-    let batch = Batch { current_epoch: 1, deposits, transfers, withdrawals };
+    // L1 fee draw: the sequencer extracts 2 of the accumulated 3*n fee revenue to fund
+    // the checkpoint's miner fee (a partial draw, so fee_acc stays positive). Bounded by
+    // fee revenue in the STF, so it can never touch a user balance.
+    let l1_fee: u128 = 2;
+    let batch = Batch { current_epoch: 1, deposits, transfers, withdrawals, fee_withdrawal: l1_fee };
 
     let witness = st.build_witness(&batch);
     let prev = st.pool;
@@ -138,6 +142,10 @@ fn main() {
         println!("circuit_version={SP1_CIRCUIT_VERSION}");
         println!("proof_bytes={} public_values_bytes={}", proof_bytes.len(), pv_bytes.len());
         println!("new_root=0x{}", hex::encode(native_pv.new_root));
+        println!(
+            "fee_delta={} fee_withdrawal={} new_total={}",
+            native_pv.fee_delta, native_pv.fee_withdrawal, native_pv.new_total
+        );
     } else if do_prove {
         // Generate and verify a real SP1 core proof.
         let pk = client.setup(Elf::from(elf)).expect("setup");

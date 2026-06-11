@@ -6,19 +6,25 @@
 //! for the input group carries `proof ‖ public_values`.
 //!
 //!   anchor cell data (72 bytes): root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE)
-//!   witness input_type        : proof(356) ‖ public_values(240)
+//!   witness input_type        : proof(356) ‖ public_values(256)
 //!
-//! The script (1) pins `prev_*`/`new_*` in the public values to the input/output
-//! anchor cell data and checks sequence/fee continuity — cheap, done first so a
-//! tampered transaction is rejected without paying for the pairing — then (2)
-//! verifies the SP1 Groth16 proof of those public values. Field elements are
-//! big-endian (matching SP1 / the g16ckb verifier this is adapted from), with the
-//! soundness checks `exit_code == 0` and `vk_root == VK_ROOT` added.
+//! The script, in order (cheap checks first so a tampered transaction is rejected
+//! without paying for the BN254 pairing): (1) pins `prev_*`/`new_*` in the public
+//! values to the input/output anchor cell data and checks sequence/fee continuity
+//! (`new_fee_acc == prev_fee_acc + fee_delta − fee_withdrawal`); (2) recomputes the
+//! deposits/withdrawals commitments from the real non-anchor cells and binds them to
+//! the proof; (3) checks value conservation — accounting
+//! (`prev_total + Σdep − Σwd − fee_withdrawal == new_total`) and solvency
+//! (`out_cap − in_cap == Σdep − Σwd − fee_withdrawal`), which pins the L1 miner fee to
+//! the proven `fee_withdrawal`; then (4) verifies the SP1 Groth16 proof of the public
+//! values. Field elements are big-endian (matching SP1 / the g16ckb verifier this is
+//! adapted from), with the soundness checks `exit_code == 0` and `vk_root == VK_ROOT`
+//! added.
 //!
-//! Not yet bound here (Phase 2b-2b): `deposits_commitment` / `withdrawals_commitment`
-//! to real deposit cells / withdrawal outputs, and the DA blob. The current fixture
-//! is a transfer-only checkpoint, where those commitments are the unfolded seeds and
-//! no deposit/withdrawal cells exist.
+//! The `fee_withdrawal` is the CKB the sequencer draws from accumulated pool fees to
+//! fund the on-chain miner fee; the in-circuit STF caps it at fee revenue, so the
+//! solvency check above makes "an L1 fee is never skimmed from a user balance" an
+//! on-chain-verifiable fact. Not yet bound here: the DA blob (Phase 4).
 
 #![no_std]
 #![no_main]
@@ -42,10 +48,12 @@ mod atomics;
 // ---- baked policy ----
 /// SP1 v6 Groth16 universal verifying key (identical to the g16ckb / bridge VK).
 static GROTH16_VK: &[u8] = include_bytes!("../../../fixtures/reference/groth16_vk.bin");
-/// Our program's SP1 vkey hash (`0x00fda595…ace165`) — binds the proof to *this* STF.
+/// Our program's SP1 vkey hash (`0x00cd19a7…521f5`) — binds the proof to *this* STF.
+/// (Changed from the Phase-2a `0x00fda595…ace165` when the STF gained `fee_withdrawal`:
+/// the guest ELF — which compiles in the STF — changed, so its program vkey changed.)
 static VKEY_HASH: [u8; 32] = [
-    0x00, 0xfd, 0xa5, 0x95, 0xb6, 0xc0, 0xb6, 0xe6, 0x4a, 0xf3, 0x34, 0xfb, 0xe7, 0xec, 0xfc, 0x02,
-    0x9e, 0xc3, 0x14, 0xc0, 0x8c, 0xfc, 0x06, 0x26, 0x15, 0x33, 0xd2, 0x9b, 0x84, 0xac, 0xe1, 0x65,
+    0x00, 0xcd, 0x19, 0xa7, 0x49, 0x78, 0x2b, 0x8e, 0xa1, 0x85, 0x7b, 0xb0, 0x8c, 0x16, 0x85, 0xda,
+    0x88, 0xa2, 0x26, 0x16, 0x99, 0x28, 0x92, 0xda, 0xff, 0x0e, 0x1a, 0xea, 0x6f, 0xf5, 0x21, 0xf5,
 ];
 /// SP1 v6.1.0 recursion vk root.
 static VK_ROOT: [u8; 32] = [
@@ -61,9 +69,9 @@ const CHAIN_ID: u64 = 0x0043_4b42;
 
 // ---- layouts ----
 const ANCHOR_LEN: usize = 72; // root(32) seq(8) total(16) fee_acc(16)
-const PV_LEN: usize = 240;
+const PV_LEN: usize = 256;
 const PROOF_LEN: usize = 356;
-const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 596
+const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 612
 
 // anchor data offsets
 const A_ROOT: usize = 0;
@@ -83,6 +91,8 @@ const PV_WD_COMMIT: usize = 152;
 const PV_PREV_TOTAL: usize = 184;
 const PV_NEW_TOTAL: usize = 200;
 const PV_FEE_DELTA: usize = 216;
+// (current_epoch occupies 232..240)
+const PV_FEE_WD: usize = 240;
 
 const MASK: u8 = 0b11 << 6;
 const COMPRESSED_POSITIVE: u8 = 0b10 << 6;
@@ -357,8 +367,15 @@ fn bind(prev: &[u8], new: &[u8], pv: &[u8]) -> i8 {
     if rd_u128(new, A_TOTAL) != rd_u128(pv, PV_NEW_TOTAL) {
         return 39;
     }
-    // fee accumulator continuity: new_fee == prev_fee + fee_delta
-    if rd_u128(prev, A_FEE).checked_add(rd_u128(pv, PV_FEE_DELTA)) != Some(rd_u128(new, A_FEE)) {
+    // fee accumulator continuity with the L1 fee draw:
+    //   new_fee_acc == prev_fee_acc + fee_delta − fee_withdrawal,
+    // and fee_withdrawal ≤ prev_fee_acc + fee_delta (no drawing from user balances).
+    let fee_avail = match rd_u128(prev, A_FEE).checked_add(rd_u128(pv, PV_FEE_DELTA)) {
+        Some(a) => a,
+        None => return 43,
+    };
+    let fee_wd = rd_u128(pv, PV_FEE_WD);
+    if fee_wd > fee_avail || fee_avail - fee_wd != rd_u128(new, A_FEE) {
         return 43;
     }
     0
@@ -466,13 +483,17 @@ fn program_entry() -> i8 {
     if wd_c[..] != pv[PV_WD_COMMIT..PV_WD_COMMIT + 32] {
         return 56;
     }
-    // accounting: prev_total + Σdeposits − Σwithdrawals == new_total
+    // accounting: prev_total + Σdeposits − Σwithdrawals − fee_withdrawal == new_total
     let prev_total = rd_u128(pv, PV_PREV_TOTAL) as i128;
     let new_total = rd_u128(pv, PV_NEW_TOTAL) as i128;
-    if prev_total + sum_dep - sum_wd != new_total {
+    let fee_wd = rd_u128(pv, PV_FEE_WD) as i128;
+    if prev_total + sum_dep - sum_wd - fee_wd != new_total {
         return 57;
     }
-    // solvency: the anchor's real capacity delta must equal Σdeposits − Σwithdrawals.
+    // solvency: the anchor's real capacity delta must equal Σdep − Σwd − fee_withdrawal.
+    // Since the only inputs are the anchor + deposits and the only outputs are the
+    // anchor + withdrawals, the tx's miner fee (Σin − Σout) is then exactly the proven
+    // fee_withdrawal — drawn from accumulated fees, never from a user balance.
     let in_cap = match load_cell_capacity(0, Source::GroupInput) {
         Ok(c) => c as i128,
         Err(_) => return 58,
@@ -481,7 +502,7 @@ fn program_entry() -> i8 {
         Ok(c) => c as i128,
         Err(_) => return 58,
     };
-    if out_cap - in_cap != sum_dep - sum_wd {
+    if out_cap - in_cap != sum_dep - sum_wd - fee_wd {
         return 58;
     }
 

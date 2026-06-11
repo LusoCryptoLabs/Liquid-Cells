@@ -8,6 +8,47 @@ decided, what is next.
 
 ---
 
+## 2026-06-11 — Phase 2b-5: proven L1 fee model (`fee_withdrawal`)
+
+**Problem.** A CKB checkpoint tx must leave a positive miner fee (`Σin − Σout > 0`), but
+the 2b-3 solvency rule `out_cap − in_cap == Σdep − Σwd` forced a **zero-fee** tx. The fix
+has to keep "no operator theft" *provable*, not relax it.
+
+**Decision.** Make fee extraction a first-class, in-circuit operation rather than letting
+the contract silently slacken solvency. New proven field **`fee_withdrawal`** — CKB the
+sequencer draws from its own accumulated fee revenue to fund the miner fee:
+- STF caps `fee_withdrawal ≤ prev.fee_acc + fee_delta`, then sets
+  `new_total = (prev_total + Σdep − Σwd) − fee_withdrawal` and
+  `new_fee_acc = prev_fee_acc + fee_delta − fee_withdrawal`. Since `total = Σbalances +
+  fee_acc` and the draw reduces both by the same amount, **`Σ balances` is invariant** —
+  an L1 fee can never come from a user deposit, and that bound is *proven*.
+- The contract re-checks the cap + continuity (cheap), and the new solvency identity
+  `out_cap − in_cap == Σdep − Σwd − fee_withdrawal` pins the miner fee to **exactly** the
+  proven draw (only inputs are anchor+deposits, only outputs anchor+withdrawals ⇒
+  `Σin − Σout == fee_withdrawal`). No over-skim possible.
+
+**Landed**
+- STF: `fee_withdrawal` on `Batch` + `PublicValues` (appended → **PV 240→256 B**),
+  `StfError::InsufficientFees`, the draw in `transition_inner`, `fee_acc` bookkeeping in
+  `apply`, codec enc/dec. Two new property tests (partial draw conserves + reduces
+  `total`/`fee_acc`; over-draw rejected). **22 STF native tests green.**
+- Contract: `PV_LEN 256` / `WITNESS_LEN 612`, `PV_FEE_WD` offset (240); fee-aware
+  continuity (`fee_wd ≤ prev_fee + fee_delta`, `new_fee == prev_fee + fee_delta −
+  fee_wd`), accounting and solvency.
+- Host: measured batch draws `fee_withdrawal = 2` from `3·n` fee revenue (partial draw,
+  `fee_acc` stays positive). All three fixtures regenerated (PV 256 B, Groth16-verified).
+- Tests: new `anchor.rs` negative `ignored_fee_draw_in_capacity_rejected` (output keeps
+  full capacity, ignoring the draw → solvency rejects). `deposit.rs`/`withdrawal.rs`
+  absorb the fee automatically (capacities derive from `new_total`); only `new_fee`
+  adjusted. **15/15 integration tests green** (6 anchor + 5 deposit + 4 withdrawal).
+
+**Open (Phase 2b-6)**
+- Deploy to Pudge: genesis anchor cell + the type script as a code cell; a minimal
+  sequencer building real checkpoint txs. DA (`da_commitment`) remains a Phase-4 STF
+  change.
+
+---
+
 ## 2026-06-11 — Phase 2b-4: withdrawal-path coverage (lock-hash coordination)
 
 **Landed**

@@ -59,7 +59,8 @@ fn funded_state(funding: &[(u8, u128)]) -> State {
         .iter()
         .map(|(b, amt)| Deposit { to_key: key_for(*b), amount: *amt })
         .collect();
-    let batch = Batch { current_epoch: 0, deposits, transfers: vec![], withdrawals: vec![] };
+    let batch =
+        Batch { current_epoch: 0, deposits, transfers: vec![], withdrawals: vec![], fee_withdrawal: 0 };
     apply(&mut st, &batch).expect("funding deposit applies");
     st
 }
@@ -161,6 +162,42 @@ fn withdrawal_leaves_pool_and_conserves_value() {
         acc
     };
     assert_eq!(pv.withdrawals_commitment, expected);
+}
+
+#[test]
+fn l1_fee_withdrawal_draws_only_from_accumulated_fees() {
+    let mut st = funded_state(&[(1, 100_000_000)]);
+    let total_before = st.pool.total;
+    let alice_before = st.get_leaf(&key_for(1)).balance;
+
+    // Alice pays Bob with a 1_000 in-pool fee; the sequencer draws 600 of that fee to
+    // fund the L1 miner fee, leaving 400 as fee revenue.
+    let t = signed_transfer(1, key_for(2), 25_000_000, 1_000, 0, 100);
+    let batch = Batch { current_epoch: 1, transfers: vec![t], fee_withdrawal: 600, ..Default::default() };
+    let pv = apply(&mut st, &batch).expect("fee draw applies");
+
+    // The draw reduces `total` and `fee_acc` by the same 600; user balances are untouched
+    // by it (Alice only lost amount + the in-pool fee she signed for).
+    assert_eq!(pv.fee_withdrawal, 600);
+    assert_eq!(st.pool.total, total_before - 600);
+    assert_eq!(pv.new_total, total_before - 600);
+    assert_eq!(st.pool.fee_acc, 1_000 - 600);
+    assert_eq!(st.get_leaf(&key_for(1)).balance, alice_before - 25_000_000 - 1_000);
+    assert_eq!(st.get_leaf(&key_for(2)).balance, 25_000_000);
+
+    // The conservation relation still holds after the draw.
+    let sum: u128 = st.leaves.values().map(|l| l.balance).sum();
+    assert_eq!(sum + st.pool.fee_acc, st.pool.total);
+}
+
+#[test]
+fn over_drawing_l1_fee_is_rejected() {
+    let mut st = funded_state(&[(1, 100_000_000)]);
+    // Only 1_000 of fee revenue accrues this batch (fee_acc starts at 0), so a 5_000
+    // draw must be rejected — the sequencer cannot reach into user balances.
+    let t = signed_transfer(1, key_for(2), 25_000_000, 1_000, 0, 100);
+    let batch = Batch { current_epoch: 1, transfers: vec![t], fee_withdrawal: 5_000, ..Default::default() };
+    assert_eq!(apply(&mut st, &batch), Err(StfError::InsufficientFees));
 }
 
 #[test]

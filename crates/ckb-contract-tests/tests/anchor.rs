@@ -29,6 +29,7 @@ const PV_NEW_SEQ: usize = 112;
 const PV_PREV_TOTAL: usize = 184;
 const PV_NEW_TOTAL: usize = 200;
 const PV_FEE_DELTA: usize = 216;
+const PV_FEE_WD: usize = 240;
 
 fn rd_u64(b: &[u8], o: usize) -> u64 {
     let mut a = [0u8; 8];
@@ -57,6 +58,7 @@ struct Cfg {
     bad_new_seq: bool,
     fee_mismatch: bool,
     tamper_pv: bool,
+    ignore_fee_cap: bool, // output capacity ignores the L1 fee draw (breaks solvency)
 }
 
 fn build(cfg: Cfg) -> (Context, TransactionView) {
@@ -79,7 +81,9 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
         // bind() passes and only the proof can catch it.
         pv[PV_FEE_DELTA] ^= 0xff;
     }
-    let new_fee = prev_fee + rd_u128(&pv, PV_FEE_DELTA);
+    // new_fee_acc = prev_fee_acc + fee_delta − fee_withdrawal.
+    let fee_wd = rd_u128(&pv, PV_FEE_WD);
+    let new_fee = prev_fee + rd_u128(&pv, PV_FEE_DELTA) - fee_wd;
 
     let mut out_root = new_root.clone();
     if cfg.tamper_out_root {
@@ -91,6 +95,11 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let prev_anchor = anchor(&prev_root, prev_seq, prev_total, prev_fee);
     let new_anchor = anchor(&out_root, out_seq, new_total, out_fee);
 
+    // Transfer-only checkpoint: no deposit/withdrawal cells, so the anchor capacity must
+    // drop by exactly the L1 fee draw (out_cap − in_cap == −fee_withdrawal).
+    let in_cap: u64 = 1000;
+    let out_cap: u64 = if cfg.ignore_fee_cap { in_cap } else { in_cap - fee_wd as u64 };
+
     let mut ctx = Context::default();
     let contract_op = ctx.deploy_cell(bin);
     let as_op = ctx.deploy_cell(ALWAYS_SUCCESS.clone());
@@ -99,7 +108,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
 
     let anchor_in = ctx.create_cell(
         CellOutput::new_builder()
-            .capacity(1000u64.pack())
+            .capacity(in_cap.pack())
             .lock(lock.clone())
             .type_(Some(type_script.clone()).pack())
             .build(),
@@ -118,7 +127,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
         .input(CellInput::new_builder().previous_output(anchor_in).build())
         .output(
             CellOutput::new_builder()
-                .capacity(1000u64.pack())
+                .capacity(out_cap.pack())
                 .lock(lock)
                 .type_(Some(type_script).pack())
                 .build(),
@@ -162,4 +171,15 @@ fn tampered_public_values_caught_by_proof() {
     // this exercises the full pairing path.
     let (ctx, tx) = build(Cfg { tamper_pv: true, ..Default::default() });
     assert!(ctx.verify_tx(&tx, MAX_CYCLES).is_err(), "tampered public values must fail the proof");
+}
+
+#[test]
+fn ignored_fee_draw_in_capacity_rejected() {
+    // The anchor output keeps the full input capacity (ignoring the proven L1 fee draw),
+    // so out_cap − in_cap == 0 != −fee_withdrawal: the solvency check must reject it.
+    let (ctx, tx) = build(Cfg { ignore_fee_cap: true, ..Default::default() });
+    assert!(
+        ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
+        "anchor capacity that ignores the L1 fee draw must reject"
+    );
 }
