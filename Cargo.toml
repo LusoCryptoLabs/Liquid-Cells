@@ -1,0 +1,22 @@
+# Liquid Cells — Cargo workspace.
+#
+# The keystone crate `liquid-cells-stf` holds the deterministic state-transition
+# function. It is executed verbatim by the off-chain sequencer AND proven verbatim
+# by the SP1 zkVM guest, so the two can never disagree on a root.
+#
+# Future members (added as their phases land):
+#   crates/sequencer   — runs the STF, serves the API, posts on-chain DA
+#   crates/sp1-guest   — wraps the STF as an SP1 program, emits a Groth16 proof
+#   crates/ckb-contract— anchor type script: Groth16 verify + public-input binding
+[workspace]
+resolver = "2"
+members = ["crates/stf"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/tecmeup123/Liquid-Cells"
+
+[profile.release]
+opt-level = 3
+lto = true

@@ -1,0 +1,19 @@
+# Rust build output
+/target
+**/target
+
+# SP1 proving artifacts
+*.proof
+/proofs
+elf/
+
+# Editor / OS junk
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Scratch
+*.profraw
+.unc_probe
+.write_probe
