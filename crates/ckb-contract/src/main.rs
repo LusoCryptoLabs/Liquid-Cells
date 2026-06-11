@@ -1,26 +1,32 @@
 //! Liquid Cells anchor type script — verifies the SP1 Groth16 proof of a state
-//! transition inside CKB-VM and pins its public values to chain facts.
+//! transition inside CKB-VM and pins its public values to the on-chain anchor cell.
 //!
-//! The BN254 Groth16 verifier is adapted from the project's `g16-ckbvm` verifier
-//! (itself vendored from SP1's `sp1-verifier`, Groth16 path), with two soundness
-//! checks the Solidity reference makes that g16ckb omitted: `exit_code == 0` and
-//! `vk_root == VK_ROOT`. Field elements are big-endian, matching SP1's encoding.
+//! Transaction shape (one checkpoint): exactly one **input** anchor cell (state n)
+//! and one **output** anchor cell (state n+1) carry this type script. The witness
+//! for the input group carries `proof ‖ public_values`.
 //!
-//! **Phase 2b-1 (this file):** verifies a real proof + public values (baked in as
-//! fixtures) and enforces the *baked* pins (program vkey, pool identity, monotonic
-//! sequence). Run standalone in ckb-debugger → exit 0.
+//!   anchor cell data (72 bytes): root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE)
+//!   witness input_type        : proof(356) ‖ public_values(240)
 //!
-//! **Phase 2b-2 (next):** read `proof` / `public_values` from the witness and pin
-//! `prev_*` / `new_*` to the input/output anchor cell data, the deposits/withdrawals
-//! commitments to the real deposit cells / withdrawal outputs, and the DA blob —
-//! using ckb-std cell/witness syscalls. The verify + decode functions below are
-//! written to be reused unchanged.
+//! The script (1) pins `prev_*`/`new_*` in the public values to the input/output
+//! anchor cell data and checks sequence/fee continuity — cheap, done first so a
+//! tampered transaction is rejected without paying for the pairing — then (2)
+//! verifies the SP1 Groth16 proof of those public values. Field elements are
+//! big-endian (matching SP1 / the g16ckb verifier this is adapted from), with the
+//! soundness checks `exit_code == 0` and `vk_root == VK_ROOT` added.
+//!
+//! Not yet bound here (Phase 2b-2b): `deposits_commitment` / `withdrawals_commitment`
+//! to real deposit cells / withdrawal outputs, and the DA blob. The current fixture
+//! is a transfer-only checkpoint, where those commitments are the unfolded seeds and
+//! no deposit/withdrawal cells exist.
 
 #![no_std]
 #![no_main]
 
 use alloc::vec::Vec;
 use bn::{pairing_batch, AffineG1, AffineG2, Fq, Fq2, Fr, Gt, G1, G2};
+use ckb_std::ckb_constants::Source;
+use ckb_std::high_level::{load_cell_data, load_witness_args};
 use sha2::{Digest, Sha256};
 
 ckb_std::entry!(program_entry);
@@ -29,7 +35,7 @@ ckb_std::default_alloc!();
 mod atomics;
 
 // ---- baked policy ----
-/// SP1 v6 Groth16 universal verifying key (identical to the one g16ckb/bridge use).
+/// SP1 v6 Groth16 universal verifying key (identical to the g16ckb / bridge VK).
 static GROTH16_VK: &[u8] = include_bytes!("../../../fixtures/reference/groth16_vk.bin");
 /// Our program's SP1 vkey hash (`0x00fda595…ace165`) — binds the proof to *this* STF.
 static VKEY_HASH: [u8; 32] = [
@@ -48,16 +54,28 @@ static POOL_ID: [u8; 32] = [
 ];
 const CHAIN_ID: u64 = 0x0043_4b42;
 
-// ---- Phase 2b-1 fixtures (2b-2 reads these from the witness instead) ----
-static PROOF: &[u8] = include_bytes!("../../../fixtures/groth16_proof.bin"); // 356 bytes
-static PUBVALS: &[u8] = include_bytes!("../../../fixtures/public_values.bin"); // 240 bytes
-
-// PublicValues byte offsets (see liquid_cells_stf::PublicValues::encode).
-const OFF_POOL_ID: usize = 0;
-const OFF_CHAIN_ID: usize = 32;
-const OFF_PREV_SEQ: usize = 72;
-const OFF_NEW_SEQ: usize = 112;
+// ---- layouts ----
+const ANCHOR_LEN: usize = 72; // root(32) seq(8) total(16) fee_acc(16)
 const PV_LEN: usize = 240;
+const PROOF_LEN: usize = 356;
+const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 596
+
+// anchor data offsets
+const A_ROOT: usize = 0;
+const A_SEQ: usize = 32;
+const A_TOTAL: usize = 40;
+const A_FEE: usize = 56;
+
+// PublicValues offsets (liquid_cells_stf::PublicValues::encode)
+const PV_POOL_ID: usize = 0;
+const PV_CHAIN_ID: usize = 32;
+const PV_PREV_ROOT: usize = 40;
+const PV_PREV_SEQ: usize = 72;
+const PV_NEW_ROOT: usize = 80;
+const PV_NEW_SEQ: usize = 112;
+const PV_PREV_TOTAL: usize = 184;
+const PV_NEW_TOTAL: usize = 200;
+const PV_FEE_DELTA: usize = 216;
 
 const MASK: u8 = 0b11 << 6;
 const COMPRESSED_POSITIVE: u8 = 0b10 << 6;
@@ -148,7 +166,7 @@ fn uncomp_g2(buf: &[u8]) -> Option<AffineG2> {
 struct Vk {
     alpha: AffineG1,
     k: Vec<AffineG1>,
-    beta: AffineG2, // stored negated, exactly as sp1-verifier
+    beta: AffineG2,
     gamma: AffineG2,
     delta: AffineG2,
 }
@@ -221,21 +239,66 @@ fn slice32(s: &[u8]) -> [u8; 32] {
     a.copy_from_slice(s);
     a
 }
-
-fn rd_u64(pv: &[u8], off: usize) -> u64 {
+fn rd_u64(b: &[u8], off: usize) -> u64 {
     let mut a = [0u8; 8];
-    a.copy_from_slice(&pv[off..off + 8]);
+    a.copy_from_slice(&b[off..off + 8]);
     u64::from_be_bytes(a)
 }
+fn rd_u128(b: &[u8], off: usize) -> u128 {
+    let mut a = [0u8; 16];
+    a.copy_from_slice(&b[off..off + 16]);
+    u128::from_be_bytes(a)
+}
 
-/// Verify an SP1 Groth16 proof of `public_values`. Returns 0 on success, or a
-/// distinct nonzero stage code on failure. Reusable verbatim by the type-script
-/// entrypoint in Phase 2b-2.
+/// Pin the public values to the anchor cells. Cheap; runs before the proof verify so
+/// a tampered transaction is rejected without paying for the BN254 pairing.
+fn bind(prev: &[u8], new: &[u8], pv: &[u8]) -> i8 {
+    if pv.len() != PV_LEN || prev.len() != ANCHOR_LEN || new.len() != ANCHOR_LEN {
+        return 30;
+    }
+    if pv[PV_POOL_ID..PV_POOL_ID + 32] != POOL_ID {
+        return 31;
+    }
+    if rd_u64(pv, PV_CHAIN_ID) != CHAIN_ID {
+        return 32;
+    }
+    let prev_seq = rd_u64(pv, PV_PREV_SEQ);
+    let new_seq = rd_u64(pv, PV_NEW_SEQ);
+    if prev_seq.checked_add(1) != Some(new_seq) {
+        return 33;
+    }
+    // input anchor == prev_*
+    if prev[A_ROOT..A_ROOT + 32] != pv[PV_PREV_ROOT..PV_PREV_ROOT + 32] {
+        return 34;
+    }
+    if rd_u64(prev, A_SEQ) != prev_seq {
+        return 35;
+    }
+    if rd_u128(prev, A_TOTAL) != rd_u128(pv, PV_PREV_TOTAL) {
+        return 36;
+    }
+    // output anchor == new_*
+    if new[A_ROOT..A_ROOT + 32] != pv[PV_NEW_ROOT..PV_NEW_ROOT + 32] {
+        return 37;
+    }
+    if rd_u64(new, A_SEQ) != new_seq {
+        return 38;
+    }
+    if rd_u128(new, A_TOTAL) != rd_u128(pv, PV_NEW_TOTAL) {
+        return 39;
+    }
+    // fee accumulator continuity: new_fee == prev_fee + fee_delta
+    if rd_u128(prev, A_FEE).checked_add(rd_u128(pv, PV_FEE_DELTA)) != Some(rd_u128(new, A_FEE)) {
+        return 43;
+    }
+    0
+}
+
+/// Verify an SP1 Groth16 proof of `public_values`. 0 = ok, else a stage code.
 fn verify_sp1_groth16(proof: &[u8], public_values: &[u8]) -> i8 {
-    if proof.len() != 356 {
+    if proof.len() != PROOF_LEN {
         return 10;
     }
-    // SP1 prepends the proof with the first 4 bytes of sha256(groth16_vk) as a selector.
     let vkh = Sha256::digest(GROTH16_VK);
     if vkh[..4] != proof[..4] {
         return 10;
@@ -245,7 +308,6 @@ fn verify_sp1_groth16(proof: &[u8], public_values: &[u8]) -> i8 {
     let proof_nonce = slice32(&proof[68..100]);
     let gnark = &proof[100..356];
 
-    // Soundness: the proof must attest a *successful* run of the *pinned* circuit.
     if exit_code != [0u8; 32] {
         return 20;
     }
@@ -253,11 +315,9 @@ fn verify_sp1_groth16(proof: &[u8], public_values: &[u8]) -> i8 {
         return 21;
     }
 
-    // hash_public_inputs: sha256(public_values) with the top 3 bits cleared (fit BN254 Fr).
     let mut pd: [u8; 32] = Sha256::digest(public_values).into();
-    pd[0] &= 0x1F;
+    pd[0] &= 0x1F; // sha256(pv) with top 3 bits cleared, to fit BN254 Fr
 
-    // 5 Groth16 public inputs, in sp1-verifier order.
     let inputs_bytes: [[u8; 32]; 5] = [VKEY_HASH, pd, exit_code, vk_root, proof_nonce];
     let mut frs: Vec<Fr> = Vec::new();
     for ib in inputs_bytes.iter() {
@@ -282,31 +342,42 @@ fn verify_sp1_groth16(proof: &[u8], public_values: &[u8]) -> i8 {
     }
 }
 
-/// Enforce the pins that depend only on baked policy + the public values themselves.
-/// (The cell-data pins — prev/new roots & totals to the anchor cells, commitments to
-/// deposit/withdrawal cells — are added in Phase 2b-2 where the tx is available.)
-fn check_public_values(pv: &[u8]) -> i8 {
-    if pv.len() != PV_LEN {
-        return 30;
-    }
-    if pv[OFF_POOL_ID..OFF_POOL_ID + 32] != POOL_ID {
-        return 31;
-    }
-    if rd_u64(pv, OFF_CHAIN_ID) != CHAIN_ID {
-        return 32;
-    }
-    let prev_seq = rd_u64(pv, OFF_PREV_SEQ);
-    let new_seq = rd_u64(pv, OFF_NEW_SEQ);
-    if prev_seq.checked_add(1) != Some(new_seq) {
-        return 33;
-    }
-    0
-}
-
 fn program_entry() -> i8 {
-    let v = verify_sp1_groth16(PROOF, PUBVALS);
-    if v != 0 {
-        return v;
+    // Exactly one input anchor and one output anchor (this type-script group).
+    let prev = match load_cell_data(0, Source::GroupInput) {
+        Ok(d) => d,
+        Err(_) => return 41,
+    };
+    if load_cell_data(1, Source::GroupInput).is_ok() {
+        return 40;
     }
-    check_public_values(PUBVALS)
+    let new = match load_cell_data(0, Source::GroupOutput) {
+        Ok(d) => d,
+        Err(_) => return 41,
+    };
+    if load_cell_data(1, Source::GroupOutput).is_ok() {
+        return 40;
+    }
+
+    // proof ‖ public_values from the input group's witness.
+    let wa = match load_witness_args(0, Source::GroupInput) {
+        Ok(w) => w,
+        Err(_) => return 42,
+    };
+    let wb = match wa.input_type().to_opt() {
+        Some(b) => b.raw_data(),
+        None => return 42,
+    };
+    if wb.len() != WITNESS_LEN {
+        return 42;
+    }
+    let proof = &wb[0..PROOF_LEN];
+    let pv = &wb[PROOF_LEN..WITNESS_LEN];
+
+    // Cheap pins first, expensive pairing last.
+    let b = bind(&prev, &new, pv);
+    if b != 0 {
+        return b;
+    }
+    verify_sp1_groth16(proof, pv)
 }

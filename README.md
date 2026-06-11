@@ -164,7 +164,8 @@ secp256k1 choices are deliberate so the same STF proves cheaply in the zkVM.
 | **1** | Partial-witness refactor + SP1 guest + cycle measurement (~0.62M cycles/transfer with precompiles); `MAX_LEAVES_PER_BATCH=1024` | **done** |
 | **2a** | Groth16 wrap of the transition proof (356-byte proof, verified) + on-chain verifier spec ([docs/ONCHAIN-VERIFY.md](docs/ONCHAIN-VERIFY.md)) + fixtures | **done** |
 | **2b-1** | CKB anchor type script verifies the real Groth16 proof on CKB-VM (`ckb-debugger` exit 0, ~3.6B cycles = g16ckb parity) + baked pins | **done** |
-| **2b-2** | Read proof/PV from witness; pin prev/new to anchor cells, commitments to deposit/withdrawal cells, DA; mock-tx tests; deploy Pudge | next |
+| **2b-2** | Real type script: reads proof/PV from witness, pins prev/new to anchor cells (root/seq/total/fee_acc); 5/5 ckb-testtool tests incl. adversarial | **done** |
+| **2b-3** | Bind deposits/withdrawals commitments to real cells + DA blob; deploy to Pudge; sequencer builds checkpoint txs | next |
 | **3** | Single-leaf force-exit (native SMT inclusion) + escape-hatch timeout | planned |
 | **4** | DA blob format + independent reconstruction/verifier tool | planned |
 | **5** | Atomic-swap / Fiber egress (hash-locked transfer variant) | planned |

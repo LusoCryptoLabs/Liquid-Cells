@@ -8,6 +8,34 @@ decided, what is next.
 
 ---
 
+## 2026-06-11 — Phase 2b-2: real type script + mock-tx integration tests
+
+**Landed**
+- `crates/ckb-contract` rewritten from baked fixtures into a real **type script**:
+  reads `proof ‖ public_values` from the input group's witness, reads `prev`/`new`
+  state from the **input/output anchor cell data**, and enforces full anchor
+  continuity before the pairing:
+  - anchor data layout `root(32) ‖ seq(8) ‖ total(16) ‖ fee_acc(16)`;
+  - `pool_id`/`chain_id` baked; `new_seq == prev_seq + 1`;
+  - input anchor `root/seq/total == prev_*`; output anchor `root/seq/total == new_*`;
+  - `new.fee_acc == prev.fee_acc + fee_delta`.
+  - **Cheap pins run first, the BN254 pairing last**, so a tampered tx is rejected
+    without paying ~3.6B cycles.
+- `crates/ckb-contract-tests` (ckb-testtool 0.13, mirrors the bridge's integration
+  setup): builds a checkpoint tx from the Phase-2a fixtures and runs it in CKB-VM.
+  **5/5 tests green in 2.8s**:
+  - `valid_checkpoint_verifies` — full path incl. the real pairing → exit 0;
+  - `tampered_output_root_rejected`, `wrong_new_seq_rejected`,
+    `fee_acc_mismatch_rejected` — cell pins reject (fast);
+  - `tampered_public_values_caught_by_proof` — bind passes, the Groth16 proof rejects.
+
+**Next (Phase 2b-3)**
+- Bind `deposits_commitment` / `withdrawals_commitment` to real deposit cells /
+  withdrawal outputs (needs the deposit/withdrawal cell-format spec) + DA blob.
+- Deploy to Pudge; wire a sequencer to build real checkpoint txs.
+
+---
+
 ## 2026-06-11 — Phase 2b-1: on-chain Groth16 verify of the transition
 
 **Landed**

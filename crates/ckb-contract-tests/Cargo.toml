@@ -1,0 +1,15 @@
+# Real CKB-VM integration tests for the Liquid Cells anchor type script. Standalone
+# (its own [workspace], host target) — loads the riscv contract binary + the Phase-2a
+# fixtures and runs them through ckb-testtool's VM. Build the contract first.
+[package]
+name = "liquid-cells-ckb-tests"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+ckb-testtool = "0.13"
+
+[workspace]
