@@ -22,4 +22,6 @@ pub enum StfError {
     MalformedWitness,
     /// The witness leaves + siblings did not reconstruct the claimed `prev_root`.
     PrevRootMismatch,
+    /// The batch touches more leaves than [`crate::transition::MAX_LEAVES_PER_BATCH`].
+    BatchTooLarge,
 }

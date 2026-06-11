@@ -8,6 +8,44 @@ decided, what is next.
 
 ---
 
+## 2026-06-11 — Phase 1b: SP1 guest, cycle measurement, precompiles
+
+**Landed**
+- `crates/sp1-guest` — SP1 zkVM program (standalone workspace). Decodes the input
+  bundle, runs the identical `prove_transition`, commits `PublicValues`. Builds with
+  `cargo prove build` (SP1 6.2, `riscv64im-succinct-zkvm-elf`).
+- `crates/sp1-host` — driver (standalone workspace, `sp1-sdk` 6.2 blocking API).
+  Builds a funded pool + batch, executes the guest, and **asserts the guest's
+  committed `PublicValues` equal the native ones** — guest⇄native equivalence holds.
+- Precompile patches in the guest: `k256` → `patch-k256-13.4-sp1-6.2.0`, `sha3` →
+  `patch-sha3-0.10.8-sp1-6.2.0`. Pinned the stf crate's `sha3` to `=0.10.8` so the
+  keccak-precompile patch actually engages (the 0.10.9 lock had silently skipped it).
+- `MAX_LEAVES_PER_BATCH = 1024`, enforced in-circuit in `prove_transition`
+  (`BatchTooLarge`), plus a test.
+
+**Cycle measurements (execute mode, n payers → 1 recipient, n+1 touched leaves)**
+
+| transfers | touched leaves | unpatched | k256 only | k256 + keccak |
+|---|---|---|---|---|
+| 1 | 2 | 8.59M | 7.32M | **1.17M** |
+| 2 | 3 | 13.58M | 11.04M | **1.81M** |
+| 4 | 5 | 23.35M | 18.26M | **3.04M** |
+| 8 | 9 | 43.21M | 33.04M | **5.55M** |
+| 16 | 17 | 82.60M | 62.26M | **10.53M** |
+
+Marginal per transfer: **~0.62M cycles** with both precompiles (down from ~4.9M
+unpatched — ~8×). Keccak (the SMT path hashing) was the dominant cost, not the
+signature; the keccak precompile is what unlocked it. `MAX_LEAVES_PER_BATCH = 1024`
+≈ 0.64B cycles worst case.
+
+**Next (Phase 1c / Phase 2)**
+- Generate + verify a real SP1 core proof locally (pipeline is execute-validated).
+- Benchmark proving wall-time to turn `MAX_LEAVES_PER_BATCH` from a cycle estimate
+  into a latency-based number.
+- Begin the CKB anchor type script (Groth16 verify + public-input binding).
+
+---
+
 ## 2026-06-11 — Phase 1a: partial-witness refactor + guest codec
 
 **Landed**

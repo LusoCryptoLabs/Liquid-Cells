@@ -12,7 +12,8 @@ path = "src/lib.rs"
 [dependencies]
 # Keccak-256: chosen over CKB-native blake2b because SP1 has a keccak precompile,
 # so the same hashing is cheap inside the zkVM and native in the sequencer.
-sha3 = { version = "0.10", default-features = false }
+# Pinned to 0.10.8 to match the SP1 keccak-precompile patch tag used by the guest.
+sha3 = { version = "=0.10.8", default-features = false }
 # secp256k1 ECDSA: native here, patched to the SP1 secp256k1 precompile in the guest.
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
 

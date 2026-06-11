@@ -161,7 +161,7 @@ secp256k1 choices are deliberate so the same STF proves cheaply in the zkVM.
 | Phase | Deliverable | State |
 |---|---|---|
 | **0** | `liquid-cells-stf` crate + property tests (this is also the sequencer core) | **done** |
-| **1** | Wrap the STF as an SP1 guest, prove locally, measure cycles → fix batch size | next |
+| **1** | Partial-witness refactor + SP1 guest + cycle measurement (~0.62M cycles/transfer with precompiles); `MAX_LEAVES_PER_BATCH=1024` | **done** |
 | **2** | CKB anchor type script: Groth16 verify + public-input ↔ cell-data binding (deploy to Pudge testnet) | planned |
 | **3** | Single-leaf force-exit (native SMT inclusion) + escape-hatch timeout | planned |
 | **4** | DA blob format + independent reconstruction/verifier tool | planned |

@@ -1,0 +1,18 @@
+# SP1 host / driver. Standalone (its own [workspace]). Builds a sample batch with
+# the stf crate, executes the guest ELF to measure cycles, and checks the guest's
+# committed output equals the native `prove_transition` result.
+[package]
+name = "liquid-cells-host"
+version = "0.0.1"
+edition = "2021"
+
+[[bin]]
+name = "liquid-cells-host"
+path = "src/main.rs"
+
+[dependencies]
+sp1-sdk = { version = "6.2.3", features = ["blocking"] }
+liquid-cells-stf = { path = "../stf" }
+hex = "0.4"
+
+[workspace]

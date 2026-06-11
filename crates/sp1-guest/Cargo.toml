@@ -1,0 +1,22 @@
+# SP1 zkVM guest. Standalone (its own [workspace]) — built with `cargo prove build`
+# against the succinct toolchain, not the host toolchain.
+[package]
+name = "liquid-cells-guest"
+version = "0.0.1"
+edition = "2021"
+
+[[bin]]
+name = "liquid-cells-guest"
+path = "src/main.rs"
+
+[dependencies]
+sp1-zkvm = "6.2.3"
+liquid-cells-stf = { path = "../stf" }
+
+[workspace]
+
+# Swap secp256k1 (k256) and keccak (sha3) for SP1's precompile-accelerated forks.
+# These are the two dominant in-circuit costs; the precompiles cut them sharply.
+[patch.crates-io]
+k256 = { git = "https://github.com/sp1-patches/elliptic-curves", package = "k256", tag = "patch-k256-13.4-sp1-6.2.0" }
+sha3 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", package = "sha3", tag = "patch-sha3-0.10.8-sp1-6.2.0" }

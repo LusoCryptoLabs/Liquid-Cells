@@ -140,6 +140,19 @@ fn wrong_prev_root_is_rejected() {
 }
 
 #[test]
+fn batch_exceeding_leaf_cap_is_rejected() {
+    use liquid_cells_stf::transition::MAX_LEAVES_PER_BATCH;
+    let mut st = State::genesis(pool_id(), CHAIN_ID);
+    // One more distinct deposit key than the cap allows (deposits need no signatures;
+    // keys are just distinct hashes here).
+    let deposits = (0..=MAX_LEAVES_PER_BATCH as u32)
+        .map(|i| Deposit { to_key: keccak(&i.to_be_bytes()), amount: 1 })
+        .collect();
+    let batch = Batch { current_epoch: 0, deposits, ..Default::default() };
+    assert_eq!(apply(&mut st, &batch), Err(StfError::BatchTooLarge));
+}
+
+#[test]
 fn codec_input_round_trips() {
     let full = funded_state(&[(1, 500_000_000), (2, 200_000_000)]);
     let batch = mixed_batch();

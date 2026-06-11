@@ -11,6 +11,9 @@
 [workspace]
 resolver = "2"
 members = ["crates/stf"]
+# The SP1 guest (zkVM target) and host (heavy sp1-sdk dep) are standalone crates so
+# `cargo test` at the root stays lean. They depend on the stf crate by path.
+exclude = ["crates/sp1-guest", "crates/sp1-host"]
 
 [workspace.package]
 edition = "2021"

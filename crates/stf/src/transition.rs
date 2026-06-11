@@ -39,6 +39,14 @@ pub struct Witness {
     pub siblings: Vec<Hash>,
 }
 
+/// Hard protocol ceiling on the number of leaves one batch may touch. Bounds the
+/// proof size so checkpoints have predictable cost, and lets the on-chain verifier
+/// assume batches are bounded. Basis (SP1 6.2, k256 + keccak precompiles): ~0.62M
+/// SP1 cycles per touched leaf measured by the host driver, so 1024 leaves ≈ 0.64B
+/// cycles — a generous periodic-checkpoint ceiling. The sequencer picks smaller
+/// batches to hit its own latency target; this is only the upper bound.
+pub const MAX_LEAVES_PER_BATCH: usize = 1024;
+
 /// Keys a batch reads/writes, sorted and deduplicated. Derivable from the batch
 /// alone, so the guest can independently check the witness covers exactly these.
 pub fn touched_keys(batch: &Batch) -> Vec<Hash> {
@@ -174,6 +182,9 @@ fn transition_inner(
     batch: &Batch,
 ) -> Result<(PublicValues, BTreeMap<Hash, Leaf>), StfError> {
     let tk = touched_keys(batch);
+    if tk.len() > MAX_LEAVES_PER_BATCH {
+        return Err(StfError::BatchTooLarge);
+    }
     if witness.leaves.len() != tk.len() {
         return Err(StfError::MalformedWitness);
     }
