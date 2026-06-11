@@ -8,6 +8,37 @@ decided, what is next.
 
 ---
 
+## 2026-06-11 — Phase 2b-1: on-chain Groth16 verify of the transition
+
+**Landed**
+- `crates/ckb-contract` — the anchor type script (no_std, ckb-std 0.16,
+  `riscv64imac-unknown-none-elf`, `substrate-bn-succinct-rs` + sha2, `__sync_*`
+  atomics polyfill). Adapts the project's `g16-ckbvm` BN254 Groth16 verifier and adds
+  the two soundness checks the Solidity reference makes (`exit_code == 0`,
+  `vk_root == VK_ROOT`) that g16ckb omitted.
+- Bakes our program vkey (`0x00fda595…ace165`), the SP1 v6 universal Groth16 VK
+  (byte-identical to g16ckb's), `VK_ROOT`, and the pool identity / chain_id.
+- Verifies the **real Phase-2a proof** + decodes the 240-byte public values and
+  enforces the baked pins (program vkey via the proof, `pool_id`, `chain_id`,
+  `new_seq == prev_seq + 1`). **ckb-debugger → `Run result: 0`.**
+
+**Cycle cost (the key feasibility finding)**
+- `~3.6B` cycles (`3,812,401,777`), essentially identical to the production g16ckb
+  verifier (`3,810,585,066`) — so it's the *inherent* cost of a BN254 Groth16 verify
+  in CKB-VM, not a regression. Deployable on Pudge (bridge precedent); mainnet
+  cycle-limit feasibility / a BN254-precompile path is the optimization to track.
+- Crucially **constant per checkpoint** (fixed 356-byte proof) regardless of batch
+  size — so larger batches amortize the on-chain cost. Reinforces wanting big batches.
+
+**Next (Phase 2b-2)**
+- Convert from baked fixtures to a real type script: read `proof`/`public_values`
+  from the witness; pin `prev_*`/`new_*` to input/output anchor cell data; recompute
+  `deposits_commitment`/`withdrawals_commitment` from the real deposit cells /
+  withdrawal outputs; bind DA. Test with a mock tx (ckb-debugger/ckb-testtool) incl.
+  adversarial cases, then deploy to Pudge.
+
+---
+
 ## 2026-06-11 — Phase 2a: Groth16 wrap + on-chain verifier spec
 
 **Landed**

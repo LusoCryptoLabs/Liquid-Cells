@@ -1,0 +1,27 @@
+# Liquid Cells anchor type script (CKB-VM). Standalone (its own [workspace]) — built
+# for riscv64imac-unknown-none-elf with ckb-std. Verifies the SP1 Groth16 proof of a
+# transition and pins its public values to chain facts.
+[package]
+name = "liquid-cells-ckb-contract"
+version = "0.0.1"
+edition = "2021"
+
+[[bin]]
+name = "liquid-cells-anchor"
+path = "src/main.rs"
+
+[dependencies]
+ckb-std = "0.16"
+# substrate-bn (Succinct fork): no_std BN254 pairing, the same lib the g16ckb / bridge
+# verifier uses; consumes SP1 Groth16 proofs (big-endian field elements).
+bn = { package = "substrate-bn-succinct-rs", version = "=0.6.0", default-features = false }
+sha2 = { version = "0.10", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = false
+panic = "abort"
+codegen-units = 1
+overflow-checks = false
+
+[workspace]
