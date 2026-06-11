@@ -18,6 +18,9 @@ bn = { package = "substrate-bn-succinct-rs", version = "=0.6.0", default-feature
 sha2 = { version = "0.10", default-features = false }
 # keccak for recomputing the deposits/withdrawals commitments (must match the STF's fold).
 sha3 = { version = "=0.10.8", default-features = false }
+# blake2b (ckb-default-hash personalization) for blake160(pubkey): force-exit payouts must
+# land at the owner's canonical secp256k1_blake160 lock, so no in-contract signature check.
+blake2b-ref = { version = "0.3", default-features = false }
 
 [profile.release]
 opt-level = 3

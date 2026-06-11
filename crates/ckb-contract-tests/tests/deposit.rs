@@ -29,6 +29,7 @@ const PV_NEW_SEQ: usize = 112;
 const PV_PREV_TOTAL: usize = 184;
 const PV_NEW_TOTAL: usize = 200;
 const PV_FEE_DELTA: usize = 216;
+const PV_CURRENT_EPOCH: usize = 232;
 const PV_FEE_WD: usize = 240;
 
 fn rd_u64(b: &[u8], o: usize) -> u64 {
@@ -41,13 +42,17 @@ fn rd_u128(b: &[u8], o: usize) -> u128 {
     a.copy_from_slice(&b[o..o + 16]);
     u128::from_be_bytes(a)
 }
-fn anchor(root: &[u8], seq: u64, total: u128, fee: u128) -> Vec<u8> {
-    let mut a = Vec::with_capacity(72);
+fn anchor(root: &[u8], seq: u64, total: u128, fee: u128, last_epoch: u64) -> Vec<u8> {
+    let mut a = Vec::with_capacity(80);
     a.extend_from_slice(root);
     a.extend_from_slice(&seq.to_be_bytes());
     a.extend_from_slice(&total.to_be_bytes());
     a.extend_from_slice(&fee.to_be_bytes());
+    a.extend_from_slice(&last_epoch.to_be_bytes());
     a
+}
+fn abs_epoch(e: u64) -> u64 {
+    (0x20u64 << 56) | e
 }
 
 #[derive(Clone, Default)]
@@ -77,9 +82,10 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let fee_delta = rd_u128(&pv, PV_FEE_DELTA);
     let fee_wd = rd_u128(&pv, PV_FEE_WD);
 
-    let prev_anchor = anchor(&prev_root, prev_seq, prev_total, 0);
+    let cur_epoch = rd_u64(&pv, PV_CURRENT_EPOCH);
+    let prev_anchor = anchor(&prev_root, prev_seq, prev_total, 0, 0);
     // new_fee_acc = prev_fee_acc(0) + fee_delta − fee_withdrawal.
-    let new_anchor = anchor(&new_root, new_seq, new_total, fee_delta - fee_wd);
+    let new_anchor = anchor(&new_root, new_seq, new_total, fee_delta - fee_wd, cur_epoch);
 
     // Anchor capacity == pool total, so the capacity delta equals the deposit amount.
     let in_cap = prev_total as u64;
@@ -120,7 +126,12 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
         .as_bytes();
 
     let mut b = TransactionBuilder::default()
-        .input(CellInput::new_builder().previous_output(anchor_in).build())
+        .input(
+            CellInput::new_builder()
+                .previous_output(anchor_in)
+                .since(abs_epoch(cur_epoch).pack())
+                .build(),
+        )
         .output(
             CellOutput::new_builder()
                 .capacity(out_cap.pack())

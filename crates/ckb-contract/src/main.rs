@@ -1,13 +1,19 @@
-//! Liquid Cells anchor type script — verifies the SP1 Groth16 proof of a state
-//! transition inside CKB-VM and pins its public values to the on-chain anchor cell.
+//! Liquid Cells anchor type script — guards the pool anchor cell in two modes,
+//! selected by the input group's witness `input_type` length:
 //!
-//! Transaction shape (one checkpoint): exactly one **input** anchor cell (state n)
-//! and one **output** anchor cell (state n+1) carry this type script. The witness
-//! for the input group carries `proof ‖ public_values`.
+//!   * **checkpoint** (`input_type` len 644): a sequencer state transition — verify its
+//!     SP1 Groth16 proof inside CKB-VM and pin the public values to chain facts.
+//!   * **force-exit** (`input_type` len 8249): a *unilateral* user withdrawal against the
+//!     last committed root after operator silence — no proof, an SMT inclusion path. The
+//!     escape hatch that makes the operator unable to freeze funds by going dark.
 //!
-//!   anchor cell data (72 bytes): root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE)
-//!   witness input_type        : proof(356) ‖ public_values(288)
-//!   witness output_type       : da_blob (the published state diff)
+//! Both modes have exactly one **input** anchor (state n) and one **output** anchor
+//! (state n+1) carrying this type script.
+//!
+//!   anchor cell data (80 bytes): root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE) ‖ last_epoch(8 BE)
+//!   checkpoint witness input_type : proof(356) ‖ public_values(288)
+//!   checkpoint witness output_type: da_blob (the published state diff)
+//!   force-exit witness input_type : pubkey(33) ‖ balance(16) ‖ nonce(8) ‖ siblings(256·32)
 //!
 //! The script, in order (cheap checks first so a tampered transaction is rejected
 //! without paying for the BN254 pairing): (1) pins `prev_*`/`new_*` in the public
@@ -39,10 +45,12 @@
 use alloc::vec::Vec;
 use bn::{pairing_batch, AffineG1, AffineG2, Fq, Fq2, Fr, Gt, G1, G2};
 use ckb_std::ckb_constants::Source;
+use ckb_std::ckb_types::packed::WitnessArgs;
+use ckb_std::ckb_types::prelude::*;
 use ckb_std::error::SysError;
 use ckb_std::high_level::{
-    load_cell_capacity, load_cell_data, load_cell_lock_hash, load_cell_type_hash, load_script_hash,
-    load_witness_args,
+    load_cell_capacity, load_cell_data, load_cell_lock, load_cell_lock_hash, load_cell_type_hash,
+    load_input_since, load_script_hash, load_witness_args,
 };
 use sha2::{Digest, Sha256};
 use sha3::Keccak256;
@@ -75,17 +83,34 @@ static POOL_ID: [u8; 32] = [
 ];
 const CHAIN_ID: u64 = 0x0043_4b42;
 
+/// CKB system `secp256k1_blake160_sighash_all` lock code hash (hash_type = Type; the same
+/// constant on mainnet and Pudge). Force-exit payouts are forced to this lock with
+/// `args = blake160(pubkey)`, so a unilateral exit can only pay the leaf owner's own
+/// address — no in-contract signature needed.
+static SECP_CODE_HASH: [u8; 32] = [
+    0x9b, 0xd7, 0xe0, 0x6f, 0x3e, 0xcf, 0x4b, 0xe0, 0xf2, 0xfc, 0xd2, 0x18, 0x8b, 0x23, 0xf1, 0xb9,
+    0xfc, 0xc8, 0x8e, 0x5d, 0x4b, 0x65, 0xa8, 0x63, 0x7b, 0x17, 0x72, 0x3b, 0xbd, 0xa3, 0xcc, 0xe8,
+];
+/// Operator-silence window: a leaf can only be force-exited once `last_epoch + TIMEOUT`
+/// epochs have passed with no checkpoint (~30 days at ~4h/epoch). While the operator keeps
+/// checkpointing, `last_epoch` advances and the window never opens.
+const FORCE_EXIT_TIMEOUT_EPOCHS: u64 = 180;
+const SMT_DEPTH: usize = 256;
+
 // ---- layouts ----
-const ANCHOR_LEN: usize = 72; // root(32) seq(8) total(16) fee_acc(16)
+const ANCHOR_LEN: usize = 80; // root(32) seq(8) total(16) fee_acc(16) last_epoch(8)
 const PV_LEN: usize = 288;
 const PROOF_LEN: usize = 356;
-const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 644
+const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 644 — checkpoint witness input_type
+/// Force-exit witness input_type: pubkey(33) ‖ balance(16) ‖ nonce(8) ‖ siblings(256·32).
+const FORCEEXIT_LEN: usize = 33 + 16 + 8 + 32 * SMT_DEPTH; // 8249
 
 // anchor data offsets
 const A_ROOT: usize = 0;
 const A_SEQ: usize = 32;
 const A_TOTAL: usize = 40;
 const A_FEE: usize = 56;
+const A_LAST_EPOCH: usize = 72;
 
 // PublicValues offsets (liquid_cells_stf::PublicValues::encode)
 const PV_POOL_ID: usize = 0;
@@ -101,6 +126,7 @@ const PV_NEW_TOTAL: usize = 200;
 const PV_FEE_DELTA: usize = 216;
 // (current_epoch occupies 232..240)
 const PV_FEE_WD: usize = 240;
+const PV_CURRENT_EPOCH: usize = 232;
 const PV_DA_COMMIT: usize = 256;
 
 const MASK: u8 = 0b11 << 6;
@@ -387,6 +413,177 @@ fn bind(prev: &[u8], new: &[u8], pv: &[u8]) -> i8 {
     if fee_wd > fee_avail || fee_avail - fee_wd != rd_u128(new, A_FEE) {
         return 43;
     }
+    // epoch continuity: the checkpoint records its epoch into the output anchor — this is
+    // the clock the force-exit timeout reads. `new.last_epoch == current_epoch`, and
+    // epochs never go backward. (The `since` check in `checkpoint` proves the recorded
+    // epoch is not in the future.)
+    let cur_epoch = rd_u64(pv, PV_CURRENT_EPOCH);
+    if rd_u64(new, A_LAST_EPOCH) != cur_epoch || cur_epoch < rd_u64(prev, A_LAST_EPOCH) {
+        return 44;
+    }
+    0
+}
+
+// ---- force-exit primitives ----
+
+/// Bit `i` of a 32-byte key, MSB-first (matches `liquid_cells_stf::smt::bit`).
+#[inline]
+fn bit(key: &[u8; 32], i: usize) -> u8 {
+    (key[i >> 3] >> (7 - (i & 7))) & 1
+}
+
+/// Leaf-content hash, matching `liquid_cells_stf::types::Leaf::hash`: empty `{0,0}` hashes
+/// to the all-zero `EMPTY_LEAF`; otherwise keccak(balance(16 BE) ‖ nonce(8 BE)).
+fn leaf_hash(balance: u128, nonce: u64) -> [u8; 32] {
+    if balance == 0 && nonce == 0 {
+        return [0u8; 32];
+    }
+    let mut enc = [0u8; 24];
+    enc[..16].copy_from_slice(&balance.to_be_bytes());
+    enc[16..].copy_from_slice(&nonce.to_be_bytes());
+    keccak(&enc)
+}
+
+/// Reconstruct the SMT root from a single-leaf inclusion path, bottom-up — the exact walk
+/// `liquid_cells_stf::smt::verify_proof` performs. `siblings` is 256 × 32 bytes top-down.
+fn smt_root(key: &[u8; 32], leaf: &[u8; 32], siblings: &[u8]) -> [u8; 32] {
+    let mut cur = *leaf;
+    let mut depth = SMT_DEPTH;
+    while depth > 0 {
+        depth -= 1;
+        let sib = &siblings[depth * 32..depth * 32 + 32];
+        let mut buf = [0u8; 64];
+        if bit(key, depth) == 0 {
+            buf[..32].copy_from_slice(&cur);
+            buf[32..].copy_from_slice(sib);
+        } else {
+            buf[..32].copy_from_slice(sib);
+            buf[32..].copy_from_slice(&cur);
+        }
+        cur = keccak(&buf);
+    }
+    cur
+}
+
+/// blake160(data) = first 20 bytes of CKB's default blake2b-256 — the secp lock's args.
+fn blake160(data: &[u8]) -> [u8; 20] {
+    let mut h = blake2b_ref::Blake2bBuilder::new(32).personal(b"ckb-default-hash").build();
+    h.update(data);
+    let mut out = [0u8; 32];
+    h.finalize(&mut out);
+    let mut r = [0u8; 20];
+    r.copy_from_slice(&out[..20]);
+    r
+}
+
+/// Extract the epoch number from a CKB `since` that is flagged **absolute epoch**
+/// (`0x20` in the top byte). The low 24 bits are the epoch number; the index/length
+/// fraction is ignored (whole-epoch granularity). `None` if not absolute-epoch.
+fn abs_epoch(since: u64) -> Option<u64> {
+    if (since >> 56) != 0x20 {
+        return None;
+    }
+    Some(since & 0x00FF_FFFF)
+}
+
+/// Is there an output paying exactly `amount` to the owner's canonical secp lock
+/// (`code_hash == SECP_CODE_HASH`, hash_type == Type, `args == b160`)?
+fn has_exit_output(b160: &[u8; 20], amount: u64) -> bool {
+    let mut i = 0usize;
+    loop {
+        match load_cell_lock(i, Source::Output) {
+            Ok(lock) => {
+                if lock.code_hash().as_slice() == &SECP_CODE_HASH[..]
+                    && lock.hash_type().as_slice()[0] == 1
+                    && lock.args().raw_data().as_ref() == &b160[..]
+                {
+                    if let Ok(cap) = load_cell_capacity(i, Source::Output) {
+                        if cap == amount {
+                            return true;
+                        }
+                    }
+                }
+                i += 1;
+            }
+            Err(SysError::IndexOutOfBound) => return false,
+            Err(_) => return false,
+        }
+    }
+}
+
+/// Force-exit (escape hatch): a user unilaterally withdraws their leaf against the last
+/// committed root after the operator has been silent for `FORCE_EXIT_TIMEOUT_EPOCHS`. No
+/// SP1 proof; the witness carries `pubkey ‖ balance ‖ nonce ‖ siblings`. The payout is
+/// forced to the owner's own secp lock, the leaf is nullified (balance→0, nonce kept), and
+/// the anchor capacity/total drop by exactly the exited balance.
+fn force_exit(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
+    let pubkey = &wb[0..33];
+    let balance = rd_u128(wb, 33);
+    let nonce = rd_u64(wb, 49);
+    let siblings = &wb[57..57 + 32 * SMT_DEPTH];
+    if balance == 0 {
+        return 60; // nothing to exit
+    }
+    if balance > u64::MAX as u128 {
+        return 61; // cannot be paid out as a single capacity
+    }
+
+    let key = keccak(pubkey);
+    // Inclusion of {balance, nonce} against the committed (input) root.
+    let leaf = leaf_hash(balance, nonce);
+    if smt_root(&key, &leaf, siblings)[..] != prev[A_ROOT..A_ROOT + 32] {
+        return 62;
+    }
+    // Nullified root: balance→0, nonce kept (replay-safe), same siblings ⇒ output root.
+    let new_leaf = leaf_hash(0, nonce);
+    if smt_root(&key, &new_leaf, siblings)[..] != new[A_ROOT..A_ROOT + 32] {
+        return 63;
+    }
+
+    // Anchor continuity: seq / fee_acc / last_epoch unchanged; total -= balance.
+    if rd_u64(prev, A_SEQ) != rd_u64(new, A_SEQ)
+        || rd_u128(prev, A_FEE) != rd_u128(new, A_FEE)
+        || rd_u64(prev, A_LAST_EPOCH) != rd_u64(new, A_LAST_EPOCH)
+        || rd_u128(prev, A_TOTAL).checked_sub(balance) != Some(rd_u128(new, A_TOTAL))
+    {
+        return 64;
+    }
+
+    // Solvency: the anchor's real capacity drops by exactly the exited balance.
+    let in_cap = match load_cell_capacity(0, Source::GroupInput) {
+        Ok(c) => c,
+        Err(_) => return 65,
+    };
+    let out_cap = match load_cell_capacity(0, Source::GroupOutput) {
+        Ok(c) => c,
+        Err(_) => return 65,
+    };
+    if in_cap.checked_sub(balance as u64) != Some(out_cap) {
+        return 65;
+    }
+
+    // Timeout: only after operator silence. Input `since` (absolute epoch) must be at least
+    // `last_epoch + TIMEOUT`; CKB consensus refuses to mine the tx any earlier.
+    let since = match load_input_since(0, Source::GroupInput) {
+        Ok(s) => s,
+        Err(_) => return 66,
+    };
+    let since_epoch = match abs_epoch(since) {
+        Some(e) => e,
+        None => return 66,
+    };
+    let open_at = match rd_u64(prev, A_LAST_EPOCH).checked_add(FORCE_EXIT_TIMEOUT_EPOCHS) {
+        Some(e) => e,
+        None => return 66,
+    };
+    if since_epoch < open_at {
+        return 66;
+    }
+
+    // Payout: an output paying exactly `balance` to the owner's canonical secp lock.
+    if !has_exit_output(&blake160(pubkey), balance as u64) {
+        return 67;
+    }
     0
 }
 
@@ -454,8 +651,13 @@ fn program_entry() -> i8 {
     if load_cell_data(1, Source::GroupOutput).is_ok() {
         return 40;
     }
+    if prev.len() != ANCHOR_LEN || new.len() != ANCHOR_LEN {
+        return 30;
+    }
 
-    // proof ‖ public_values from the input group's witness.
+    // The input group's witness `input_type` selects the mode by length:
+    //   WITNESS_LEN (644)    => checkpoint (SP1 proof + pinned public values)
+    //   FORCEEXIT_LEN (8249) => force-exit (SMT inclusion against the committed root)
     let wa = match load_witness_args(0, Source::GroupInput) {
         Ok(w) => w,
         Err(_) => return 42,
@@ -464,16 +666,37 @@ fn program_entry() -> i8 {
         Some(b) => b.raw_data(),
         None => return 42,
     };
-    if wb.len() != WITNESS_LEN {
-        return 42;
+    match wb.len() {
+        WITNESS_LEN => checkpoint(&prev, &new, &wa, &wb),
+        FORCEEXIT_LEN => force_exit(&prev, &new, &wb),
+        _ => 42,
     }
+}
+
+/// A sequencer checkpoint: verify the SP1 Groth16 proof of the transition and pin its
+/// public values to the anchor cells, the real deposit/withdrawal cells, value
+/// conservation, the L1 fee draw, the DA blob, and the epoch clock.
+fn checkpoint(prev: &[u8], new: &[u8], wa: &WitnessArgs, wb: &[u8]) -> i8 {
     let proof = &wb[0..PROOF_LEN];
     let pv = &wb[PROOF_LEN..WITNESS_LEN];
 
     // Cheap pins first, expensive pairing last.
-    let b = bind(&prev, &new, pv);
+    let b = bind(prev, new, pv);
     if b != 0 {
         return b;
+    }
+
+    // The recorded epoch must not be in the future: the anchor input's `since` (absolute
+    // epoch) must be ≥ current_epoch, so CKB only mines the checkpoint at/after that epoch.
+    // This caps `last_epoch` at real chain time, so the force-exit timeout can't be pushed
+    // out by lying about the epoch.
+    let since = match load_input_since(0, Source::GroupInput) {
+        Ok(s) => s,
+        Err(_) => return 45,
+    };
+    match abs_epoch(since) {
+        Some(e) if e >= rd_u64(pv, PV_CURRENT_EPOCH) => {}
+        _ => return 45,
     }
 
     // Recompute deposits/withdrawals commitments from the real cells, bind them to the

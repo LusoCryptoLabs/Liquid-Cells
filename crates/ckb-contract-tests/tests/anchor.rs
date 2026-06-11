@@ -30,6 +30,7 @@ const PV_NEW_SEQ: usize = 112;
 const PV_PREV_TOTAL: usize = 184;
 const PV_NEW_TOTAL: usize = 200;
 const PV_FEE_DELTA: usize = 216;
+const PV_CURRENT_EPOCH: usize = 232;
 const PV_FEE_WD: usize = 240;
 
 fn rd_u64(b: &[u8], o: usize) -> u64 {
@@ -43,14 +44,20 @@ fn rd_u128(b: &[u8], o: usize) -> u128 {
     u128::from_be_bytes(a)
 }
 
-/// anchor data = root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE)
-fn anchor(root: &[u8], seq: u64, total: u128, fee: u128) -> Vec<u8> {
-    let mut a = Vec::with_capacity(72);
+/// anchor data = root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE) ‖ last_epoch(8 BE)
+fn anchor(root: &[u8], seq: u64, total: u128, fee: u128, last_epoch: u64) -> Vec<u8> {
+    let mut a = Vec::with_capacity(80);
     a.extend_from_slice(root);
     a.extend_from_slice(&seq.to_be_bytes());
     a.extend_from_slice(&total.to_be_bytes());
     a.extend_from_slice(&fee.to_be_bytes());
+    a.extend_from_slice(&last_epoch.to_be_bytes());
     a
+}
+
+/// A CKB `since` flagged absolute-epoch with epoch number `e` (whole epoch).
+fn abs_epoch(e: u64) -> u64 {
+    (0x20u64 << 56) | e
 }
 
 #[derive(Clone, Default)]
@@ -96,8 +103,11 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let out_seq = if cfg.bad_new_seq { new_seq + 1 } else { new_seq };
     let out_fee = if cfg.fee_mismatch { new_fee ^ 1 } else { new_fee };
 
-    let prev_anchor = anchor(&prev_root, prev_seq, prev_total, prev_fee);
-    let new_anchor = anchor(&out_root, out_seq, new_total, out_fee);
+    // The checkpoint records its epoch: prev anchor at genesis (0), new anchor at
+    // current_epoch, and the input `since` is an absolute epoch ≥ current_epoch.
+    let cur_epoch = rd_u64(&pv, PV_CURRENT_EPOCH);
+    let prev_anchor = anchor(&prev_root, prev_seq, prev_total, prev_fee, 0);
+    let new_anchor = anchor(&out_root, out_seq, new_total, out_fee, cur_epoch);
 
     // Transfer-only checkpoint: no deposit/withdrawal cells, so the anchor capacity must
     // drop by exactly the L1 fee draw (out_cap − in_cap == −fee_withdrawal).
@@ -134,7 +144,12 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let w0 = wb.build().as_bytes();
 
     let tx = TransactionBuilder::default()
-        .input(CellInput::new_builder().previous_output(anchor_in).build())
+        .input(
+            CellInput::new_builder()
+                .previous_output(anchor_in)
+                .since(abs_epoch(cur_epoch).pack())
+                .build(),
+        )
         .output(
             CellOutput::new_builder()
                 .capacity(out_cap.pack())

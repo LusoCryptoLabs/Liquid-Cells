@@ -31,16 +31,22 @@ Trade-off (accepted for v1): a checkpoint tx may contain **only** the anchor + d
 / withdrawal cells — no unrelated inputs/outputs — because position is the classifier.
 A later version can switch to an explicit marker type if composability is needed.
 
-## Anchor cell data (72 bytes)
+## Anchor cell data (80 bytes)
 
 ```
-root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE)
+root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE) ‖ last_epoch(8 BE)
 ```
 
 Invariant the script maintains: **anchor capacity == pool total** (the anchor holds the
 pool's funds), so capacity deltas track accounting deltas. `total = Σ balances + fee_acc`:
 `fee_acc` is the sequencer's accumulated in-pool fee revenue, held inside the anchor until
-drawn (see *L1 fee* below).
+drawn (see *L1 fee* below). `last_epoch` is the epoch the last checkpoint recorded — the
+clock the force-exit timeout reads ([docs/FORCE-EXIT.md](FORCE-EXIT.md)).
+
+The anchor has a **second spending mode**, `force-exit`, selected by the witness
+`input_type` length (644 = checkpoint, 8249 = force-exit). It lets a user unilaterally
+withdraw their leaf against the last committed root after operator silence, with no proof —
+see [docs/FORCE-EXIT.md](FORCE-EXIT.md). Everything below describes the checkpoint mode.
 
 ## What the type script enforces (in order)
 

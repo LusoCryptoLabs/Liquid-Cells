@@ -8,6 +8,58 @@ decided, what is next.
 
 ---
 
+## 2026-06-11 — Phase 3: force-exit / escape hatch (operator can't freeze funds)
+
+**The last trust primitive.** Proofs stop theft, DA stops withholding — but if the
+sequencer just *stops*, users still need out. Force-exit is a unilateral, on-chain
+withdrawal of your leaf against the last committed root, no proof, no cooperation.
+With this, all four trust pillars are in place. (Reused the checkpoint fixtures — **no SP1
+re-proving**; force-exit has no Groth16 proof.)
+
+**Mechanism (second anchor mode, selected by witness `input_type` length: 644 checkpoint /
+8249 force-exit).** Witness = `pubkey(33) ‖ balance(16) ‖ nonce(8) ‖ siblings(256·32)`. The
+script checks, with only keccak over the SMT path:
+- **inclusion**: `smt_root(keccak(pubkey), leaf_hash(balance,nonce), siblings) == anchor_in.root`;
+- **nullification**: recompute with the leaf emptied (balance→0, nonce kept) → `anchor_out.root`
+  (prevents double-exit);
+- **payout to the owner only**: an output paying exactly `balance` to the canonical
+  `secp256k1_blake160` lock with `args = blake160(pubkey)` — since the key is
+  `keccak(pubkey)`, funds can only reach the owner's own address. **No in-contract signature**
+  (avoids k256 on CKB-VM); an attacker triggering an exit just sends the owner their money;
+- **accounting**: `total` and anchor capacity each drop by `balance` (`seq`/`fee_acc`/`last_epoch` unchanged);
+- **timeout**: input `since` (abs epoch) ≥ `last_epoch + 180`.
+
+**Timeout clock.** Anchor data grew **72→80 B** (`last_epoch`). Each checkpoint sets
+`last_epoch = current_epoch` and proves it isn't future-dated by requiring the input `since`
+(abs epoch) ≥ `current_epoch` — so `last_epoch ≤` real chain time and the operator can't push
+the deadline out. While it keeps checkpointing the window never opens; the moment it stops,
+the clock freezes and after 180 epochs anyone can exit. A force-exit changes `root` without a
+proof, so a returning operator must checkpoint on the post-exit root (the existing `prev_root`
+pin enforces forced inclusion for free). ([docs/FORCE-EXIT.md](docs/FORCE-EXIT.md))
+
+**Landed**
+- Contract: two-mode `program_entry` dispatch; new `force_exit` (SMT verify + nullify +
+  owner-secp payout + timeout); `checkpoint` gains the epoch/`since` binding. New deps:
+  `blake2b-ref` (for `blake160`). Helpers `smt_root`/`leaf_hash`/`blake160`/`abs_epoch`/
+  `has_exit_output` mirror the STF exactly. **No STF change → checkpoint fixtures reused, no
+  re-proving.**
+- Tests: `tests/forceexit.rs` builds the tree + inclusion proof natively with
+  `liquid-cells-stf` (no SP1) — valid exit + 6 negatives (before-timeout, wrong balance,
+  wrong/missing payout lock, un-nullified root, bad total). Checkpoint tests updated for the
+  80-B anchor + input `since`. **24/24 ckb-testtool** (8 anchor + 5 deposit + 7 force-exit +
+  4 withdrawal); force-exit suite runs in 0.01 s (no pairing).
+
+**Trust status.** All four pillars now implemented: validity proofs, DA, **escape hatch**,
+(+ proven L1 fee). Theft, inflation, data-withholding, **and freezing** are eliminated.
+Remaining: dust egress for sub-61-CKB balances (Phase 5; force-exit is the ≥61-CKB whale
+hatch), a Pudge deployment, and — before any real value — an external audit. Still local-only.
+
+**Open (Phase 5 / 2b-6)**
+- Atomic-swap / Fiber egress (hash-locked transfer variant) so dust balances exit without a
+  61-CKB cell. Pudge deploy + sequencer. Standalone DA reconstruction CLI.
+
+---
+
 ## 2026-06-11 — Phase 4: data availability (the diff cannot be withheld)
 
 **Why now (trust ordering).** Validity proofs stop theft/inflation but not *data

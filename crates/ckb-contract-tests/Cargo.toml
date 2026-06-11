@@ -19,4 +19,10 @@ path = "src/bin/wd_target.rs"
 ckb-testtool = "0.13"
 hex = "0.4"
 
+# Test-only: build a real SMT tree + inclusion proof natively to exercise the force-exit
+# path (no SP1 proof involved), and blake160(pubkey) for the owner's secp lock args.
+[dev-dependencies]
+liquid-cells-stf = { path = "../stf" }
+blake2b-ref = "0.3"
+
 [workspace]
