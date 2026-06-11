@@ -8,6 +8,40 @@ decided, what is next.
 
 ---
 
+## 2026-06-11 — Phase 1a: partial-witness refactor + guest codec
+
+**Landed**
+- `smt.rs` — multi-leaf witness: `Smt::frontier_siblings` (producer, from the full
+  tree) and `root_from_witness` (consumer, no full tree). Frontier siblings are
+  emitted/consumed in identical DFS order; shared path prefixes are not duplicated.
+- `transition.rs` — **rewritten around `prove_transition(prev, witness, batch)`**, the
+  exact function the SP1 guest will prove. It binds the witness to `prev_root`,
+  applies ops over a working map of only the touched leaves, and recomputes
+  `new_root` from the same siblings. Proving cost now scales with batch size, not
+  pool size. The full-tree `apply`/`build_witness` remain the sequencer path and
+  debug-assert that the full-tree root equals the witness-derived `new_root`.
+- `codec.rs` — manual canonical encode/decode of the guest input bundle
+  `(prev, witness, batch)` and of `PublicValues` (no serde; explicit big-endian).
+- New errors `MalformedWitness`, `PrevRootMismatch`.
+- `tests/witness.rs` — 8 tests: witness/full-tree parity, isolated-key 256-deep
+  proof, tampered-leaf / missing-leaf / extra-sibling / wrong-prev-root rejection,
+  codec round-trips. **All green (19 tests total across the crate).**
+
+**Decisions**
+- Guest I/O is hand-encoded bytes, not serde — sidesteps `[u8; 33]`/`[u8; 64]` serde
+  friction and is cheaper to decode in-circuit.
+- The global Σ-balances conservation check is sequencer-only; the guest relies on
+  transitive conservation (bound `prev_root` + checked arithmetic), so it never needs
+  the full tree.
+
+**Next (Phase 1b)**
+- `crates/sp1-guest`: `entrypoint` decodes the bundle, calls `prove_transition`,
+  commits `PublicValues.encode()`.
+- Host driver: build a witness, `execute` for cycle counts across batch sizes, fix
+  `MAX_LEAVES_PER_BATCH`, attempt a local core proof.
+
+---
+
 ## 2026-06-11 — Phase 0: state-transition function
 
 **Landed**

@@ -17,4 +17,9 @@ pub enum StfError {
     Overflow,
     /// The value-conservation invariant did not hold after applying the batch.
     ConservationViolation,
+    /// The witness did not provide exactly the leaves the batch touches, or its
+    /// frontier siblings were the wrong length.
+    MalformedWitness,
+    /// The witness leaves + siblings did not reconstruct the claimed `prev_root`.
+    PrevRootMismatch,
 }

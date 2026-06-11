@@ -112,6 +112,82 @@ fn collect_siblings(entries: &[(Hash, Hash)], key: &Hash, depth: usize, out: &mu
     }
 }
 
+impl Smt {
+    /// Frontier sibling hashes for a *multi-leaf* proof over `touched` (sorted,
+    /// unique keys). For every subtree that contains no touched key, its hash is
+    /// emitted once, in the same depth-first (left-before-right) order the witness
+    /// consumer walks. Shared path prefixes are not duplicated.
+    pub fn frontier_siblings(&self, touched: &[Hash]) -> Vec<Hash> {
+        if touched.is_empty() {
+            return Vec::new();
+        }
+        let full: Vec<(Hash, Hash)> = self.leaves.iter().map(|(k, v)| (*k, *v)).collect();
+        let mut out = Vec::new();
+        frontier(&full, touched, 0, &mut out);
+        out
+    }
+}
+
+fn frontier(full: &[(Hash, Hash)], touched: &[Hash], depth: usize, out: &mut Vec<Hash>) {
+    if depth == DEPTH {
+        return;
+    }
+    let fmid = full.partition_point(|(k, _)| bit(k, depth) == 0);
+    let (fl, fr) = full.split_at(fmid);
+    let tmid = touched.partition_point(|k| bit(k, depth) == 0);
+    let (tl, tr) = touched.split_at(tmid);
+    if tl.is_empty() {
+        out.push(subtree(fl, depth + 1));
+    } else {
+        frontier(fl, tl, depth + 1, out);
+    }
+    if tr.is_empty() {
+        out.push(subtree(fr, depth + 1));
+    } else {
+        frontier(fr, tr, depth + 1, out);
+    }
+}
+
+/// Reconstruct a root from a multi-leaf witness. `entries` are the `(key, leaf_hash)`
+/// pairs (sorted by key, exactly the touched set); `siblings` are the frontier hashes
+/// from [`Smt::frontier_siblings`]. Returns `None` on a malformed witness (sibling
+/// under/overflow). The guest runs this twice — over pre-state and post-state entries
+/// with the *same* siblings — to verify `prev_root` and compute `new_root`.
+pub fn root_from_witness(entries: &[(Hash, Hash)], siblings: &[Hash]) -> Option<Hash> {
+    if entries.is_empty() {
+        return None;
+    }
+    let mut idx = 0usize;
+    let r = wrec(entries, 0, siblings, &mut idx)?;
+    if idx != siblings.len() {
+        return None; // leftover siblings => malformed
+    }
+    Some(r)
+}
+
+fn wrec(entries: &[(Hash, Hash)], depth: usize, siblings: &[Hash], idx: &mut usize) -> Option<Hash> {
+    if depth == DEPTH {
+        return Some(entries[0].1);
+    }
+    let mid = entries.partition_point(|(k, _)| bit(k, depth) == 0);
+    let (l, r) = entries.split_at(mid);
+    let lh = if l.is_empty() {
+        let h = *siblings.get(*idx)?;
+        *idx += 1;
+        h
+    } else {
+        wrec(l, depth + 1, siblings, idx)?
+    };
+    let rh = if r.is_empty() {
+        let h = *siblings.get(*idx)?;
+        *idx += 1;
+        h
+    } else {
+        wrec(r, depth + 1, siblings, idx)?
+    };
+    Some(node_hash(&lh, &rh))
+}
+
 /// Verify a proof produced by [`Smt::proof`]. `siblings[d]` is the sibling at depth
 /// `d` (top-down). This is the exact check the on-chain force-exit verifier runs.
 pub fn verify_proof(root: &Hash, key: &Hash, leaf: &Hash, siblings: &[Hash]) -> bool {

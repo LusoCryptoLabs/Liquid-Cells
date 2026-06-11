@@ -15,6 +15,7 @@
 //!
 //! See `docs/ARCHITECTURE.md` and `docs/THREAT-MODEL.md` in the repository root.
 
+pub mod codec;
 pub mod error;
 pub mod hash;
 pub mod sig;
@@ -24,6 +25,6 @@ pub mod types;
 
 pub use error::StfError;
 pub use hash::{keccak, Hash};
-pub use smt::{verify_proof, Smt};
-pub use transition::{apply, State};
+pub use smt::{root_from_witness, verify_proof, Smt};
+pub use transition::{apply, prove_transition, touched_keys, State, Witness};
 pub use types::*;

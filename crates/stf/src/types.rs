@@ -63,7 +63,7 @@ impl Leaf {
 
 /// A signed payer intent moving `amount` (+ `fee`) to `to_key`. The recipient does
 /// not sign. The signature is the *only* authority to debit the payer.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Transfer {
     pub from_pubkey: [u8; 33],
     pub to_key: Hash,
@@ -76,7 +76,7 @@ pub struct Transfer {
 
 /// A signed exit debiting the owner and binding an on-chain `target_lock_hash`
 /// (the L1 cell lock, or an atomic-swap leg) that the checkpoint tx must honor.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Withdrawal {
     pub from_pubkey: [u8; 33],
     pub target_lock_hash: Hash,
@@ -88,14 +88,14 @@ pub struct Withdrawal {
 
 /// A credit authorized by an on-chain deposit cell (bound via the deposits
 /// commitment). Needs no signature — its authority is the consumed L1 cell.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Deposit {
     pub to_key: Hash,
     pub amount: u128,
 }
 
 /// One batch = one root transition = one checkpoint.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Batch {
     pub current_epoch: u64,
     pub deposits: Vec<Deposit>,
