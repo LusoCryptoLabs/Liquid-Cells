@@ -2,6 +2,9 @@
 
 **A fully trustless, pooled multi-recipient payment rollup for Nervos CKB.**
 
+> New here? The **[lightpaper](LIGHTPAPER.md)** is the 5-minute overview (problem, trust
+> model, status, roadmap). This README is the developer entry point.
+
 Liquid Cells lets many participants hold and move sub-1-CKB balances off-chain —
 tips, game antes, creator micro-payments — anchored by a single on-chain cell,
 with **no trust in the operator**. It is a zk-rollup (validity proofs + on-chain
