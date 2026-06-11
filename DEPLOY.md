@@ -9,11 +9,14 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 |---|---|
 | Network | Pudge (CKB testnet) |
 | Anchor type script `codeHash` | `0x83158549bb5b2241997d1e8bb5e24b432a78e74473c8601cea276411bca99f1e` (hashType `type`) |
-| Code-cell dep outpoint | `0xc5b8e43d19230a1f965d95f3e1f3144f3f2f823736c92ff60f6f4b78ea7c7862:0` (depType `code`) |
+| Code-cell dep outpoint (current) | `0x2e1919b45e871db6bc4267674c6810d3ac1f09b4a8abd4c9fada15af16233c7f:0` (depType `code`) |
 | First deploy tx | `0x25c87b3792b7e14a5efd580ea5569e954be0e824b252ea14864a1ebf152c6330` |
 | Genesis-branch upgrade tx | `0xc5b8e43d19230a1f965d95f3e1f3144f3f2f823736c92ff60f6f4b78ea7c7862` (same type-id) |
+| 3-pairing upgrade tx | `0x2e1919b45e871db6bc4267674c6810d3ac1f09b4a8abd4c9fada15af16233c7f` (same type-id) |
 | Genesis anchor outpoint | `0xdb895bbafc29e2df3cf26cce3aac21f0132aa5f32a3edce3aac8cc60ba9ce00a:0` |
 | Genesis anchor type hash | `0xf4c1baf2fda7e9a07b762387934ce6b2d275bd4e533ae558c7233907f2f6b7a1` |
+| First checkpoint tx | `0xca6bfc76cbfae1b1dfedfbcab02fe84c1ab9019cb711defce65587091c373d51` |
+| Anchor after checkpoint (state 1) | `0xca6bfc76cbfae1b1dfedfbcab02fe84c1ab9019cb711defce65587091c373d51:0` (root `0xf3283454…`, seq 1) |
 | Baked program vkey | `0x00213af5b4cc8922754e5b8ee7e610de703d4cb17fabb0a187c95c37fe67c1e8` |
 | Genesis (empty SMT) root | `0xa7ff9e28ffd3def443d324547688c2c4eb98edf7da757d6bfa22bff55b9ce24a` |
 
@@ -22,30 +25,28 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 - **The anchor type script deploys and executes on Pudge CKB-VM.** Creating the genesis
   anchor ran the contract's **genesis branch** (an output anchor with no input anchor) on the
   live chain; it validated the canonical empty state and accepted.
-- **First checkpoint (BN254 proof verified on-chain):** ❌ **BLOCKED by the CKB cycle limit.**
-  Submitting the checkpoint was rejected:
-  `Inputs[0].Type → ExceededMaximumCycles: expect cycles <= 3498303961`.
-  The pure-software BN254 pairing costs **~3.81B cycles**, but a CKB block's cycle budget is
-  **~3.50B** (consensus). So the verification cannot be included in a block as-is. The local
-  `ckb-testtool` suite passed only because it sets its own 5B limit — the real chain enforces
-  the lower consensus limit the tests never did. (This also means there is **no prior on-chain
-  CKB precedent**: g16ckb does the same 4-pairing and was only ever run under ckb-debugger.)
+- ✅ **First checkpoint — the SP1 Groth16 BN254 proof is VERIFIED on live Pudge CKB-VM.**
+  checkpoint tx `0xca6bfc76cbfae1b1dfedfbcab02fe84c1ab9019cb711defce65587091c373d51`; new anchor
+  (state 1) `0xca6bfc76…:0`, root `0xf3283454…`, seq 1, total 9,999,900,000, miner fee 100,000
+  (the proven `fee_withdrawal`). This is the real on-chain validity-proof verification of a
+  pooled-rollup state transition on CKB.
 
-### Fix path — measured, viable, not yet implemented
+### How the cycle limit was solved
 
-Standard Groth16 optimization: **precompute the constant `e(alpha, beta)` pairing** and verify 3
-pairings instead of 4 (`miller_loop_batch` of 3 → `final_exponentiation` → `lhs == ALPHA_BETA`).
+The first attempt was **rejected** — `Inputs[0].Type → ExceededMaximumCycles: expect cycles <=
+3498303961`. The 4-pairing BN254 verifier cost **~3.81B cycles** vs a CKB block's **~3.50B**
+budget (consensus). The local `ckb-testtool` suite passed only because it set its own 5B limit —
+the real chain enforces the lower consensus limit the tests never did. (No prior on-chain CKB
+precedent: g16ckb does the same 4-pairing and was only ever run under ckb-debugger.)
 
-**Measured (ckb-testtool, 3-pairing structure): 3,474,591,150 cycles** — *under* the 3,498,303,961
-limit, but by only **~24M (~0.7%)**. So the optimization is sufficient, though the margin is thin.
-
-**Implementation hurdle:** baking the `ALPHA_BETA` constant needs **`Gt` (de)serialization**, which
-substrate-bn does **not** expose — the inner `Fq12` is private and there is no `Gt::from_bytes`/
-construction from field elements. So the fix requires **vendoring + patching** the `bn` crate
-(surgical: add `Gt::to_bytes`/`from_bytes` over its `Fq12`/`Fq6`/`Fq2`/`Fq` tower, which *are*
-accessible inside the crate), computing `ALPHA_BETA = pairing(vk.alpha, vk.beta)` off-chain,
-baking it, restructuring `verify_alg`, re-testing with a **tight** cycle bound, and a redeploy.
-If the thin margin proves fragile on-chain, a CKB-VM BN254 precompile is the next lever.
+**Fix (done):** precompute the constant `e(alpha, beta)` and verify **3 pairings instead of 4**
+(`miller_loop_batch` of 3 → `final_exponentiation` → `lhs == ALPHA_BETA`) — **~3.47B cycles**,
+under the limit (a thin ~24M / ~0.7% margin, guarded by a regression assertion in
+`valid_checkpoint_verifies`). Baking the `ALPHA_BETA` constant required **vendoring + patching**
+substrate-bn (`crates/ckb-contract/vendor/bn`: added `Gt::to_bytes`/`from_bytes`, since the lib
+exposed no way to (de)serialize a `Gt`). The constant lives in `fixtures/reference/alpha_beta.bin`
+(generated by the `alphabeta` test; regenerate on any VK change). The code cell was upgraded in
+place via type-id (same `codeHash`).
 
 ## Genesis & checkpoint shape
 

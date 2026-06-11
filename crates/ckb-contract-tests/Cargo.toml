@@ -24,5 +24,7 @@ hex = "0.4"
 [dev-dependencies]
 liquid-cells-stf = { path = "../stf" }
 blake2b-ref = "0.3"
+# The vendored+patched BN254 lib — to compute the constant e(alpha,beta) Gt for baking.
+bn = { package = "substrate-bn-succinct-rs", path = "../ckb-contract/vendor/bn" }
 
 [workspace]

@@ -169,7 +169,10 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
 #[test]
 fn valid_checkpoint_verifies() {
     let (ctx, tx) = build(Cfg::default());
-    ctx.verify_tx(&tx, MAX_CYCLES).expect("a valid checkpoint must verify");
+    let cyc = ctx.verify_tx(&tx, MAX_CYCLES).expect("a valid checkpoint must verify");
+    // Regression guard: the 3-pairing verifier (precomputed e(alpha,beta)) must stay under
+    // the CKB block cycle limit (~3.50B). The 4-pairing form was ~3.81B and un-includable.
+    assert!(cyc < 3_498_000_000, "checkpoint cycles {cyc} must stay under the CKB block limit");
 }
 
 #[test]

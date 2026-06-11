@@ -43,7 +43,7 @@
 #![no_main]
 
 use alloc::vec::Vec;
-use bn::{pairing_batch, AffineG1, AffineG2, Fq, Fq2, Fr, Gt, G1, G2};
+use bn::{miller_loop_batch, AffineG1, AffineG2, Fq, Fq2, Fr, Gt, G1, G2};
 use ckb_std::ckb_constants::Source;
 use ckb_std::ckb_types::packed::WitnessArgs;
 use ckb_std::ckb_types::prelude::*;
@@ -63,6 +63,11 @@ mod atomics;
 // ---- baked policy ----
 /// SP1 v6 Groth16 universal verifying key (identical to the g16ckb / bridge VK).
 static GROTH16_VK: &[u8] = include_bytes!("../../../fixtures/reference/groth16_vk.bin");
+/// Precomputed constant pairing `e(alpha, beta) = pairing(vk.alpha, vk.beta)` for the VK
+/// above, as `Gt::to_bytes` (12 big-endian Fq words). Baking it lets the verifier do 3
+/// pairings instead of 4 — under the CKB block cycle limit. Regenerate with the
+/// `alphabeta` test whenever the VK changes; pinned by the `valid_checkpoint_verifies` test.
+static ALPHA_BETA: &[u8; 384] = include_bytes!("../../../fixtures/reference/alpha_beta.bin");
 /// Our program's SP1 vkey hash (`0x00213af5…c1e8`) — binds the proof to *this* STF.
 /// (Re-derived again in Phase 5 when the STF gained HTLC ops. History: `0x00add002…55ee9`
 /// (P4 DA), `0x00cd19a7…521f5` (2b-5 fee), `0x00fda595…ace165` (2a). Any STF change ⇒
@@ -285,17 +290,26 @@ fn verify_alg(vk: &Vk, p: &Pf, public_inputs: &[Fr]) -> bool {
         Some(x) => x,
         None => return false,
     };
-    // NOTE: this 4-pairing batch costs ~3.81B cycles, which EXCEEDS the CKB block cycle
-    // limit (~3.50B) — confirmed by the live Pudge checkpoint rejection (see DEPLOY.md). The
-    // fix is to precompute the constant e(alpha, beta) and verify 3 pairings instead of 4
-    // (measured ~3.47B, under the limit), which needs a `bn`-crate patch to (de)serialize
-    // the Gt constant. Tracked in DEPLOY.md.
-    pairing_batch(&[
-        (-Into::<G1>::into(p.ar), p.bs.into()),
-        (prepared, vk.gamma.into()),
-        (p.krs.into(), vk.delta.into()),
-        (vk.alpha.into(), -Into::<G2>::into(vk.beta)),
-    ]) == Gt::one()
+    // 3 pairings, not 4: the constant e(alpha, beta) is precomputed off-chain into
+    // ALPHA_BETA, so the on-chain work is 3 Miller loops + one final exponentiation, compared
+    // against the baked constant. ~3.47B cycles (under the ~3.50B CKB block limit); the
+    // 4-pairing form was ~3.81B and over. `miller_loop_batch` takes (G2, G1) pairs.
+    let ab = match Gt::from_bytes(ALPHA_BETA) {
+        Some(g) => g,
+        None => return false,
+    };
+    let ml = match miller_loop_batch(&[
+        (p.bs.into(), -Into::<G1>::into(p.ar)),
+        (vk.gamma.into(), prepared),
+        (vk.delta.into(), p.krs.into()),
+    ]) {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+    match ml.final_exponentiation() {
+        Some(lhs) => lhs == ab,
+        None => false,
+    }
 }
 
 fn slice32(s: &[u8]) -> [u8; 32] {
