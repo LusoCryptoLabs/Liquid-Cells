@@ -8,7 +8,7 @@
 
 use liquid_cells_stf::*;
 use sp1_sdk::blocking::{ProveRequest, Prover, ProverClient};
-use sp1_sdk::{Elf, ProvingKey, SP1Stdin};
+use sp1_sdk::{Elf, HashableKey, ProvingKey, SP1Stdin, SP1_CIRCUIT_VERSION};
 use std::fs;
 
 const CHAIN_ID: u64 = 0x434b_42;
@@ -42,6 +42,7 @@ fn main() {
     let elf_path = &args[1];
     let n: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1);
     let do_prove = args.iter().any(|a| a == "prove");
+    let do_groth16 = args.iter().any(|a| a == "groth16");
     let elf = fs::read(elf_path).expect("read elf");
 
     // Fund n distinct payers.
@@ -66,7 +67,32 @@ fn main() {
     let mut stdin = SP1Stdin::new();
     stdin.write_slice(&input);
 
-    if do_prove {
+    if do_groth16 {
+        // Generate + verify a Groth16-wrapped proof and dump on-chain fixtures
+        // (proof bytes, public values, program vkey, circuit version) for the CKB
+        // anchor type script to consume.
+        let pk = client.setup(Elf::from(elf)).expect("setup");
+        let proof = client.prove(&pk, stdin).groth16().run().expect("groth16 prove");
+        client.verify(&proof, pk.verifying_key(), None).expect("verify");
+        let pv_bytes = proof.public_values.as_slice().to_vec();
+        let proof_bytes = proof.bytes();
+        let vkey = pk.verifying_key().bytes32();
+        assert_eq!(
+            codec::decode_public_values(&pv_bytes).expect("decode pv"),
+            native_pv,
+            "groth16 output diverged from native"
+        );
+        fs::create_dir_all("fixtures").expect("mkdir fixtures");
+        fs::write("fixtures/groth16_proof.bin", &proof_bytes).unwrap();
+        fs::write("fixtures/public_values.bin", &pv_bytes).unwrap();
+        fs::write("fixtures/vkey.txt", &vkey).unwrap();
+        fs::write("fixtures/circuit_version.txt", SP1_CIRCUIT_VERSION).unwrap();
+        println!("GROTH16+VERIFIED n_transfers={n}");
+        println!("vkey={vkey}");
+        println!("circuit_version={SP1_CIRCUIT_VERSION}");
+        println!("proof_bytes={} public_values_bytes={}", proof_bytes.len(), pv_bytes.len());
+        println!("new_root=0x{}", hex::encode(native_pv.new_root));
+    } else if do_prove {
         // Generate and verify a real SP1 core proof.
         let pk = client.setup(Elf::from(elf)).expect("setup");
         let proof = client.prove(&pk, stdin).core().run().expect("prove");

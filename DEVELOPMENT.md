@@ -8,6 +8,35 @@ decided, what is next.
 
 ---
 
+## 2026-06-11 — Phase 2a: Groth16 wrap + on-chain verifier spec
+
+**Landed**
+- Host `groth16` mode (sp1-sdk feature **`native-gnark`**): generates + verifies a
+  Groth16-wrapped proof and dumps on-chain fixtures.
+- **First real Groth16 proof of a Liquid Cells transition, verified.** n=1:
+  `proof = 356 bytes`, `public_values = 240 bytes`, program
+  `vkey = 0x00fda595…ace165`, circuit `v6.1.0`, `new_root = 0x3bd5018a…` (matches
+  core/execute/native). Wall ~431s (mostly one-time R1CS/pk load; gnark prove ~49s).
+- `fixtures/` — `groth16_proof.bin`, `public_values.bin`, `vkey.txt`,
+  `circuit_version.txt`, plus `fixtures/reference/` (SP1's `Groth16Verifier.sol`,
+  `SP1VerifierGroth16.sol`, `groth16_vk.bin`).
+- `scripts/groth16.sh` — reproducible proof generation.
+- `docs/ONCHAIN-VERIFY.md` — the full recipe the CKB type script must implement
+  (proof layout, selector `0x4388a21c`, `VK_ROOT`, sha256 digest + 5 Groth16 public
+  inputs, and the public-value→chain-fact pins).
+
+**Gotchas (recorded in `scripts/groth16.sh`)**
+- gnark needs `ulimit -s unlimited` or the solver dies silently (exit 253, no output).
+- without `native-gnark`, SP1 shells out to Docker, which isn't wired into this distro.
+- the public-values digest is **sha256** (not keccak); the commitments stay keccak.
+
+**Next (Phase 2b)**
+- `crates/ckb-contract`: anchor type script — BN254 Groth16 verify (reuse g16ckb) +
+  decode public values + pin to cell data / deposit cells / withdrawal outputs / DA.
+  Test against `fixtures/`. Deploy to Pudge.
+
+---
+
 ## 2026-06-11 — Phase 1b: SP1 guest, cycle measurement, precompiles
 
 **Landed**
