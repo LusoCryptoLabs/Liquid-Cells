@@ -19,13 +19,15 @@ itself — the same base as any on-chain transaction.
 > deposit/withdrawal cells, value conservation, a proven L1 fee model, **data availability**,
 > a **force-exit escape hatch**, **in-pool HTLCs** for atomic-swap dust egress, and an
 > on-chain **force-refund** hatch that lets a swap's sender unilaterally reclaim a timed-out
-> escrow. **It is
+> escrow. An off-chain **sequencer loop** (`crates/sequencer`) seals **successive** checkpoints
+> off the same STF, so the chain composes past the first one. **It is
 > now deployed on the CKB Pudge testnet: a genesis pool was created and a first checkpoint
 > landed with the SP1 Groth16 BN254 proof verified on live CKB-VM** ([DEPLOY.md](DEPLOY.md)).
 > Getting there required precomputing the constant `e(alpha,beta)` so the verifier does 3
-> pairings (~3.47B cycles) under CKB's ~3.50B block limit. What remains: the L1/Fiber swap
-> leg, throughput (Phase 6), and — before any real value — an external audit. Testnet only,
-> unaudited.
+> pairings (~3.47B cycles) under CKB's ~3.50B block limit. What remains to be a usable system
+> (not more cryptography): a prove+submit driver to land successive checkpoints live, a client
+> SDK, the L1/Fiber swap leg, throughput (Phase 6), and — before any real value — an external
+> audit. Testnet only, unaudited.
 
 ---
 
@@ -139,12 +141,20 @@ liquid-cells/
         transition.rs    # apply(state, batch): the two-invariant state machine
         error.rs
       tests/properties.rs# no-debit-without-sig, conservation, replay, SMT proofs
+    sequencer/           # liquid-cells-sequencer — runs the STF off-chain: a mempool +
+      src/lib.rs         #   seal_batch() that emits a CheckpointJob and advances the root,
+                         #   so successive checkpoints chain (STF-only dep, no SP1)
+      tests/             # loop_succession.rs — multi-checkpoint chain, conservation, DA
+    sp1-guest/           # wraps the STF as an SP1 program -> Groth16 proof
+    sp1-host/            # cycle/equivalence driver + fixture/proof generator
+    ckb-contract/        # anchor type script: Groth16 verify + force-exit + force-refund
+    ckb-contract-tests/  # ckb-testtool integration suite
   docs/
     ARCHITECTURE.md      # the full trustless design
     THREAT-MODEL.md      # red-team findings -> mitigations
-  DEVELOPMENT.md         # running dev log (updated every working session)
-  # added in later phases:
-  #   crates/sequencer    crates/sp1-guest    crates/ckb-contract
+    EGRESS.md FORCE-EXIT.md DA.md ...
+  DEPLOY.md              # every live Pudge hash
+  DEVELOPMENT.md         # running dev log
 ```
 
 ---
@@ -186,6 +196,7 @@ secp256k1 choices are deliberate so the same STF proves cheaply in the zkVM.
 | **5** | **Atomic-swap egress** for sub-61-CKB (dust): in-pool HTLC (`htlc_lock`/`claim`/`refund`), escrow keyed by all lock terms, the in-pool leg of a hash-locked swap with an L1/Fiber payment ([docs/EGRESS.md](docs/EGRESS.md)). 32 STF tests | **done** (in-pool leg) |
 | **5b** | **On-chain force-refund**: a third anchor mode — the swap *sender* unilaterally reclaims a *timed-out* HTLC escrow against the committed root (htlc_id re-derived, SMT inclusion, payout forced to the sender's secp lock), gated by `since ≥ timeout` **and** operator silence. 9 ckb-testtool tests. Closes the sender's exposure; the receiver-side residual is architectural (single anchor → Phase 6), documented honestly in [docs/EGRESS.md](docs/EGRESS.md) | **done** (contract + tests; Pudge code-cell upgrade optional) |
 | **2b-6** | **Deployed to Pudge**: code cell + genesis anchor live, first checkpoint with the BN254 proof verified on live CKB-VM. Needed the 3-pairing precompute (`e(alpha,beta)` baked) to fit CKB's ~3.50B block cycle limit ([DEPLOY.md](DEPLOY.md)) | **done** |
+| **Seq** | **Sequencer loop** (`crates/sequencer`): the off-chain STF runner — a mempool of signed intents + `seal_batch()` that emits a `CheckpointJob` (SP1 guest input, both anchor-cell byte images, DA blob, deposit/withdrawal cell specs) and advances the in-memory root, so **successive checkpoints chain**. STF-only dep (no SP1), tests in ms. 2 loop tests assert genesis-pinning, anchor-chaining (`seq+1`), value conservation across the chain, and DA reconstruction (final root + a force-exit proof from L1 alone) | **done** (loop logic; proving + CKB submission driver = follow-up) |
 | **6** | Permissionless sequencing + anchor sharding (throughput) | planned |
 
 Throughput concerns (single-anchor contention, batch cycle budget) are deliberately
