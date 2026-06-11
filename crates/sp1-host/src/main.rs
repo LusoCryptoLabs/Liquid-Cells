@@ -54,10 +54,14 @@ fn main() {
     let do_groth16 = args.iter().any(|a| a == "groth16");
     let elf = fs::read(elf_path).expect("read elf");
 
-    // Fund n distinct payers.
+    // Fund n distinct payers (skipped in `genesis` mode: the pool starts empty).
+    let genesis_mode = args.iter().any(|a| a == "genesis");
     let mut st = State::genesis(pool_id(), CHAIN_ID);
-    let deposits = (1..=n).map(|i| Deposit { to_key: key_for(i), amount: 1_000_000_000 }).collect();
-    apply(&mut st, &Batch { current_epoch: 0, deposits, ..Default::default() }).unwrap();
+    if !genesis_mode {
+        let deposits =
+            (1..=n).map(|i| Deposit { to_key: key_for(i), amount: 1_000_000_000 }).collect();
+        apply(&mut st, &Batch { current_epoch: 0, deposits, ..Default::default() }).unwrap();
+    }
 
     // `dw` => measured batch has a real deposit (fixtures/dw/). `wd` => deposit +
     // withdrawal (fixtures/wd/); the withdrawal target is the lock hash the wd_target
@@ -96,6 +100,25 @@ fn main() {
         withdrawals,
         fee_withdrawal: l1_fee,
         ..Default::default()
+    };
+
+    // `genesis` => the very first checkpoint from the empty pool (fixtures/genesis/): deposit
+    // 100 CKB to K, then K transfers a dust amount to L with a fee, and the sequencer draws
+    // that fee to pay the L1 miner fee (a deposit-only batch has no fee revenue, and CKB
+    // requires a positive miner fee). current_epoch 0 so the input `since` can be epoch 0.
+    let (batch, out_dir) = if genesis_mode {
+        let gfee: u128 = 100_000;
+        let t = signed_transfer(1, key_for(2), 1_000, gfee, 0, 1_000_000);
+        let b = Batch {
+            current_epoch: 0,
+            deposits: vec![Deposit { to_key: key_for(1), amount: 10_000_000_000 }],
+            transfers: vec![t],
+            fee_withdrawal: gfee,
+            ..Default::default()
+        };
+        (b, "fixtures/genesis")
+    } else {
+        (batch, out_dir)
     };
 
     let witness = st.build_witness(&batch);
@@ -147,6 +170,16 @@ fn main() {
             dep.extend_from_slice(&dep_amount.to_be_bytes());
             fs::write(format!("{out_dir}/deposit.bin"), &dep).unwrap();
             println!("deposit to_key=0x{} amount={dep_amount}", hex::encode(dep_key));
+        }
+        if genesis_mode {
+            // deposit.bin = to_key(32) ‖ amount(16 BE) for the on-chain deposit cell.
+            let k = key_for(1);
+            let amt: u128 = 10_000_000_000;
+            let mut dep = Vec::with_capacity(48);
+            dep.extend_from_slice(&k);
+            dep.extend_from_slice(&amt.to_be_bytes());
+            fs::write(format!("{out_dir}/deposit.bin"), &dep).unwrap();
+            println!("genesis deposit to_key=0x{} amount={amt}", hex::encode(k));
         }
         if wd {
             // withdrawal.bin = target_lock_hash(32) ‖ amount(16 BE).

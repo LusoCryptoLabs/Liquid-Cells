@@ -97,6 +97,13 @@ static SECP_CODE_HASH: [u8; 32] = [
 const FORCE_EXIT_TIMEOUT_EPOCHS: u64 = 180;
 const SMT_DEPTH: usize = 256;
 
+/// The empty sparse-Merkle-tree root (depth-256, keccak) — the genesis pool root. Must
+/// equal `liquid_cells_stf::smt::Smt::new().root()` (pinned by `crates/stf/tests/genesis.rs`).
+static EMPTY_ROOT: [u8; 32] = [
+    0xa7, 0xff, 0x9e, 0x28, 0xff, 0xd3, 0xde, 0xf4, 0x43, 0xd3, 0x24, 0x54, 0x76, 0x88, 0xc2, 0xc4,
+    0xeb, 0x98, 0xed, 0xf7, 0xda, 0x75, 0x7d, 0x6b, 0xfa, 0x22, 0xbf, 0xf5, 0x5b, 0x9c, 0xe2, 0x4a,
+];
+
 // ---- layouts ----
 const ANCHOR_LEN: usize = 80; // root(32) seq(8) total(16) fee_acc(16) last_epoch(8)
 const PV_LEN: usize = 288;
@@ -635,10 +642,43 @@ fn verify_sp1_groth16(proof: &[u8], public_values: &[u8]) -> i8 {
     }
 }
 
+/// Genesis (pool creation): an OUTPUT anchor with **no input anchor**, which must hold the
+/// canonical empty state (empty SMT root, all counters zero). The type script runs when the
+/// anchor cell is first created, so this branch is required — otherwise creating the pool is
+/// rejected for lack of an input group. Anyone may create such a pool; it always starts
+/// empty, so genesis confers no power. (A production singleton would seal it with a type-id
+/// in the anchor args; v1 keeps empty args + baked policy.)
+fn genesis() -> i8 {
+    let new = match load_cell_data(0, Source::GroupOutput) {
+        Ok(d) => d,
+        Err(_) => return 41,
+    };
+    if load_cell_data(1, Source::GroupOutput).is_ok() {
+        return 40;
+    }
+    if new.len() != ANCHOR_LEN {
+        return 30;
+    }
+    if new[A_ROOT..A_ROOT + 32] != EMPTY_ROOT {
+        return 70;
+    }
+    if rd_u64(&new, A_SEQ) != 0
+        || rd_u128(&new, A_TOTAL) != 0
+        || rd_u128(&new, A_FEE) != 0
+        || rd_u64(&new, A_LAST_EPOCH) != 0
+    {
+        return 71;
+    }
+    0
+}
+
 fn program_entry() -> i8 {
-    // Exactly one input anchor and one output anchor (this type-script group).
+    // The anchor type script runs whenever an anchor cell is consumed or created. Genesis
+    // (pool creation) has an output anchor but no input anchor — handle it first, else the
+    // `GroupInput` load below would reject the creation (code 41).
     let prev = match load_cell_data(0, Source::GroupInput) {
         Ok(d) => d,
+        Err(SysError::IndexOutOfBound) => return genesis(),
         Err(_) => return 41,
     };
     if load_cell_data(1, Source::GroupInput).is_ok() {
