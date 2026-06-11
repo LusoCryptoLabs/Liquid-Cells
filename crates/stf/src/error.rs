@@ -28,4 +28,14 @@ pub enum StfError {
     PrevRootMismatch,
     /// The batch touches more leaves than [`crate::transition::MAX_LEAVES_PER_BATCH`].
     BatchTooLarge,
+    /// An HTLC lock targeted an `htlc_id` that is already occupied (would clobber escrow).
+    HtlcExists,
+    /// A claim/refund referenced an HTLC that isn't escrowed with the claimed amount.
+    HtlcMissing,
+    /// The revealed preimage did not hash to the HTLC's hashlock.
+    BadPreimage,
+    /// A claim arrived at/after the HTLC timeout (only refund is valid then).
+    HtlcExpired,
+    /// A refund arrived at/before the HTLC timeout (only claim is valid then).
+    HtlcNotExpired,
 }

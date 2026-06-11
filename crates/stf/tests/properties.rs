@@ -59,8 +59,7 @@ fn funded_state(funding: &[(u8, u128)]) -> State {
         .iter()
         .map(|(b, amt)| Deposit { to_key: key_for(*b), amount: *amt })
         .collect();
-    let batch =
-        Batch { current_epoch: 0, deposits, transfers: vec![], withdrawals: vec![], fee_withdrawal: 0 };
+    let batch = Batch { current_epoch: 0, deposits, ..Default::default() };
     apply(&mut st, &batch).expect("funding deposit applies");
     st
 }

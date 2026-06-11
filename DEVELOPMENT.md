@@ -8,6 +8,52 @@ decided, what is next.
 
 ---
 
+## 2026-06-11 — Phase 5: in-pool HTLC for atomic-swap dust egress
+
+**Why.** Force-exit produces a single L1 cell (~61-CKB floor), so dust can't self-exit. The
+*normal* dust exit is a hash-locked atomic swap: the dust stays in-pool (moves to an LP) and
+the LP pays the user on L1/Fiber, atomically via a shared preimage. This adds the **in-pool
+leg**: a hash-time-locked escrow in the pool state. ([docs/EGRESS.md](docs/EGRESS.md))
+
+**The trap, and the design.** A naive non-escrow "hash-locked transfer" is unsafe: a
+malicious dust-holder could claim the L1 leg (revealing the preimage) and then keep / force-
+exit the in-pool balance if the operator stalls — a double-spend. Trustless egress needs
+**escrow**. The elegant representation: the escrow is an ordinary `{balance, nonce}` account
+leaf placed at a key that commits to *every* lock term —
+
+```
+htlc_id = keccak(DOMAIN ‖ pool_id ‖ sender_key ‖ receiver_key ‖ amount ‖ hashlock ‖ timeout ‖ lock_nonce)
+```
+
+so `claim`/`refund` can only resolve to the agreed parties (a wrong receiver → a different
+key → no funds). Because the leaf keeps the existing shape, the **SMT, partial witness, DA
+blob, and the on-chain contract are all unchanged** — HTLCs are pure pool state, ride inside
+the normal checkpoint proof + DA, and conserve value (`total` never moves; the lock fee →
+`fee_acc`). Escrow leaves the sender's spendable balance immediately ⇒ no double-spend.
+
+**Landed**
+- STF: `HtlcLock`/`HtlcClaim`/`HtlcRefund` ops on `Batch`; `htlc_id` + `htlc_lock_msg` +
+  domains; `apply_ops` lock (signed debit → escrow), claim (preimage before timeout → pays
+  the fixed receiver), refund (after timeout → sender); `touched_keys` now takes `pool_id`
+  (HTLC ids are pool-bound); codec for the 3 op lists; `StfError::{HtlcExists, HtlcMissing,
+  BadPreimage, HtlcExpired, HtlcNotExpired}`.
+- `tests/htlc.rs` (7): swap completion (lock→claim), refund-after-timeout, wrong preimage,
+  claim-after-timeout, refund-before-timeout, receiver binding, escrow-removes-spendable
+  (no double-spend). **31 STF native tests.**
+- Guest ELF changed (new ops) → **vkey re-derived `0x00213af5…c1e8`**; the 3 Groth16 fixtures
+  regenerated (same content, new proof) and `VKEY_HASH` re-baked. Contract unchanged otherwise.
+  **24/24 ckb-testtool** still green.
+
+**Honest limitation.** An HTLC leaf can't be force-exited (its key isn't `keccak(pubkey)`),
+so escrow pending when the operator dies is stuck until checkpoints resume (not lost). A
+future **force-refund** (force-exit a *timed-out* HTLC by proving the lock terms) removes it;
+account balances stay force-exitable regardless.
+
+**Open (2b-6 / 6 / follow-ups).** L1 HTLC counterparty lock + Fiber leg; force-refund; Pudge
+deploy + sequencer; permissionless sequencing (Phase 6). Still local-only, unaudited.
+
+---
+
 ## 2026-06-11 — Phase 3: force-exit / escape hatch (operator can't freeze funds)
 
 **The last trust primitive.** Proofs stop theft, DA stops withholding — but if the

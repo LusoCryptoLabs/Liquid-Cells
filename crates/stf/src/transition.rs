@@ -50,9 +50,10 @@ pub struct Witness {
 /// batches to hit its own latency target; this is only the upper bound.
 pub const MAX_LEAVES_PER_BATCH: usize = 1024;
 
-/// Keys a batch reads/writes, sorted and deduplicated. Derivable from the batch
-/// alone, so the guest can independently check the witness covers exactly these.
-pub fn touched_keys(batch: &Batch) -> Vec<Hash> {
+/// Keys a batch reads/writes, sorted and deduplicated. Derivable from the batch (and the
+/// `pool_id`, which HTLC ids are bound to), so the guest can independently check the
+/// witness covers exactly these.
+pub fn touched_keys(pool_id: &Hash, batch: &Batch) -> Vec<Hash> {
     let mut set = BTreeSet::new();
     for d in &batch.deposits {
         set.insert(d.to_key);
@@ -60,6 +61,21 @@ pub fn touched_keys(batch: &Batch) -> Vec<Hash> {
     for t in &batch.transfers {
         set.insert(key_of_pubkey(&t.from_pubkey));
         set.insert(t.to_key);
+    }
+    for l in &batch.htlc_locks {
+        let sk = key_of_pubkey(&l.sender_pubkey);
+        set.insert(sk);
+        set.insert(htlc_id(pool_id, &sk, &l.receiver_key, l.amount, &l.hashlock, l.timeout, l.nonce));
+    }
+    for c in &batch.htlc_claims {
+        let h = &c.htlc;
+        set.insert(h.receiver_key);
+        set.insert(htlc_id(pool_id, &h.sender_key, &h.receiver_key, h.amount, &h.hashlock, h.timeout, h.lock_nonce));
+    }
+    for r in &batch.htlc_refunds {
+        let h = &r.htlc;
+        set.insert(h.sender_key);
+        set.insert(htlc_id(pool_id, &h.sender_key, &h.receiver_key, h.amount, &h.hashlock, h.timeout, h.lock_nonce));
     }
     for w in &batch.withdrawals {
         set.insert(key_of_pubkey(&w.from_pubkey));
@@ -140,6 +156,91 @@ fn apply_ops(
         fee_delta = fee_delta.checked_add(t.fee).ok_or(StfError::Overflow)?;
     }
 
+    // HTLC locks: escrow `amount` into a leaf keyed by all the lock terms (`htlc_id`).
+    // The sender's signature is the only debit authority. The escrowed funds stay in the
+    // pool (total unchanged) until claimed by preimage or refunded after timeout.
+    for l in &batch.htlc_locks {
+        let sender_key = key_of_pubkey(&l.sender_pubkey);
+        let from = *work.get(&sender_key).ok_or(StfError::MalformedWitness)?;
+        if l.nonce != from.nonce {
+            return Err(StfError::BadNonce);
+        }
+        if l.timeout <= batch.current_epoch {
+            return Err(StfError::Expired); // an HTLC must have a future claim deadline
+        }
+        let msg = htlc_lock_msg(
+            prev.chain_id, &prev.pool_id, &sender_key, &l.receiver_key, l.amount, l.fee,
+            &l.hashlock, l.timeout, l.nonce,
+        );
+        if !crate::sig::verify(&l.sender_pubkey, &msg, &l.sig) {
+            return Err(StfError::BadSignature);
+        }
+        let debit = l.amount.checked_add(l.fee).ok_or(StfError::Overflow)?;
+        if from.balance < debit {
+            return Err(StfError::InsufficientBalance);
+        }
+        let id = htlc_id(
+            &prev.pool_id, &sender_key, &l.receiver_key, l.amount, &l.hashlock, l.timeout, l.nonce,
+        );
+        let slot = *work.get(&id).ok_or(StfError::MalformedWitness)?;
+        if !slot.is_empty() {
+            return Err(StfError::HtlcExists);
+        }
+        {
+            let f = work.get_mut(&sender_key).unwrap();
+            f.balance -= debit;
+            f.nonce += 1;
+        }
+        {
+            let e = work.get_mut(&id).unwrap();
+            e.balance = l.amount;
+            e.nonce = 0;
+        }
+        fee_delta = fee_delta.checked_add(l.fee).ok_or(StfError::Overflow)?;
+    }
+
+    // HTLC claims: reveal the preimage before `timeout` ⇒ pay the receiver. The receiver
+    // is fixed by `htlc_id`, so a claim can only ever pay the agreed party.
+    for c in &batch.htlc_claims {
+        let h = &c.htlc;
+        let id = htlc_id(
+            &prev.pool_id, &h.sender_key, &h.receiver_key, h.amount, &h.hashlock, h.timeout,
+            h.lock_nonce,
+        );
+        let escrow = *work.get(&id).ok_or(StfError::MalformedWitness)?;
+        if escrow.balance != h.amount || escrow.nonce != 0 {
+            return Err(StfError::HtlcMissing);
+        }
+        if h.timeout <= batch.current_epoch {
+            return Err(StfError::HtlcExpired);
+        }
+        if keccak(&c.preimage) != h.hashlock {
+            return Err(StfError::BadPreimage);
+        }
+        work.get_mut(&id).unwrap().balance = 0;
+        let to = work.get_mut(&h.receiver_key).ok_or(StfError::MalformedWitness)?;
+        to.balance = to.balance.checked_add(h.amount).ok_or(StfError::Overflow)?;
+    }
+
+    // HTLC refunds: at/after `timeout` ⇒ return the amount to the sender (fixed by id).
+    for r in &batch.htlc_refunds {
+        let h = &r.htlc;
+        let id = htlc_id(
+            &prev.pool_id, &h.sender_key, &h.receiver_key, h.amount, &h.hashlock, h.timeout,
+            h.lock_nonce,
+        );
+        let escrow = *work.get(&id).ok_or(StfError::MalformedWitness)?;
+        if escrow.balance != h.amount || escrow.nonce != 0 {
+            return Err(StfError::HtlcMissing);
+        }
+        if h.timeout > batch.current_epoch {
+            return Err(StfError::HtlcNotExpired);
+        }
+        work.get_mut(&id).unwrap().balance = 0;
+        let to = work.get_mut(&h.sender_key).ok_or(StfError::MalformedWitness)?;
+        to.balance = to.balance.checked_add(h.amount).ok_or(StfError::Overflow)?;
+    }
+
     // withdrawals: owner signature debits, value leaves the pool.
     for w in &batch.withdrawals {
         let from_key = key_of_pubkey(&w.from_pubkey);
@@ -184,7 +285,7 @@ fn transition_inner(
     witness: &Witness,
     batch: &Batch,
 ) -> Result<(PublicValues, BTreeMap<Hash, Leaf>), StfError> {
-    let tk = touched_keys(batch);
+    let tk = touched_keys(&prev.pool_id, batch);
     if tk.len() > MAX_LEAVES_PER_BATCH {
         return Err(StfError::BatchTooLarge);
     }
@@ -292,7 +393,7 @@ impl State {
 
     /// Build the partial witness for `batch` from the full tree (sequencer side).
     pub fn build_witness(&self, batch: &Batch) -> Witness {
-        let tk = touched_keys(batch);
+        let tk = touched_keys(&self.pool.pool_id, batch);
         let leaves = tk.iter().map(|k| (*k, self.get_leaf(k))).collect();
         let siblings = self.smt.frontier_siblings(&tk);
         Witness { leaves, siblings }
@@ -303,7 +404,7 @@ impl State {
     /// `keccak(state.da_blob(batch)) == pv.da_commitment`. This is the byte string the
     /// sequencer publishes in the checkpoint tx witness.
     pub fn da_blob(&self, batch: &Batch) -> Vec<u8> {
-        let tk = touched_keys(batch);
+        let tk = touched_keys(&self.pool.pool_id, batch);
         let entries: Vec<(Hash, Leaf)> = tk.iter().map(|k| (*k, self.get_leaf(k))).collect();
         crate::da::encode_da_blob(&entries)
     }

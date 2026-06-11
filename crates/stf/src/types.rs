@@ -22,6 +22,12 @@ pub fn domain_deposits() -> Hash {
 pub fn domain_withdrawals() -> Hash {
     keccak(b"LIQUIDCELLS/v1/withdrawals-commitment")
 }
+pub fn domain_htlc_id() -> Hash {
+    keccak(b"LIQUIDCELLS/v1/htlc-id")
+}
+pub fn domain_htlc_lock() -> Hash {
+    keccak(b"LIQUIDCELLS/v1/htlc-lock")
+}
 
 /// SMT key of an account = keccak(compressed secp256k1 pubkey).
 pub fn key_of_pubkey(pubkey: &[u8; 33]) -> Hash {
@@ -94,12 +100,60 @@ pub struct Deposit {
     pub amount: u128,
 }
 
+/// A signed escrow: the sender locks `amount` into an in-pool HTLC keyed by `htlc_id`,
+/// claimable by revealing `hashlock`'s preimage before `timeout`, refundable to the
+/// sender after it. The building block for trustless atomic-swap egress of dust balances
+/// (the in-pool leg of a hash-locked swap with an L1/Fiber payment). The signature is the
+/// only authority to debit the sender.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HtlcLock {
+    pub sender_pubkey: [u8; 33],
+    pub receiver_key: Hash,
+    pub amount: u128,
+    pub fee: u128,
+    pub hashlock: Hash,
+    pub timeout: u64,
+    pub nonce: u64,
+    pub sig: [u8; 64],
+}
+
+/// The lock terms needed to recompute an HTLC's `htlc_id` (so claim/refund address the
+/// exact escrow leaf). All of these are public once the lock checkpoint posts its DA.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HtlcRef {
+    pub sender_key: Hash,
+    pub receiver_key: Hash,
+    pub amount: u128,
+    pub hashlock: Hash,
+    pub timeout: u64,
+    pub lock_nonce: u64,
+}
+
+/// Claim a pending HTLC by revealing the preimage (before `timeout`): pays the receiver.
+/// No signature — knowledge of the preimage is the authority, and the receiver is fixed
+/// by `htlc_id`, so a claim can only ever pay the agreed receiver.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HtlcClaim {
+    pub htlc: HtlcRef,
+    pub preimage: Vec<u8>,
+}
+
+/// Refund a pending HTLC after `timeout`: returns the amount to the sender. No signature —
+/// the timeout is the authority, and the sender is fixed by `htlc_id`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HtlcRefund {
+    pub htlc: HtlcRef,
+}
+
 /// One batch = one root transition = one checkpoint.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Batch {
     pub current_epoch: u64,
     pub deposits: Vec<Deposit>,
     pub transfers: Vec<Transfer>,
+    pub htlc_locks: Vec<HtlcLock>,
+    pub htlc_claims: Vec<HtlcClaim>,
+    pub htlc_refunds: Vec<HtlcRefund>,
     pub withdrawals: Vec<Withdrawal>,
     /// L1 fee draw: CKB the sequencer extracts from the pool's *accumulated fees*
     /// (`fee_acc` + this batch's `fee_delta`) to fund the checkpoint's on-chain miner
@@ -222,5 +276,57 @@ pub fn withdraw_msg(
     b.extend_from_slice(&amount.to_be_bytes());
     b.extend_from_slice(&nonce.to_be_bytes());
     b.extend_from_slice(&expiry.to_be_bytes());
+    keccak(&b)
+}
+
+/// Deterministic SMT key for an HTLC escrow leaf. It commits to *every* lock term, so the
+/// escrowed funds can only be resolved (claimed/refunded) to the parties and on the terms
+/// agreed at lock time — the binding that makes a non-custodial swap safe.
+#[allow(clippy::too_many_arguments)]
+pub fn htlc_id(
+    pool_id: &Hash,
+    sender_key: &Hash,
+    receiver_key: &Hash,
+    amount: u128,
+    hashlock: &Hash,
+    timeout: u64,
+    lock_nonce: u64,
+) -> Hash {
+    let mut b = Vec::with_capacity(32 + 32 + 32 + 32 + 16 + 32 + 8 + 8);
+    b.extend_from_slice(&domain_htlc_id());
+    b.extend_from_slice(pool_id);
+    b.extend_from_slice(sender_key);
+    b.extend_from_slice(receiver_key);
+    b.extend_from_slice(&amount.to_be_bytes());
+    b.extend_from_slice(hashlock);
+    b.extend_from_slice(&timeout.to_be_bytes());
+    b.extend_from_slice(&lock_nonce.to_be_bytes());
+    keccak(&b)
+}
+
+/// The keccak digest a sender signs to authorize an HTLC lock.
+#[allow(clippy::too_many_arguments)]
+pub fn htlc_lock_msg(
+    chain_id: u64,
+    pool_id: &Hash,
+    sender_key: &Hash,
+    receiver_key: &Hash,
+    amount: u128,
+    fee: u128,
+    hashlock: &Hash,
+    timeout: u64,
+    nonce: u64,
+) -> Hash {
+    let mut b = Vec::with_capacity(32 + 8 + 32 + 32 + 32 + 16 + 16 + 32 + 8 + 8);
+    b.extend_from_slice(&domain_htlc_lock());
+    b.extend_from_slice(&chain_id.to_be_bytes());
+    b.extend_from_slice(pool_id);
+    b.extend_from_slice(sender_key);
+    b.extend_from_slice(receiver_key);
+    b.extend_from_slice(&amount.to_be_bytes());
+    b.extend_from_slice(&fee.to_be_bytes());
+    b.extend_from_slice(hashlock);
+    b.extend_from_slice(&timeout.to_be_bytes());
+    b.extend_from_slice(&nonce.to_be_bytes());
     keccak(&b)
 }

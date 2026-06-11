@@ -89,7 +89,14 @@ fn main() {
     // the checkpoint's miner fee (a partial draw, so fee_acc stays positive). Bounded by
     // fee revenue in the STF, so it can never touch a user balance.
     let l1_fee: u128 = 2;
-    let batch = Batch { current_epoch: 1, deposits, transfers, withdrawals, fee_withdrawal: l1_fee };
+    let batch = Batch {
+        current_epoch: 1,
+        deposits,
+        transfers,
+        withdrawals,
+        fee_withdrawal: l1_fee,
+        ..Default::default()
+    };
 
     let witness = st.build_witness(&batch);
     let prev = st.pool;

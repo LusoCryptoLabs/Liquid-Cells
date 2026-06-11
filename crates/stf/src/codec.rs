@@ -124,6 +124,25 @@ fn dec_witness(r: &mut R) -> Result<Witness, CodecError> {
     Ok(Witness { leaves, siblings })
 }
 
+fn enc_htlc_ref(o: &mut Vec<u8>, h: &HtlcRef) {
+    o.extend_from_slice(&h.sender_key);
+    o.extend_from_slice(&h.receiver_key);
+    o.extend_from_slice(&h.amount.to_be_bytes());
+    o.extend_from_slice(&h.hashlock);
+    o.extend_from_slice(&h.timeout.to_be_bytes());
+    o.extend_from_slice(&h.lock_nonce.to_be_bytes());
+}
+fn dec_htlc_ref(r: &mut R) -> Result<HtlcRef, CodecError> {
+    Ok(HtlcRef {
+        sender_key: r.a32()?,
+        receiver_key: r.a32()?,
+        amount: r.u128()?,
+        hashlock: r.a32()?,
+        timeout: r.u64()?,
+        lock_nonce: r.u64()?,
+    })
+}
+
 fn enc_batch(o: &mut Vec<u8>, b: &Batch) {
     o.extend_from_slice(&b.current_epoch.to_be_bytes());
     o.extend_from_slice(&b.fee_withdrawal.to_be_bytes());
@@ -141,6 +160,27 @@ fn enc_batch(o: &mut Vec<u8>, b: &Batch) {
         o.extend_from_slice(&t.nonce.to_be_bytes());
         o.extend_from_slice(&t.expiry.to_be_bytes());
         o.extend_from_slice(&t.sig);
+    }
+    put_len(o, b.htlc_locks.len());
+    for l in &b.htlc_locks {
+        o.extend_from_slice(&l.sender_pubkey);
+        o.extend_from_slice(&l.receiver_key);
+        o.extend_from_slice(&l.amount.to_be_bytes());
+        o.extend_from_slice(&l.fee.to_be_bytes());
+        o.extend_from_slice(&l.hashlock);
+        o.extend_from_slice(&l.timeout.to_be_bytes());
+        o.extend_from_slice(&l.nonce.to_be_bytes());
+        o.extend_from_slice(&l.sig);
+    }
+    put_len(o, b.htlc_claims.len());
+    for c in &b.htlc_claims {
+        enc_htlc_ref(o, &c.htlc);
+        put_len(o, c.preimage.len());
+        o.extend_from_slice(&c.preimage);
+    }
+    put_len(o, b.htlc_refunds.len());
+    for rf in &b.htlc_refunds {
+        enc_htlc_ref(o, &rf.htlc);
     }
     put_len(o, b.withdrawals.len());
     for w in &b.withdrawals {
@@ -173,6 +213,33 @@ fn dec_batch(r: &mut R) -> Result<Batch, CodecError> {
             sig: r.a64()?,
         });
     }
+    let nl = r.u32()? as usize;
+    let mut htlc_locks = Vec::with_capacity(nl);
+    for _ in 0..nl {
+        htlc_locks.push(HtlcLock {
+            sender_pubkey: r.a33()?,
+            receiver_key: r.a32()?,
+            amount: r.u128()?,
+            fee: r.u128()?,
+            hashlock: r.a32()?,
+            timeout: r.u64()?,
+            nonce: r.u64()?,
+            sig: r.a64()?,
+        });
+    }
+    let nc = r.u32()? as usize;
+    let mut htlc_claims = Vec::with_capacity(nc);
+    for _ in 0..nc {
+        let href = dec_htlc_ref(r)?;
+        let plen = r.u32()? as usize;
+        let preimage = r.take(plen)?.to_vec();
+        htlc_claims.push(HtlcClaim { htlc: href, preimage });
+    }
+    let nrf = r.u32()? as usize;
+    let mut htlc_refunds = Vec::with_capacity(nrf);
+    for _ in 0..nrf {
+        htlc_refunds.push(HtlcRefund { htlc: dec_htlc_ref(r)? });
+    }
     let nw = r.u32()? as usize;
     let mut withdrawals = Vec::with_capacity(nw);
     for _ in 0..nw {
@@ -185,7 +252,16 @@ fn dec_batch(r: &mut R) -> Result<Batch, CodecError> {
             sig: r.a64()?,
         });
     }
-    Ok(Batch { current_epoch, fee_withdrawal, deposits, transfers, withdrawals })
+    Ok(Batch {
+        current_epoch,
+        fee_withdrawal,
+        deposits,
+        transfers,
+        htlc_locks,
+        htlc_claims,
+        htlc_refunds,
+        withdrawals,
+    })
 }
 
 // ---- public entry points ----
