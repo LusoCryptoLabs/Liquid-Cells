@@ -13,16 +13,17 @@ inflate balances, cannot censor permanently, and cannot withhold the data users
 need to exit. The only trust assumptions are cryptographic hardness and CKB Layer 1
 itself — the same base as any on-chain transaction.
 
-> Status: **Phase 5 — pre-alpha.** The deterministic STF, its SP1 proof wrapped to
-> Groth16, and the on-chain anchor type script are implemented and tested end-to-end:
-> proof verification on CKB-VM bound to real deposit/withdrawal cells, value
-> conservation, a proven L1 fee model, **data availability** (any user rebuilds their
-> leaf from L1 alone), a **force-exit escape hatch** (unilateral withdrawal after
-> operator silence), and **in-pool HTLCs** for trustless atomic-swap egress of dust —
-> 31 STF + 24 integration tests. The protocol's trust design is complete; what remains
-> is engineering: the L1/Fiber swap leg, a Pudge deployment, throughput (Phase 6), and —
-> before any real value — an external audit (see [Roadmap](#roadmap)). Still local-only
-> and unaudited.
+> Status: **Live on Pudge testnet — pre-alpha.** The deterministic STF, its SP1 proof
+> wrapped to Groth16, and the on-chain anchor type script are implemented and tested
+> end-to-end (31 STF + 27 integration tests): proof verification on CKB-VM bound to real
+> deposit/withdrawal cells, value conservation, a proven L1 fee model, **data availability**,
+> a **force-exit escape hatch**, and **in-pool HTLCs** for atomic-swap dust egress. **It is
+> now deployed on the CKB Pudge testnet: a genesis pool was created and a first checkpoint
+> landed with the SP1 Groth16 BN254 proof verified on live CKB-VM** ([DEPLOY.md](DEPLOY.md)).
+> Getting there required precomputing the constant `e(alpha,beta)` so the verifier does 3
+> pairings (~3.47B cycles) under CKB's ~3.50B block limit. What remains: the L1/Fiber swap
+> leg, throughput (Phase 6), and — before any real value — an external audit. Testnet only,
+> unaudited.
 
 ---
 
@@ -181,7 +182,7 @@ secp256k1 choices are deliberate so the same STF proves cheaply in the zkVM.
 | **4** | **Data availability**: in-circuit `da_commitment` over touched post-state, bound on-chain to the published witness blob; independent reconstruction rebuilds the tree + a force-exit inclusion proof from L1 alone ([docs/DA.md](docs/DA.md)). 17/17 ckb-testtool + DA reconstruction test | **done** (standalone CLI = follow-up) |
 | **3** | **Force-exit / escape hatch**: a second anchor mode — unilateral single-leaf withdrawal vs the last committed root (SMT inclusion, no proof), payout forced to the owner's secp lock, leaf nullified, gated by an operator-silence timeout (`last_epoch` + tx `since`). 24/24 ckb-testtool (incl. 7 force-exit) ([docs/FORCE-EXIT.md](docs/FORCE-EXIT.md)) | **done** |
 | **5** | **Atomic-swap egress** for sub-61-CKB (dust): in-pool HTLC (`htlc_lock`/`claim`/`refund`), escrow keyed by all lock terms, the in-pool leg of a hash-locked swap with an L1/Fiber payment ([docs/EGRESS.md](docs/EGRESS.md)). 31 STF tests | **done** (in-pool leg; L1/Fiber leg + force-refund = follow-ups) |
-| **2b-6** | Deploy to Pudge (genesis anchor + code cell); sequencer builds real checkpoint txs | next |
+| **2b-6** | **Deployed to Pudge**: code cell + genesis anchor live, first checkpoint with the BN254 proof verified on live CKB-VM. Needed the 3-pairing precompute (`e(alpha,beta)` baked) to fit CKB's ~3.50B block cycle limit ([DEPLOY.md](DEPLOY.md)) | **done** |
 | **6** | Permissionless sequencing + anchor sharding (throughput) | planned |
 
 Throughput concerns (single-anchor contention, batch cycle budget) are deliberately
