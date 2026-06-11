@@ -54,21 +54,55 @@ transfer" would allow** (claim L1, then keep/force-exit the in-pool balance) is 
 locked, the funds are only resolvable by claim or refund, neither of which leaves them with
 the sender.
 
-**Liveness limitation (documented).** An HTLC leaf is keyed by `htlc_id`, not by
-`keccak(pubkey)`, so it cannot be force-exited. If the operator goes dark *while a swap is
-pending*, the escrow can be neither claimed nor refunded until checkpoints resume — those
-specific, in-flight dust amounts are stuck (not lost: a returning operator must honor the
-escrow). This is mitigated by (a) HTLCs being short-lived and dust-sized, (b) LPs only
-swapping while the operator is demonstrably live, and (c) a future **force-refund** (let the
-sender force-exit a *timed-out* HTLC leaf by proving the lock terms), which would remove the
-limitation entirely. The bulk of user funds — ordinary account balances — remain protected
-by force-exit regardless.
+**The liveness question — and what `force-refund` does and does not fix.** An HTLC leaf is
+keyed by `htlc_id`, not by `keccak(pubkey)`, so the ordinary account-leaf force-exit cannot
+reach it. If the operator goes dark *while a swap is pending*, the cooperative claim/refund
+paths can't run. The two parties are **not symmetric** under a single anchor, and being honest
+about that matters:
+
+* **Sender side — closed by `force-refund` (implemented).** After the HTLC `timeout`, the
+  receiver can no longer claim (claim-after-timeout is invalid), so refund-to-sender is the
+  *only* valid resolution. The on-chain **force-refund** mode lets the sender unilaterally
+  reclaim a timed-out escrow against the last committed root by supplying the lock terms — the
+  script re-derives `htlc_id`, proves the escrow leaf's SMT inclusion, nullifies it, and forces
+  the payout to the sender's own secp lock. Gated by **both** `since ≥ timeout` (so no live
+  claim is robbed) and the operator-silence window (so it is an escape hatch, not a routine
+  race with the cooperative refund). Like force-exit it pays out to L1, so it inherits the
+  **61-CKB cell floor**: it fully closes the escape for ≥61-CKB escrows; a sub-61-CKB escrow
+  cannot become its own L1 cell (that is the universal dust constraint, not a new one).
+
+* **Receiver side — *not* expressible under a single anchor (architectural residual).** The
+  symmetric "force-claim" (the receiver reveals the preimage and pulls a still-live escrow)
+  would have to fire *before* the HTLC `timeout` — i.e. within hours. But any anchor-consuming
+  op conflicts with a live operator's checkpoint, so an escape hatch **must** be gated on the
+  operator-silence window (~180 epochs ≈ 30 days), exactly as force-exit is; otherwise it is a
+  cheap way to invalidate the operator's in-flight (proven, expensive) checkpoints at will. A
+  silence-gated claim can never open inside a dust HTLC's short lifetime, so a receiver's
+  trustless on-chain claim is **not** giveable here. This is a property of the **single-anchor**
+  architecture, not a coding gap: it is what Phase 6 (permissionless sequencing / anchor
+  sharding) removes, by ending the checkpoint-vs-escape-hatch conflict.
+
+So `force-refund` does **not** "remove the limitation entirely" (an earlier draft overstated
+it): it closes the *sender's* exposure for ≥61-CKB escrows. The *receiver's* protection still
+rests on the operator being live across the short swap window — mitigated by (a) HTLCs being
+short-lived and dust-sized, (b) LPs only swapping while the operator is demonstrably live, and
+(c) the swap's timeout ordering (`T_L1 < T_pool`), which bounds the receiver's exposure to the
+pool-leg window. The bulk of user funds — ordinary account balances — remain protected by
+force-exit regardless of any of this.
 
 ## Status
 
 * In-pool HTLC lock/claim/refund: implemented in the STF and proven (`crates/stf/tests/htlc.rs` —
   swap completion, refund, wrong preimage, claim-after-timeout, refund-before-timeout,
-  receiver binding, no-double-spend). Since HTLCs are pure pool state, the on-chain contract
+  receiver binding, no-double-spend). Since HTLCs are pure pool state, the checkpoint contract
   is unchanged; they ride inside the normal checkpoint proof + DA.
+* **On-chain force-refund: implemented** as a third anchor mode in the type script
+  (`crates/ckb-contract/src/main.rs::force_refund`) and tested adversarially
+  (`crates/ckb-contract-tests/tests/forcerefund.rs` — 9 cases: timed-out refund verifies;
+  before-silence, before-HTLC-timeout, wrong receiver, tampered amount, wrong/missing payout,
+  unnullified root, and bad total all reject). It carries no SP1 proof — like force-exit it is a
+  pure SMT-inclusion path against the committed root — so the STF and the baked vkey are
+  unchanged.
 * The L1 HTLC counterparty lock and Fiber integration are external/standard and out of scope
-  here; the force-refund refinement is future work.
+  here. The receiver-side residual above is resolved by Phase 6, not by additional code in this
+  mode.

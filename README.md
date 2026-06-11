@@ -15,9 +15,11 @@ itself — the same base as any on-chain transaction.
 
 > Status: **Live on Pudge testnet — pre-alpha.** The deterministic STF, its SP1 proof
 > wrapped to Groth16, and the on-chain anchor type script are implemented and tested
-> end-to-end (31 STF + 27 integration tests): proof verification on CKB-VM bound to real
+> end-to-end (32 STF + 36 integration tests): proof verification on CKB-VM bound to real
 > deposit/withdrawal cells, value conservation, a proven L1 fee model, **data availability**,
-> a **force-exit escape hatch**, and **in-pool HTLCs** for atomic-swap dust egress. **It is
+> a **force-exit escape hatch**, **in-pool HTLCs** for atomic-swap dust egress, and an
+> on-chain **force-refund** hatch that lets a swap's sender unilaterally reclaim a timed-out
+> escrow. **It is
 > now deployed on the CKB Pudge testnet: a genesis pool was created and a first checkpoint
 > landed with the SP1 Groth16 BN254 proof verified on live CKB-VM** ([DEPLOY.md](DEPLOY.md)).
 > Getting there required precomputing the constant `e(alpha,beta)` so the verifier does 3
@@ -181,7 +183,8 @@ secp256k1 choices are deliberate so the same STF proves cheaply in the zkVM.
 | **2b-5** | Proven L1 fee model: `fee_withdrawal` drawn only from accumulated fees (user balances provably untouched), fee-aware accounting + solvency pin the miner fee to the proven draw; 15/15 ckb-testtool tests | **done** |
 | **4** | **Data availability**: in-circuit `da_commitment` over touched post-state, bound on-chain to the published witness blob; independent reconstruction rebuilds the tree + a force-exit inclusion proof from L1 alone ([docs/DA.md](docs/DA.md)). 17/17 ckb-testtool + DA reconstruction test | **done** (standalone CLI = follow-up) |
 | **3** | **Force-exit / escape hatch**: a second anchor mode — unilateral single-leaf withdrawal vs the last committed root (SMT inclusion, no proof), payout forced to the owner's secp lock, leaf nullified, gated by an operator-silence timeout (`last_epoch` + tx `since`). 24/24 ckb-testtool (incl. 7 force-exit) ([docs/FORCE-EXIT.md](docs/FORCE-EXIT.md)) | **done** |
-| **5** | **Atomic-swap egress** for sub-61-CKB (dust): in-pool HTLC (`htlc_lock`/`claim`/`refund`), escrow keyed by all lock terms, the in-pool leg of a hash-locked swap with an L1/Fiber payment ([docs/EGRESS.md](docs/EGRESS.md)). 31 STF tests | **done** (in-pool leg; L1/Fiber leg + force-refund = follow-ups) |
+| **5** | **Atomic-swap egress** for sub-61-CKB (dust): in-pool HTLC (`htlc_lock`/`claim`/`refund`), escrow keyed by all lock terms, the in-pool leg of a hash-locked swap with an L1/Fiber payment ([docs/EGRESS.md](docs/EGRESS.md)). 32 STF tests | **done** (in-pool leg) |
+| **5b** | **On-chain force-refund**: a third anchor mode — the swap *sender* unilaterally reclaims a *timed-out* HTLC escrow against the committed root (htlc_id re-derived, SMT inclusion, payout forced to the sender's secp lock), gated by `since ≥ timeout` **and** operator silence. 9 ckb-testtool tests. Closes the sender's exposure; the receiver-side residual is architectural (single anchor → Phase 6), documented honestly in [docs/EGRESS.md](docs/EGRESS.md) | **done** (contract + tests; Pudge code-cell upgrade optional) |
 | **2b-6** | **Deployed to Pudge**: code cell + genesis anchor live, first checkpoint with the BN254 proof verified on live CKB-VM. Needed the 3-pairing precompute (`e(alpha,beta)` baked) to fit CKB's ~3.50B block cycle limit ([DEPLOY.md](DEPLOY.md)) | **done** |
 | **6** | Permissionless sequencing + anchor sharding (throughput) | planned |
 

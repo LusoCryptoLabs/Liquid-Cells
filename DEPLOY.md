@@ -60,6 +60,19 @@ place via type-id (same `codeHash`).
   has no fee revenue, and CKB requires a positive fee). `current_epoch = 0`, so the anchor
   input's `since` is absolute epoch 0.
 
+## Pending code-cell upgrade — force-refund (Phase 5b)
+
+The anchor type script gained a **third mode, `force_refund`** (a timed-out HTLC escrow's
+sender unilaterally reclaims it; see [docs/EGRESS.md](docs/EGRESS.md)). It is contract-complete
+and adversarially tested (9 ckb-testtool cases) but is **not yet on the live code cell** — the
+deployed binary at `0x2e1919b4…:0` predates it. Because it carries no SP1 proof and does **not**
+touch the STF or the guest, the baked **vkey is unchanged** and the existing genesis + checkpoint
+remain valid. Activating force-refund on Pudge is a single in-place **type-id upgrade** (consume
+the old code cell, recreate with the new binary at the same type-id ⇒ the anchor `codeHash`
+`0x83158549…` is unchanged and live anchors automatically use it). It changes only the code
+cell's data hash, never an anchor. Optional — there is no live pool with pending HTLCs that needs
+it yet.
+
 ## Notes
 
 - Deployed with `offckb deploy --type-id` (upgradable; the upgrade kept the same `codeHash` by

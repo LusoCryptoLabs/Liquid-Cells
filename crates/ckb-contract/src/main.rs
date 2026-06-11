@@ -1,19 +1,28 @@
-//! Liquid Cells anchor type script — guards the pool anchor cell in two modes,
+//! Liquid Cells anchor type script — guards the pool anchor cell in three modes,
 //! selected by the input group's witness `input_type` length:
 //!
 //!   * **checkpoint** (`input_type` len 644): a sequencer state transition — verify its
 //!     SP1 Groth16 proof inside CKB-VM and pin the public values to chain facts.
-//!   * **force-exit** (`input_type` len 8249): a *unilateral* user withdrawal against the
-//!     last committed root after operator silence — no proof, an SMT inclusion path. The
-//!     escape hatch that makes the operator unable to freeze funds by going dark.
+//!   * **force-exit** (`input_type` len 8249): a *unilateral* user withdrawal of an ordinary
+//!     account leaf against the last committed root after operator silence — no proof, an SMT
+//!     inclusion path. The escape hatch that makes the operator unable to freeze funds by
+//!     going dark.
+//!   * **force-refund** (`input_type` len 8321): the same escape hatch for a *timed-out HTLC
+//!     escrow leaf* — the sender reclaims an escrow whose `timeout` has passed (so the
+//!     receiver can no longer claim it) by proving the lock terms, against the committed root,
+//!     after operator silence. Closes the dust-swap sender's exposure if the operator dies
+//!     mid-swap. (The receiver's symmetric force-claim cannot be given under a single anchor —
+//!     see `force_refund` — so this is deliberately sender-only.)
 //!
-//! Both modes have exactly one **input** anchor (state n) and one **output** anchor
+//! All modes have exactly one **input** anchor (state n) and one **output** anchor
 //! (state n+1) carrying this type script.
 //!
 //!   anchor cell data (80 bytes): root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE) ‖ last_epoch(8 BE)
-//!   checkpoint witness input_type : proof(356) ‖ public_values(288)
-//!   checkpoint witness output_type: da_blob (the published state diff)
-//!   force-exit witness input_type : pubkey(33) ‖ balance(16) ‖ nonce(8) ‖ siblings(256·32)
+//!   checkpoint witness input_type  : proof(356) ‖ public_values(288)
+//!   checkpoint witness output_type : da_blob (the published state diff)
+//!   force-exit witness input_type  : pubkey(33) ‖ balance(16) ‖ nonce(8) ‖ siblings(256·32)
+//!   force-refund witness input_type: sender_pubkey(33) ‖ receiver_key(32) ‖ amount(16)
+//!                                    ‖ hashlock(32) ‖ timeout(8) ‖ lock_nonce(8) ‖ siblings(256·32)
 //!
 //! The script, in order (cheap checks first so a tampered transaction is rejected
 //! without paying for the BN254 pairing): (1) pins `prev_*`/`new_*` in the public
@@ -116,6 +125,10 @@ const PROOF_LEN: usize = 356;
 const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 644 — checkpoint witness input_type
 /// Force-exit witness input_type: pubkey(33) ‖ balance(16) ‖ nonce(8) ‖ siblings(256·32).
 const FORCEEXIT_LEN: usize = 33 + 16 + 8 + 32 * SMT_DEPTH; // 8249
+/// Force-refund witness input_type: sender_pubkey(33) ‖ receiver_key(32) ‖ amount(16) ‖
+/// hashlock(32) ‖ timeout(8) ‖ lock_nonce(8) ‖ siblings(256·32). Distinct length from
+/// checkpoint (644) and force-exit (8249), so the mode is selected unambiguously.
+const FORCEREFUND_LEN: usize = 33 + 32 + 16 + 32 + 8 + 8 + 32 * SMT_DEPTH; // 8321
 
 // anchor data offsets
 const A_ROOT: usize = 0;
@@ -613,6 +626,140 @@ fn force_exit(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
     0
 }
 
+/// Recompute an HTLC escrow leaf's SMT key, byte-identical to
+/// `liquid_cells_stf::types::htlc_id`:
+///   keccak( keccak("LIQUIDCELLS/v1/htlc-id") ‖ POOL_ID ‖ sender_key ‖ receiver_key
+///           ‖ amount(16 BE) ‖ hashlock ‖ timeout(8 BE) ‖ lock_nonce(8 BE) ).
+/// Binding the key to every lock term is what lets the escrow only ever resolve to the
+/// agreed parties on the agreed terms — so a force-refund must supply the real terms and
+/// can only pay the real sender.
+fn htlc_id(
+    sender_key: &[u8; 32],
+    receiver_key: &[u8],
+    amount: u128,
+    hashlock: &[u8],
+    timeout: u64,
+    lock_nonce: u64,
+) -> [u8; 32] {
+    let domain = keccak(b"LIQUIDCELLS/v1/htlc-id");
+    let mut b = [0u8; 192]; // 32+32+32+32+16+32+8+8
+    b[0..32].copy_from_slice(&domain);
+    b[32..64].copy_from_slice(&POOL_ID);
+    b[64..96].copy_from_slice(sender_key);
+    b[96..128].copy_from_slice(receiver_key);
+    b[128..144].copy_from_slice(&amount.to_be_bytes());
+    b[144..176].copy_from_slice(hashlock);
+    b[176..184].copy_from_slice(&timeout.to_be_bytes());
+    b[184..192].copy_from_slice(&lock_nonce.to_be_bytes());
+    keccak(&b)
+}
+
+/// Force-refund (escape hatch for a pending HTLC escrow): the *sender* unilaterally reclaims
+/// a **timed-out** escrow leaf against the last committed root, after operator silence. The
+/// witness carries the full lock terms; the script re-derives the escrow's `htlc_id`, proves
+/// the `{balance = amount, nonce = 0}` escrow leaf is included under the committed root, then
+/// nullifies it (→ empty) and forces the payout to the *sender's* own secp lock.
+///
+/// Two timeout gates, both required:
+///   * `since ≥ timeout` — the HTLC's own deadline. After it, the receiver can no longer claim
+///     (claim-after-timeout is invalid in the STF), so refund-to-sender is the *only* valid
+///     resolution; refunding before it could rob a receiver who still holds a valid claim.
+///   * `since ≥ last_epoch + FORCE_EXIT_TIMEOUT_EPOCHS` — operator silence, as for force-exit.
+///     Any anchor-consuming op conflicts with a live operator's checkpoint, so the escape
+///     hatch only opens once the operator is demonstrably dark; while it checkpoints, the
+///     cooperative `htlc_refund` is the path. (Because the silence window ≫ a dust HTLC's
+///     lifetime, the silence gate is the operative one here.)
+///
+/// Deliberately sender-only. The receiver's symmetric "force-claim" would need to fire
+/// *before* the short `timeout`, but the silence gate cannot open that fast — so a receiver's
+/// trustless on-chain claim is not expressible under a single anchor. That residual is
+/// architectural (resolved by Phase 6 permissionless sequencing), not a gap in this code;
+/// the swap counterparty mitigates it by only swapping while the operator is demonstrably
+/// live. See docs/EGRESS.md.
+fn force_refund(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
+    // sender_pubkey(33) ‖ receiver_key(32) ‖ amount(16) ‖ hashlock(32) ‖ timeout(8) ‖
+    // lock_nonce(8) ‖ siblings(256·32)
+    let sender_pubkey = &wb[0..33];
+    let receiver_key = &wb[33..65];
+    let amount = rd_u128(wb, 65);
+    let hashlock = &wb[81..113];
+    let timeout = rd_u64(wb, 113);
+    let lock_nonce = rd_u64(wb, 121);
+    let siblings = &wb[129..129 + 32 * SMT_DEPTH];
+
+    if amount == 0 {
+        return 80; // an escrow always holds a positive amount
+    }
+    if amount > u64::MAX as u128 {
+        return 81; // cannot be paid out as a single capacity
+    }
+
+    let sender_key = keccak(sender_pubkey);
+    let id = htlc_id(&sender_key, receiver_key, amount, hashlock, timeout, lock_nonce);
+
+    // Inclusion of the escrow leaf {balance = amount, nonce = 0} at `id` vs the committed root.
+    let leaf = leaf_hash(amount, 0);
+    if smt_root(&id, &leaf, siblings)[..] != prev[A_ROOT..A_ROOT + 32] {
+        return 82;
+    }
+    // Nullified: the escrow → empty {0, 0}; same siblings ⇒ the output root. A returning
+    // operator that re-syncs to this root sees the escrow consumed (no double-refund), and
+    // the same `htlc_id` cannot recur (it binds the sender's account nonce at lock time).
+    let new_leaf = leaf_hash(0, 0);
+    if smt_root(&id, &new_leaf, siblings)[..] != new[A_ROOT..A_ROOT + 32] {
+        return 83;
+    }
+
+    // Anchor continuity: seq / fee_acc / last_epoch unchanged; total -= amount.
+    if rd_u64(prev, A_SEQ) != rd_u64(new, A_SEQ)
+        || rd_u128(prev, A_FEE) != rd_u128(new, A_FEE)
+        || rd_u64(prev, A_LAST_EPOCH) != rd_u64(new, A_LAST_EPOCH)
+        || rd_u128(prev, A_TOTAL).checked_sub(amount) != Some(rd_u128(new, A_TOTAL))
+    {
+        return 84;
+    }
+
+    // Solvency: the anchor's real capacity drops by exactly the refunded amount.
+    let in_cap = match load_cell_capacity(0, Source::GroupInput) {
+        Ok(c) => c,
+        Err(_) => return 85,
+    };
+    let out_cap = match load_cell_capacity(0, Source::GroupOutput) {
+        Ok(c) => c,
+        Err(_) => return 85,
+    };
+    if in_cap.checked_sub(amount as u64) != Some(out_cap) {
+        return 85;
+    }
+
+    // Timeout gates: the input `since` (absolute epoch) must be ≥ BOTH the HTLC's own
+    // `timeout` and `last_epoch + FORCE_EXIT_TIMEOUT_EPOCHS` (operator silence).
+    let since = match load_input_since(0, Source::GroupInput) {
+        Ok(s) => s,
+        Err(_) => return 86,
+    };
+    let since_epoch = match abs_epoch(since) {
+        Some(e) => e,
+        None => return 86,
+    };
+    if since_epoch < timeout {
+        return 86;
+    }
+    let open_at = match rd_u64(prev, A_LAST_EPOCH).checked_add(FORCE_EXIT_TIMEOUT_EPOCHS) {
+        Some(e) => e,
+        None => return 86,
+    };
+    if since_epoch < open_at {
+        return 86;
+    }
+
+    // Payout: an output paying exactly `amount` to the *sender's* canonical secp lock.
+    if !has_exit_output(&blake160(sender_pubkey), amount as u64) {
+        return 87;
+    }
+    0
+}
+
 /// Verify an SP1 Groth16 proof of `public_values`. 0 = ok, else a stage code.
 fn verify_sp1_groth16(proof: &[u8], public_values: &[u8]) -> i8 {
     if proof.len() != PROOF_LEN {
@@ -715,8 +862,9 @@ fn program_entry() -> i8 {
     }
 
     // The input group's witness `input_type` selects the mode by length:
-    //   WITNESS_LEN (644)    => checkpoint (SP1 proof + pinned public values)
-    //   FORCEEXIT_LEN (8249) => force-exit (SMT inclusion against the committed root)
+    //   WITNESS_LEN (644)      => checkpoint (SP1 proof + pinned public values)
+    //   FORCEEXIT_LEN (8249)   => force-exit (account-leaf SMT inclusion vs the committed root)
+    //   FORCEREFUND_LEN (8321) => force-refund (timed-out HTLC escrow leaf, sender reclaims)
     let wa = match load_witness_args(0, Source::GroupInput) {
         Ok(w) => w,
         Err(_) => return 42,
@@ -728,6 +876,7 @@ fn program_entry() -> i8 {
     match wb.len() {
         WITNESS_LEN => checkpoint(&prev, &new, &wa, &wb),
         FORCEEXIT_LEN => force_exit(&prev, &new, &wb),
+        FORCEREFUND_LEN => force_refund(&prev, &new, &wb),
         _ => 42,
     }
 }
