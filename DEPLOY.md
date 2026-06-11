@@ -15,8 +15,12 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 | 3-pairing upgrade tx | `0x2e1919b45e871db6bc4267674c6810d3ac1f09b4a8abd4c9fada15af16233c7f` (same type-id) |
 | Genesis anchor outpoint | `0xdb895bbafc29e2df3cf26cce3aac21f0132aa5f32a3edce3aac8cc60ba9ce00a:0` |
 | Genesis anchor type hash | `0xf4c1baf2fda7e9a07b762387934ce6b2d275bd4e533ae558c7233907f2f6b7a1` |
-| First checkpoint tx | `0xca6bfc76cbfae1b1dfedfbcab02fe84c1ab9019cb711defce65587091c373d51` |
-| Anchor after checkpoint (state 1) | `0xca6bfc76cbfae1b1dfedfbcab02fe84c1ab9019cb711defce65587091c373d51:0` (root `0xf3283454…`, seq 1) |
+| First checkpoint tx (seq 0→1) | `0xca6bfc76cbfae1b1dfedfbcab02fe84c1ab9019cb711defce65587091c373d51` |
+| Anchor after checkpoint 1 | `0xca6bfc76cbfae1b1dfedfbcab02fe84c1ab9019cb711defce65587091c373d51:0` (root `0xf3283454…`, seq 1) |
+| Checkpoint 2 tx (seq 1→2) | `0x599085cefc048d76d966d78cf8baa27c0242b6bc999133bcc15070af5d2236a3` |
+| Anchor after checkpoint 2 | `0x599085cefc048d76d966d78cf8baa27c0242b6bc999133bcc15070af5d2236a3:0` (root `0x25045790…`, seq 2) |
+| Checkpoint 3 tx (seq 2→3) | `0x80d4612489c59cb630d8dd8c32d5edc3d2ac2009ab8068eee9ae5b879052bec1` |
+| Anchor after checkpoint 3 (current) | `0x80d4612489c59cb630d8dd8c32d5edc3d2ac2009ab8068eee9ae5b879052bec1:0` (root `0x60200160…`, seq 3) |
 | Baked program vkey | `0x00213af5b4cc8922754e5b8ee7e610de703d4cb17fabb0a187c95c37fe67c1e8` |
 | Genesis (empty SMT) root | `0xa7ff9e28ffd3def443d324547688c2c4eb98edf7da757d6bfa22bff55b9ce24a` |
 
@@ -30,6 +34,17 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
   (state 1) `0xca6bfc76…:0`, root `0xf3283454…`, seq 1, total 9,999,900,000, miner fee 100,000
   (the proven `fee_withdrawal`). This is the real on-chain validity-proof verification of a
   pooled-rollup state transition on CKB.
+- ✅ **Successive checkpoints — the sequencer loop runs on-chain (seq 1 → 2 → 3).** Driven by
+  `crates/sequencer` (seeded to the live seq-1 state, see `crates/sp1-host/src/bin/sequence.rs`),
+  two more checkpoints landed, **each consuming the anchor the previous one created** and each
+  carrying its own SP1 Groth16 BN254 proof verified on a live CKB block:
+  - cp2 (seq 1→2): tx `0x599085ce…`, anchor `0x599085ce…:0`, root `0x25045790…`.
+  - cp3 (seq 2→3): tx `0x80d46124…`, anchor `0x80d46124…:0`, root `0x60200160…`.
+  Both are transfer-only batches, so each tx is just anchor-in → anchor-out with the miner fee
+  (100,000) paid from the proven `fee_withdrawal` — the cleanest possible checkpoint shape. This
+  is the loop **composing on the real chain**, not a one-shot. (Proving note: prove **one
+  checkpoint per process** — the SP1 native-gnark FFI does not reliably survive a second Groth16
+  proof in the same process; `lc-sequence … groth16 cp2` then `… groth16 cp3`.)
 
 ### How the cycle limit was solved
 

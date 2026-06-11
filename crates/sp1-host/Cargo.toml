@@ -10,10 +10,17 @@ edition = "2021"
 name = "liquid-cells-host"
 path = "src/main.rs"
 
+# Sequencer driver: seeds a Sequencer to the live on-chain state and proves a chain of
+# successive checkpoints (Groth16) for submission to Pudge.
+[[bin]]
+name = "lc-sequence"
+path = "src/bin/sequence.rs"
+
 [dependencies]
 # native-gnark => local Groth16 wrapping via the gnark Go FFI (no Docker required).
 sp1-sdk = { version = "6.2.3", features = ["blocking", "native-gnark"] }
 liquid-cells-stf = { path = "../stf" }
+liquid-cells-sequencer = { path = "../sequencer" }
 hex = "0.4"
 
 [workspace]

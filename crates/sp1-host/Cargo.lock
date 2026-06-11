@@ -1849,8 +1849,16 @@ name = "liquid-cells-host"
 version = "0.0.1"
 dependencies = [
  "hex",
+ "liquid-cells-sequencer",
  "liquid-cells-stf",
  "sp1-sdk",
+]
+
+[[package]]
+name = "liquid-cells-sequencer"
+version = "0.0.0"
+dependencies = [
+ "liquid-cells-stf",
 ]
 
 [[package]]
