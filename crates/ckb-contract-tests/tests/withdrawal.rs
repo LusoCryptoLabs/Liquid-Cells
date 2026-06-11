@@ -63,6 +63,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let pv = std::fs::read(format!("{DIR}/public_values.bin")).expect("fixtures/wd pv");
     let dep = std::fs::read(format!("{DIR}/deposit.bin")).expect("fixtures/wd deposit.bin");
     let wdr = std::fs::read(format!("{DIR}/withdrawal.bin")).expect("fixtures/wd withdrawal.bin");
+    let da = std::fs::read(format!("{DIR}/da_blob.bin")).expect("fixtures/wd da_blob.bin");
 
     let dep_key = dep[0..32].to_vec();
     let dep_amount = rd_u128(&dep, 32) as u64;
@@ -117,6 +118,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     witness.extend_from_slice(&pv);
     let w0 = WitnessArgs::new_builder()
         .input_type(Some(Bytes::from(witness)).pack())
+        .output_type(Some(Bytes::from(da)).pack())
         .build()
         .as_bytes();
 

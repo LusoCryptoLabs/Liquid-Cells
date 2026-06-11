@@ -227,6 +227,7 @@ pub fn decode_public_values(bytes: &[u8]) -> Result<PublicValues, CodecError> {
         fee_delta: r.u128()?,
         current_epoch: r.u64()?,
         fee_withdrawal: r.u128()?,
+        da_commitment: r.a32()?,
     };
     r.finish()?;
     Ok(pv)

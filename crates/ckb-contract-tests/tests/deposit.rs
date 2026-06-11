@@ -20,6 +20,7 @@ const CONTRACT_BIN: &str =
 const PROOF_PATH: &str = "../../fixtures/dw/groth16_proof.bin";
 const PV_PATH: &str = "../../fixtures/dw/public_values.bin";
 const DEPOSIT_PATH: &str = "../../fixtures/dw/deposit.bin";
+const DA_PATH: &str = "../../fixtures/dw/da_blob.bin";
 
 const PV_PREV_ROOT: usize = 40;
 const PV_PREV_SEQ: usize = 72;
@@ -62,6 +63,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let proof = std::fs::read(PROOF_PATH).expect("fixtures/dw/groth16_proof.bin (run scripts/groth16.sh 1 dw)");
     let pv = std::fs::read(PV_PATH).expect("fixtures/dw/public_values.bin");
     let dep = std::fs::read(DEPOSIT_PATH).expect("fixtures/dw/deposit.bin");
+    let da = std::fs::read(DA_PATH).expect("fixtures/dw/da_blob.bin");
 
     let mut to_key = dep[0..32].to_vec();
     let amount = rd_u128(&dep, 32);
@@ -113,6 +115,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     witness.extend_from_slice(&pv);
     let w0 = WitnessArgs::new_builder()
         .input_type(Some(Bytes::from(witness)).pack())
+        .output_type(Some(Bytes::from(da)).pack())
         .build()
         .as_bytes();
 

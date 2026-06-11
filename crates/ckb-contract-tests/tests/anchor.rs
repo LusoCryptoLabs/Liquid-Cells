@@ -20,6 +20,7 @@ const CONTRACT_BIN: &str =
     "../ckb-contract/target/riscv64imac-unknown-none-elf/release/liquid-cells-anchor";
 const PROOF_PATH: &str = "../../fixtures/groth16_proof.bin";
 const PV_PATH: &str = "../../fixtures/public_values.bin";
+const DA_PATH: &str = "../../fixtures/da_blob.bin";
 
 // PublicValues offsets (must match liquid_cells_stf::PublicValues::encode).
 const PV_PREV_ROOT: usize = 40;
@@ -59,12 +60,15 @@ struct Cfg {
     fee_mismatch: bool,
     tamper_pv: bool,
     ignore_fee_cap: bool, // output capacity ignores the L1 fee draw (breaks solvency)
+    tamper_da: bool,      // published DA blob != the committed diff
+    drop_da: bool,        // no DA blob published at all
 }
 
 fn build(cfg: Cfg) -> (Context, TransactionView) {
     let bin: Bytes = std::fs::read(CONTRACT_BIN).expect("build crates/ckb-contract first").into();
     let proof = std::fs::read(PROOF_PATH).expect("fixtures/groth16_proof.bin");
     let mut pv = std::fs::read(PV_PATH).expect("fixtures/public_values.bin");
+    let da = std::fs::read(DA_PATH).expect("fixtures/da_blob.bin");
 
     // Anchor states derived from the (possibly tampered) public values, so the
     // positive case is self-consistent and bind() passes.
@@ -118,10 +122,16 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let mut witness = Vec::with_capacity(proof.len() + pv.len());
     witness.extend_from_slice(&proof);
     witness.extend_from_slice(&pv);
-    let w0 = WitnessArgs::new_builder()
-        .input_type(Some(Bytes::from(witness)).pack())
-        .build()
-        .as_bytes();
+    // input_type = proof ‖ pv; output_type = the published DA blob.
+    let mut wb = WitnessArgs::new_builder().input_type(Some(Bytes::from(witness)).pack());
+    if !cfg.drop_da {
+        let mut d = da.clone();
+        if cfg.tamper_da {
+            d[0] ^= 0xff;
+        }
+        wb = wb.output_type(Some(Bytes::from(d)).pack());
+    }
+    let w0 = wb.build().as_bytes();
 
     let tx = TransactionBuilder::default()
         .input(CellInput::new_builder().previous_output(anchor_in).build())
@@ -182,4 +192,18 @@ fn ignored_fee_draw_in_capacity_rejected() {
         ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
         "anchor capacity that ignores the L1 fee draw must reject"
     );
+}
+
+#[test]
+fn tampered_da_blob_rejected() {
+    // The published DA blob differs from the committed diff -> keccak(blob) != da_commitment.
+    let (ctx, tx) = build(Cfg { tamper_da: true, ..Default::default() });
+    assert!(ctx.verify_tx(&tx, MAX_CYCLES).is_err(), "a tampered DA blob must reject");
+}
+
+#[test]
+fn missing_da_blob_rejected() {
+    // No DA blob published at all: the operator cannot advance the root while withholding it.
+    let (ctx, tx) = build(Cfg { drop_da: true, ..Default::default() });
+    assert!(ctx.verify_tx(&tx, MAX_CYCLES).is_err(), "a withheld DA blob must reject");
 }

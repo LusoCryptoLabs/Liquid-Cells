@@ -12,7 +12,8 @@ inputs:                                   outputs:
   [0] anchor cell (state n)                 [0] anchor cell (state n+1)
         type = THIS script                        type = THIS script
         data = root‖seq‖total‖fee_acc             data = root‖seq‖total‖fee_acc
-        witness[0].input_type = proof ‖ pv
+        witness[0].input_type  = proof ‖ pv
+        witness[0].output_type = da_blob
   [1..] deposit cells                       [1..] withdrawal cells
         data = to_key (32)                        lock = the recipient's lock
         capacity = deposit amount                 capacity = withdrawal amount
@@ -53,11 +54,14 @@ drawn (see *L1 fee* below).
    keccak fold as `liquid_cells_stf::transition::fold_commit`), and require they equal
    the proof's commitments. ⇒ the proof can only credit/debit recipients that
    correspond to real cells, with the amounts those cells carry.
-3. **Conservation** (cheap):
+3. **Data availability** (cheap, keccak): `keccak(witness[0].output_type) ==
+   da_commitment`. Forces the checkpoint to publish the touched leaves' post-state so any
+   user can reconstruct their leaf and force-exit ([docs/DA.md](DA.md)).
+4. **Conservation** (cheap):
    * accounting: `prev_total + Σdeposits − Σwithdrawals − fee_withdrawal == new_total`;
    * solvency: `anchor_out.capacity − anchor_in.capacity == Σdeposits − Σwithdrawals −
      fee_withdrawal`.
-4. **Validity** (expensive, last): the SP1 Groth16 proof of the public values verifies.
+5. **Validity** (expensive, last): the SP1 Groth16 proof of the public values verifies.
 
 ## L1 fee
 
@@ -82,8 +86,10 @@ other way (e.g. a future explicit sequencer-funded input).
 
 ## Open items
 
-* **DA** (`da_commitment`) is not in the public values yet — Phase 4 adds it to the STF
-  and binds `keccak(diff_blob)` here.
+* **DA** is now bound: the proof commits `da_commitment` and the script enforces it equals
+  `keccak(witness output_type)` (step 3 above; [docs/DA.md](DA.md)). Remaining: a polished
+  standalone reconstruction CLI, and Phase 3 force-exit which consumes the reconstructed
+  proof.
 
 Both the deposit and withdrawal paths are covered by integration tests. The withdrawal
 test uses a fixed, deterministic target lock (`crates/ckb-contract-tests` `withdraw_lock`)

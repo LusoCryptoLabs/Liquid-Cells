@@ -10,11 +10,14 @@ inflate balances, cannot censor permanently, and cannot withhold the data users
 need to exit. The only trust assumptions are cryptographic hardness and CKB Layer 1
 itself — the same base as any on-chain transaction.
 
-> Status: **Phase 2b — pre-alpha.** The deterministic STF, its SP1 proof wrapped to
+> Status: **Phase 4 — pre-alpha.** The deterministic STF, its SP1 proof wrapped to
 > Groth16, and the on-chain anchor type script are implemented and tested end-to-end:
 > the contract verifies the proof on CKB-VM and binds it to real deposit/withdrawal
-> cells, value conservation, and a proven L1 fee model — 15/15 integration tests. The
-> DA layer, exit paths, and a Pudge testnet deployment are next (see [Roadmap](#roadmap)).
+> cells, value conservation, a proven L1 fee model, and **data availability** (the
+> published state diff is bound to the proof, and any user can rebuild their leaf + a
+> force-exit proof from L1 alone) — 24 STF + 17 integration tests. The remaining trust
+> primitive is the **force-exit/escape hatch** (Phase 3); a Pudge deployment follows
+> (see [Roadmap](#roadmap)).
 
 ---
 
@@ -170,9 +173,9 @@ secp256k1 choices are deliberate so the same STF proves cheaply in the zkVM.
 | **2b-3** | Implicit cell format: deposit/withdrawal commitments recomputed from real cells + value conservation (accounting + solvency); 10/10 ckb-testtool tests incl. deposit adversarial | **done** |
 | **2b-4** | Withdrawal-path coverage (deterministic lock-hash coordination); comprehensive deposit+withdrawal checkpoint; 14/14 ckb-testtool tests | **done** |
 | **2b-5** | Proven L1 fee model: `fee_withdrawal` drawn only from accumulated fees (user balances provably untouched), fee-aware accounting + solvency pin the miner fee to the proven draw; 15/15 ckb-testtool tests | **done** |
-| **2b-6** | Deploy to Pudge (genesis anchor + code cell); sequencer builds real checkpoint txs | next |
-| **3** | Single-leaf force-exit (native SMT inclusion) + escape-hatch timeout | planned |
-| **4** | DA blob format + independent reconstruction/verifier tool | planned |
+| **4** | **Data availability**: in-circuit `da_commitment` over touched post-state, bound on-chain to the published witness blob; independent reconstruction rebuilds the tree + a force-exit inclusion proof from L1 alone ([docs/DA.md](docs/DA.md)). 17/17 ckb-testtool + DA reconstruction test | **done** (standalone CLI = follow-up) |
+| **3** | Single-leaf force-exit (native SMT inclusion, consuming the reconstructed proof) + escape-hatch timeout | next |
+| **2b-6** | Deploy to Pudge (genesis anchor + code cell); sequencer builds real checkpoint txs | planned |
 | **5** | Atomic-swap / Fiber egress (hash-locked transfer variant) | planned |
 | **6** | Permissionless sequencing + anchor sharding (throughput) | planned |
 

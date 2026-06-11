@@ -95,6 +95,16 @@ fn main() {
     let prev = st.pool;
     let native_pv = prove_transition(&prev, &witness, &batch).expect("native transition");
 
+    // The DA blob the sequencer publishes (post-state of the touched leaves). Derived by
+    // applying the measured batch to a clone, so keccak(blob) == the proof's da_commitment.
+    let da_blob = {
+        let mut after = st.clone();
+        apply(&mut after, &batch).expect("apply measured batch");
+        let blob = after.da_blob(&batch);
+        assert_eq!(keccak(&blob), native_pv.da_commitment, "da blob must match da_commitment");
+        blob
+    };
+
     let input = codec::encode_input(&prev, &witness, &batch);
 
     let client = ProverClient::builder().cpu().build();
@@ -121,6 +131,8 @@ fn main() {
         fs::write(format!("{out_dir}/public_values.bin"), &pv_bytes).unwrap();
         fs::write(format!("{out_dir}/vkey.txt"), &vkey).unwrap();
         fs::write(format!("{out_dir}/circuit_version.txt"), SP1_CIRCUIT_VERSION).unwrap();
+        // da_blob.bin = the published state diff the checkpoint tx carries in its witness.
+        fs::write(format!("{out_dir}/da_blob.bin"), &da_blob).unwrap();
         if dw || wd {
             // deposit.bin = to_key(32) ‖ amount(16 BE), for the test to build the deposit cell.
             let mut dep = Vec::with_capacity(48);
@@ -145,6 +157,11 @@ fn main() {
         println!(
             "fee_delta={} fee_withdrawal={} new_total={}",
             native_pv.fee_delta, native_pv.fee_withdrawal, native_pv.new_total
+        );
+        println!(
+            "da_blob_bytes={} da_commitment=0x{}",
+            da_blob.len(),
+            hex::encode(native_pv.da_commitment)
         );
     } else if do_prove {
         // Generate and verify a real SP1 core proof.

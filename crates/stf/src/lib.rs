@@ -16,6 +16,7 @@
 //! See `docs/ARCHITECTURE.md` and `docs/THREAT-MODEL.md` in the repository root.
 
 pub mod codec;
+pub mod da;
 pub mod error;
 pub mod hash;
 pub mod sig;
@@ -23,6 +24,7 @@ pub mod smt;
 pub mod transition;
 pub mod types;
 
+pub use da::{encode_da_blob, parse_da_blob, reconstruct};
 pub use error::StfError;
 pub use hash::{keccak, Hash};
 pub use smt::{root_from_witness, verify_proof, Smt};

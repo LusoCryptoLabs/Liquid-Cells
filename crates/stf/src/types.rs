@@ -148,12 +148,18 @@ pub struct PublicValues {
     /// fee_withdrawal`]). `new_total = prev_total + Σdeposits − Σwithdrawals −
     /// fee_withdrawal`, and `new_fee_acc = prev_fee_acc + fee_delta − fee_withdrawal`.
     pub fee_withdrawal: u128,
+    /// `keccak` of this checkpoint's data-availability blob — the post-state of the
+    /// touched leaves (see [`crate::da`]). Computed in-circuit; the anchor type script
+    /// binds it to the blob bytes the checkpoint tx publishes in its witness, so the
+    /// diff can never be withheld.
+    pub da_commitment: Hash,
 }
 
 impl PublicValues {
     /// Canonical byte encoding (what the guest commits as public input).
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(32 + 8 + 32 + 8 + 32 + 8 + 32 + 32 + 16 + 16 + 16 + 8 + 16);
+        let mut b =
+            Vec::with_capacity(32 + 8 + 32 + 8 + 32 + 8 + 32 + 32 + 16 + 16 + 16 + 8 + 16 + 32);
         b.extend_from_slice(&self.pool_id);
         b.extend_from_slice(&self.chain_id.to_be_bytes());
         b.extend_from_slice(&self.prev_root);
@@ -167,6 +173,7 @@ impl PublicValues {
         b.extend_from_slice(&self.fee_delta.to_be_bytes());
         b.extend_from_slice(&self.current_epoch.to_be_bytes());
         b.extend_from_slice(&self.fee_withdrawal.to_be_bytes());
+        b.extend_from_slice(&self.da_commitment);
         b
     }
 }

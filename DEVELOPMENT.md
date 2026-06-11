@@ -8,6 +8,55 @@ decided, what is next.
 
 ---
 
+## 2026-06-11 — Phase 4: data availability (the diff cannot be withheld)
+
+**Why now (trust ordering).** Validity proofs stop theft/inflation but not *data
+withholding*: a proof says "the transition was correct," not "you can see the new state."
+Without DA a hostile sequencer could publish valid roots whose leaf data only it knows, so
+users couldn't build the inclusion proof a force-exit needs — funds *frozen*, not stolen.
+DA closes that, and it's the prerequisite for Phase 3 force-exit. Reordered ahead of the
+Pudge deploy on purpose.
+
+**Mechanism.** Each checkpoint commits `da_commitment = keccak(da_blob)` in its public
+values, computed **in-circuit** over the touched leaves' post-state
+(`key ‖ balance ‖ nonce`, 56 B each, sorted by key). The checkpoint tx must carry that
+exact blob in the anchor witness `output_type`; the anchor recomputes `keccak(blob)` and
+binds it (code 59). keccak collision-resistance ⇒ the operator can't substitute/shrink/omit
+the diff and still get an accepting checkpoint.
+
+**Sufficiency (the actual trust property).** Replaying every checkpoint's blob from genesis
+rebuilds the *exact* tree, so any user recovers their leaf + sibling path — the force-exit
+proof — from L1 alone, no sequencer cooperation. Implemented as
+`liquid_cells_stf::reconstruct` and proven in `crates/stf/tests/da.rs`: a 3-checkpoint
+history is rebuilt from blobs only, root matches, and a membership proof verifies against
+the on-chain root. ([docs/DA.md](docs/DA.md))
+
+**Landed**
+- STF: new `da` module (`encode_da_blob`/`parse_da_blob`/`reconstruct`), `da_commitment`
+  on `PublicValues` (**PV 256→288 B**, appended), in-circuit computation in
+  `transition_inner`, `State::da_blob`, codec decode. **24 STF native tests** (+2 DA).
+- Contract: `PV_LEN 288`/`WITNESS_LEN 644`, `PV_DA_COMMIT` (256); reads the blob from
+  witness `output_type`, binds `keccak == da_commitment` (cheap, before the pairing).
+  New vkey `0x00add002…55ee9` (guest ELF changed again with the STF).
+- Host: derives the published blob (clone+apply the measured batch), asserts
+  `keccak == da_commitment`, writes `da_blob.bin`. Fixtures regenerated (PV 288; blob
+  112/168/168 B for 2/3/3 touched leaves), Groth16-verified.
+- Tests: anchor `tampered_da_blob_rejected` + `missing_da_blob_rejected` (both code 59);
+  deposit/withdrawal builders now publish the blob in `output_type`. **17/17 ckb-testtool**
+  (8 anchor + 5 deposit + 4 withdrawal).
+
+**Trust status.** Theft/inflation/forged-roots (proofs), user-funds-can't-pay-L1-fee
+(2b-5), and now **data withholding** are all eliminated. Remaining gap to "fully
+trustless": **Phase 3 force-exit / escape hatch** (consumes the reconstructed proof), then
+dust egress (Phase 5). Plus: still local-only (not on Pudge), unaudited.
+
+**Open**
+- Phase 3 force-exit (next): on-chain single-leaf SMT-inclusion spend vs the last committed
+  root + operator-silence timeout (needs `current_epoch`↔tx `since` binding).
+- Standalone DA reconstruction CLI (thin wrapper over `reconstruct`). Pudge deploy (2b-6).
+
+---
+
 ## 2026-06-11 — Phase 2b-5: proven L1 fee model (`fee_withdrawal`)
 
 **Problem.** A CKB checkpoint tx must leave a positive miner fee (`Σin − Σout > 0`), but

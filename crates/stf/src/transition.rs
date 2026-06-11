@@ -235,6 +235,12 @@ fn transition_inner(
         root_from_witness(&post_entries, &witness.siblings).ok_or(StfError::MalformedWitness)?
     };
 
+    // Data-availability commitment over the touched leaves' post-state, in batch's
+    // sorted key order (the `work` BTreeMap is already sorted). The anchor binds this
+    // to the published blob bytes, so the diff cannot be withheld.
+    let da_entries: Vec<(Hash, Leaf)> = work.iter().map(|(k, l)| (*k, *l)).collect();
+    let da_commitment = crate::da::da_commitment(&crate::da::encode_da_blob(&da_entries));
+
     let pv = PublicValues {
         pool_id: prev.pool_id,
         chain_id: prev.chain_id,
@@ -249,6 +255,7 @@ fn transition_inner(
         fee_delta: ops.fee_delta,
         current_epoch: batch.current_epoch,
         fee_withdrawal: batch.fee_withdrawal,
+        da_commitment,
     };
     Ok((pv, work))
 }
@@ -289,6 +296,16 @@ impl State {
         let leaves = tk.iter().map(|k| (*k, self.get_leaf(k))).collect();
         let siblings = self.smt.frontier_siblings(&tk);
         Witness { leaves, siblings }
+    }
+
+    /// The canonical DA blob for `batch` against THIS state. Call it on the *post-apply*
+    /// state: it reads the touched leaves' post-state (sorted by key), so
+    /// `keccak(state.da_blob(batch)) == pv.da_commitment`. This is the byte string the
+    /// sequencer publishes in the checkpoint tx witness.
+    pub fn da_blob(&self, batch: &Batch) -> Vec<u8> {
+        let tk = touched_keys(batch);
+        let entries: Vec<(Hash, Leaf)> = tk.iter().map(|k| (*k, self.get_leaf(k))).collect();
+        crate::da::encode_da_blob(&entries)
     }
 }
 

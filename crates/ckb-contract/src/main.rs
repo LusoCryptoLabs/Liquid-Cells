@@ -6,7 +6,8 @@
 //! for the input group carries `proof ‖ public_values`.
 //!
 //!   anchor cell data (72 bytes): root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE)
-//!   witness input_type        : proof(356) ‖ public_values(256)
+//!   witness input_type        : proof(356) ‖ public_values(288)
+//!   witness output_type       : da_blob (the published state diff)
 //!
 //! The script, in order (cheap checks first so a tampered transaction is rejected
 //! without paying for the BN254 pairing): (1) pins `prev_*`/`new_*` in the public
@@ -24,7 +25,13 @@
 //! The `fee_withdrawal` is the CKB the sequencer draws from accumulated pool fees to
 //! fund the on-chain miner fee; the in-circuit STF caps it at fee revenue, so the
 //! solvency check above makes "an L1 fee is never skimmed from a user balance" an
-//! on-chain-verifiable fact. Not yet bound here: the DA blob (Phase 4).
+//! on-chain-verifiable fact.
+//!
+//! Data availability (Phase 4): the proof commits `da_commitment = keccak(da_blob)` over
+//! the touched leaves' post-state, and the checkpoint tx must carry that exact blob in
+//! the anchor witness `output_type`. The script recomputes `keccak(blob)` and binds it
+//! (code 59), so the operator cannot advance the root while withholding the diff — any
+//! user can replay the published blobs and force-exit.
 
 #![no_std]
 #![no_main]
@@ -48,12 +55,13 @@ mod atomics;
 // ---- baked policy ----
 /// SP1 v6 Groth16 universal verifying key (identical to the g16ckb / bridge VK).
 static GROTH16_VK: &[u8] = include_bytes!("../../../fixtures/reference/groth16_vk.bin");
-/// Our program's SP1 vkey hash (`0x00cd19a7…521f5`) — binds the proof to *this* STF.
-/// (Changed from the Phase-2a `0x00fda595…ace165` when the STF gained `fee_withdrawal`:
-/// the guest ELF — which compiles in the STF — changed, so its program vkey changed.)
+/// Our program's SP1 vkey hash (`0x00add002…55ee9`) — binds the proof to *this* STF.
+/// (Re-derived again in Phase 4 when the STF gained `da_commitment`: the guest ELF
+/// changed, so its program vkey changed. Was `0x00cd19a7…521f5` in 2b-5,
+/// `0x00fda595…ace165` in 2a. Any STF change ⇒ this must be re-baked.)
 static VKEY_HASH: [u8; 32] = [
-    0x00, 0xcd, 0x19, 0xa7, 0x49, 0x78, 0x2b, 0x8e, 0xa1, 0x85, 0x7b, 0xb0, 0x8c, 0x16, 0x85, 0xda,
-    0x88, 0xa2, 0x26, 0x16, 0x99, 0x28, 0x92, 0xda, 0xff, 0x0e, 0x1a, 0xea, 0x6f, 0xf5, 0x21, 0xf5,
+    0x00, 0xad, 0xd0, 0x02, 0x4a, 0xda, 0x58, 0x4d, 0xc3, 0x01, 0x12, 0xa8, 0x93, 0xdb, 0xf0, 0x3b,
+    0x3b, 0x9a, 0xb1, 0xdc, 0xd4, 0x5b, 0x98, 0x33, 0x36, 0x0e, 0xce, 0x08, 0x5e, 0x15, 0x5e, 0xe9,
 ];
 /// SP1 v6.1.0 recursion vk root.
 static VK_ROOT: [u8; 32] = [
@@ -69,9 +77,9 @@ const CHAIN_ID: u64 = 0x0043_4b42;
 
 // ---- layouts ----
 const ANCHOR_LEN: usize = 72; // root(32) seq(8) total(16) fee_acc(16)
-const PV_LEN: usize = 256;
+const PV_LEN: usize = 288;
 const PROOF_LEN: usize = 356;
-const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 612
+const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 644
 
 // anchor data offsets
 const A_ROOT: usize = 0;
@@ -93,6 +101,7 @@ const PV_NEW_TOTAL: usize = 200;
 const PV_FEE_DELTA: usize = 216;
 // (current_epoch occupies 232..240)
 const PV_FEE_WD: usize = 240;
+const PV_DA_COMMIT: usize = 256;
 
 const MASK: u8 = 0b11 << 6;
 const COMPRESSED_POSITIVE: u8 = 0b10 << 6;
@@ -482,6 +491,16 @@ fn program_entry() -> i8 {
     }
     if wd_c[..] != pv[PV_WD_COMMIT..PV_WD_COMMIT + 32] {
         return 56;
+    }
+    // Data availability: the checkpoint must publish the state diff. keccak of the blob
+    // carried in the anchor witness output_type must equal the proven da_commitment, so
+    // the operator cannot advance the root while withholding it (code 59).
+    let da_ok = match wa.output_type().to_opt() {
+        Some(b) => keccak(&b.raw_data())[..] == pv[PV_DA_COMMIT..PV_DA_COMMIT + 32],
+        None => keccak(&[])[..] == pv[PV_DA_COMMIT..PV_DA_COMMIT + 32],
+    };
+    if !da_ok {
+        return 59;
     }
     // accounting: prev_total + Σdeposits − Σwithdrawals − fee_withdrawal == new_total
     let prev_total = rd_u128(pv, PV_PREV_TOTAL) as i128;
