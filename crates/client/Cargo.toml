@@ -1,0 +1,16 @@
+[package]
+name = "liquid-cells-client"
+version = "0.0.0"
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+# The client SDK: build + sign intents and reconstruct your own leaf from L1 data, using the
+# EXACT `liquid-cells-stf` the sequencer and SP1 guest run. Reusing the canonical STF (rather
+# than reimplementing its byte layouts / signing / SMT) is what guarantees a client can never
+# disagree with the sequencer or the on-chain contract — the same "one STF, no divergence"
+# discipline the whole protocol rests on. STF-only + blake2b (for the CKB secp lock args a
+# force-exit pays to); no chain RPC here, so it stays in the lean workspace and tests fast.
+[dependencies]
+liquid-cells-stf = { path = "../stf" }
+blake2b-ref = "0.3"

@@ -11,7 +11,7 @@
 #   crates/ckb-contract— anchor type script: Groth16 verify + public-input binding
 [workspace]
 resolver = "2"
-members = ["crates/stf", "crates/sequencer"]
+members = ["crates/stf", "crates/sequencer", "crates/client"]
 # The SP1 guest (zkVM target) and host (heavy sp1-sdk dep) are standalone crates so
 # `cargo test` at the root stays lean. They depend on the stf crate by path.
 exclude = ["crates/sp1-guest", "crates/sp1-host", "crates/ckb-contract", "crates/ckb-contract-tests"]
