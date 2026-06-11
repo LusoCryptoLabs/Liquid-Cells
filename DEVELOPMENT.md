@@ -22,6 +22,9 @@ decided, what is next.
   keccak-precompile patch actually engages (the 0.10.9 lock had silently skipped it).
 - `MAX_LEAVES_PER_BATCH = 1024`, enforced in-circuit in `prove_transition`
   (`BatchTooLarge`), plus a test.
+- **First real proof**: host `prove` mode generates and verifies an SP1 **core
+  STARK** proof. n=1 (1.17M cycles) proved + verified in **~89s** on CPU, with the
+  proven `PublicValues` matching native (`new_root=0x3bd5018a…`).
 
 **Cycle measurements (execute mode, n payers → 1 recipient, n+1 touched leaves)**
 
