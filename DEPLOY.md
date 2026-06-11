@@ -31,14 +31,21 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
   the lower consensus limit the tests never did. (This also means there is **no prior on-chain
   CKB precedent**: g16ckb does the same 4-pairing and was only ever run under ckb-debugger.)
 
-### Fix path (not yet done)
+### Fix path — measured, viable, not yet implemented
 
-Standard Groth16 optimization: **precompute the constant `e(alpha, beta)` pairing** and check 3
-pairings instead of 4 (`miller_loop_batch` of 3 pairs → `final_exponentiation` → compare to the
-baked `alpha_beta` Gt), removing one Miller loop (~20% → ~3.0–3.2B, likely under the limit). The
-`bn` crate exposes `miller_loop_batch` + `final_exponentiation`, so it's feasible; it requires
-serializing the `Fq12` constant, restructuring `verify_alg`, re-testing with a **tight** cycle
-bound, and a redeploy. If that's not enough, a CKB-VM BN254 precompile would be the next lever.
+Standard Groth16 optimization: **precompute the constant `e(alpha, beta)` pairing** and verify 3
+pairings instead of 4 (`miller_loop_batch` of 3 → `final_exponentiation` → `lhs == ALPHA_BETA`).
+
+**Measured (ckb-testtool, 3-pairing structure): 3,474,591,150 cycles** — *under* the 3,498,303,961
+limit, but by only **~24M (~0.7%)**. So the optimization is sufficient, though the margin is thin.
+
+**Implementation hurdle:** baking the `ALPHA_BETA` constant needs **`Gt` (de)serialization**, which
+substrate-bn does **not** expose — the inner `Fq12` is private and there is no `Gt::from_bytes`/
+construction from field elements. So the fix requires **vendoring + patching** the `bn` crate
+(surgical: add `Gt::to_bytes`/`from_bytes` over its `Fq12`/`Fq6`/`Fq2`/`Fq` tower, which *are*
+accessible inside the crate), computing `ALPHA_BETA = pairing(vk.alpha, vk.beta)` off-chain,
+baking it, restructuring `verify_alg`, re-testing with a **tight** cycle bound, and a redeploy.
+If the thin margin proves fragile on-chain, a CKB-VM BN254 precompile is the next lever.
 
 ## Genesis & checkpoint shape
 

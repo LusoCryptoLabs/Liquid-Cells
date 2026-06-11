@@ -285,6 +285,11 @@ fn verify_alg(vk: &Vk, p: &Pf, public_inputs: &[Fr]) -> bool {
         Some(x) => x,
         None => return false,
     };
+    // NOTE: this 4-pairing batch costs ~3.81B cycles, which EXCEEDS the CKB block cycle
+    // limit (~3.50B) — confirmed by the live Pudge checkpoint rejection (see DEPLOY.md). The
+    // fix is to precompute the constant e(alpha, beta) and verify 3 pairings instead of 4
+    // (measured ~3.47B, under the limit), which needs a `bn`-crate patch to (de)serialize
+    // the Gt constant. Tracked in DEPLOY.md.
     pairing_batch(&[
         (-Into::<G1>::into(p.ar), p.bs.into()),
         (prepared, vk.gamma.into()),
