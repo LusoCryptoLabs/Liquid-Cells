@@ -9,12 +9,13 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 |---|---|
 | Network | Pudge (CKB testnet) |
 | Anchor type script `codeHash` | `0x83158549bb5b2241997d1e8bb5e24b432a78e74473c8601cea276411bca99f1e` (hashType `type`) |
-| Code-cell dep outpoint (current) | `0x4ea3eb48056ee401076c9b26668f903f46b9ec872c1462e222c31a2ead4808fc:0` (depType `code`) |
+| Code-cell dep outpoint (current) | `0x68f9730a2cd9bfccb5b34e733807c28646c6b74a84980827c7ffcc6df1452767:0` (depType `code`) |
 | First deploy tx | `0x25c87b3792b7e14a5efd580ea5569e954be0e824b252ea14864a1ebf152c6330` |
 | Genesis-branch upgrade tx | `0xc5b8e43d19230a1f965d95f3e1f3144f3f2f823736c92ff60f6f4b78ea7c7862` (same type-id) |
 | 3-pairing upgrade tx | `0x2e1919b45e871db6bc4267674c6810d3ac1f09b4a8abd4c9fada15af16233c7f` (same type-id) |
 | force-refund + lock-continuity upgrade tx | `0xf393b36780fe243ad70f20e3b026797d122719fc249b8fd84ca50253d7e58313` (same type-id) |
-| sequencer-reward upgrade tx | `0x4ea3eb48056ee401076c9b26668f903f46b9ec872c1462e222c31a2ead4808fc` (same type-id, current) |
+| sequencer-reward upgrade tx | `0x4ea3eb48056ee401076c9b26668f903f46b9ec872c1462e222c31a2ead4808fc` (same type-id) |
+| **ark-bn254 verifier upgrade tx** | `0x68f9730a2cd9bfccb5b34e733807c28646c6b74a84980827c7ffcc6df1452767` (same type-id, **current**; verify 3.47B → ~80M cycles, binary 293KB → 112KB) |
 | Genesis anchor outpoint | `0xdb895bbafc29e2df3cf26cce3aac21f0132aa5f32a3edce3aac8cc60ba9ce00a:0` |
 | Genesis anchor type hash | `0xf4c1baf2fda7e9a07b762387934ce6b2d275bd4e533ae558c7233907f2f6b7a1` |
 | First checkpoint tx (seq 0→1) | `0xca6bfc76cbfae1b1dfedfbcab02fe84c1ab9019cb711defce65587091c373d51` |
