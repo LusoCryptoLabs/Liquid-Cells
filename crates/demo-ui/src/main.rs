@@ -215,10 +215,11 @@ fn json_resp(v: Value) -> Response<std::io::Cursor<Vec<u8>>> {
 }
 
 fn main() {
-    let addr = "127.0.0.1:8088";
+    // Bind all interfaces so it is reachable from the Windows host via WSL2 localhost forwarding.
+    let addr = "0.0.0.0:8088";
     let server = Server::http(addr).expect("bind");
     let demo = Mutex::new(Demo::new());
-    println!("Liquid Cells demo UI running at http://{addr}");
+    println!("Liquid Cells demo UI running, open http://127.0.0.1:8088");
 
     for mut req in server.incoming_requests() {
         let method = req.method().clone();
