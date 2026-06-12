@@ -9,11 +9,12 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 |---|---|
 | Network | Pudge (CKB testnet) |
 | Anchor type script `codeHash` | `0x83158549bb5b2241997d1e8bb5e24b432a78e74473c8601cea276411bca99f1e` (hashType `type`) |
-| Code-cell dep outpoint (current) | `0xf393b36780fe243ad70f20e3b026797d122719fc249b8fd84ca50253d7e58313:0` (depType `code`) |
+| Code-cell dep outpoint (current) | `0x4ea3eb48056ee401076c9b26668f903f46b9ec872c1462e222c31a2ead4808fc:0` (depType `code`) |
 | First deploy tx | `0x25c87b3792b7e14a5efd580ea5569e954be0e824b252ea14864a1ebf152c6330` |
 | Genesis-branch upgrade tx | `0xc5b8e43d19230a1f965d95f3e1f3144f3f2f823736c92ff60f6f4b78ea7c7862` (same type-id) |
 | 3-pairing upgrade tx | `0x2e1919b45e871db6bc4267674c6810d3ac1f09b4a8abd4c9fada15af16233c7f` (same type-id) |
-| force-refund + lock-continuity upgrade tx | `0xf393b36780fe243ad70f20e3b026797d122719fc249b8fd84ca50253d7e58313` (same type-id, current) |
+| force-refund + lock-continuity upgrade tx | `0xf393b36780fe243ad70f20e3b026797d122719fc249b8fd84ca50253d7e58313` (same type-id) |
+| sequencer-reward upgrade tx | `0x4ea3eb48056ee401076c9b26668f903f46b9ec872c1462e222c31a2ead4808fc` (same type-id, current) |
 | Genesis anchor outpoint | `0xdb895bbafc29e2df3cf26cce3aac21f0132aa5f32a3edce3aac8cc60ba9ce00a:0` |
 | Genesis anchor type hash | `0xf4c1baf2fda7e9a07b762387934ce6b2d275bd4e533ae558c7233907f2f6b7a1` |
 | First checkpoint tx (seq 0→1) | `0xca6bfc76cbfae1b1dfedfbcab02fe84c1ab9019cb711defce65587091c373d51` |
@@ -77,20 +78,26 @@ place via type-id (same `codeHash`).
   has no fee revenue, and CKB requires a positive fee). `current_epoch = 0`, so the anchor
   input's `since` is absolute epoch 0.
 
-## Force-refund + lock continuity, now live (Phases 5b and 6)
+## Force-refund + lock continuity + sequencer reward, now live (Phases 5b and 6)
 
-The current code cell (upgrade tx `0xf393b36780fe…`, same type-id `0x83158549…`) carries two
+The current code cell (upgrade tx `0x4ea3eb48056e…`, same type-id `0x83158549…`) carries three
 additions over the 3-pairing binary:
 
 - **`force_refund`** (Phase 5b): a third anchor mode, a timed-out HTLC escrow's sender
   unilaterally reclaims it (see [docs/EGRESS.md](docs/EGRESS.md)). 9 ckb-testtool cases.
-- **anchor lock continuity** (Phase 6): the type script requires `output anchor lock == input
+- **anchor lock continuity** (Phase 6a): the type script requires `output anchor lock == input
   anchor lock`, so the genesis lock is a permanent, unforgeable policy for who may sequence. A
   permissive (always-success) genesis lock then yields a permanently **permissionless**,
   capture-proof pool. Backward-compatible: the original deployer-locked pool keeps working.
+- **sequencer reward** (Phase 6b): a non-anchor output whose data starts with
+  `LIQUIDCELLS/v1/fee-reward` is a reward cell paid out of the proven `fee_withdrawal` (bounded by
+  it, so never from a user balance), excluded from the withdrawals commitment. This is what makes
+  permissionless sequencing profitable, hence self-sustaining. The live demo of a sequencer
+  earning a fee is pending only because a reward cell must clear the 61-CKB floor, which needs a
+  fee-accrued checkpoint to draw from; the mechanism is proven by ckb-testtool (anchor.rs 11).
 
-Neither touches the STF or the guest, so the baked **vkey is unchanged** and every prior anchor
-stays valid.
+None of these touch the STF or the guest, so the baked **vkey is unchanged** and every prior
+anchor stays valid.
 
 ## Permissionless pool (Phase 6 foundational slice)
 
