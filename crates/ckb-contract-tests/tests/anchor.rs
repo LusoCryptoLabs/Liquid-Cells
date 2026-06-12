@@ -193,10 +193,11 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
 fn valid_checkpoint_verifies() {
     let (ctx, tx) = build(Cfg::default());
     let cyc = ctx.verify_tx(&tx, MAX_CYCLES).expect("a valid checkpoint must verify");
-    // Regression guard. The ark-bn254 verifier does the plain 4-pairing Groth16 check at
-    // ~53M cycles (~1.5% of CKB's ~3.50B block limit). The old substrate-bn verifier needed a
-    // 3-pairing e(alpha,beta) precompute just to fit at ~3.47B (99.3%); ark removed that need.
-    assert!(cyc < 100_000_000, "checkpoint cycles {cyc} regressed (ark verifier should be ~53M)");
+    // Regression guard. The ark-bn254 verifier does the plain 4-pairing Groth16 check at ~80M
+    // cycles with the size-optimized (opt-z) build, ~2.3% of CKB's ~3.50B block limit (the
+    // opt-level=3 build was ~53M). The old substrate-bn verifier needed a 3-pairing e(alpha,beta)
+    // precompute just to fit at ~3.47B (99.3%); ark removed that need.
+    assert!(cyc < 150_000_000, "checkpoint cycles {cyc} regressed (ark verifier should be ~80M)");
 }
 
 #[test]

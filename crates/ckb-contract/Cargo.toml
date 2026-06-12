@@ -26,10 +26,14 @@ sha3 = { version = "=0.10.8", default-features = false }
 blake2b-ref = { version = "0.3", default-features = false }
 
 [profile.release]
-opt-level = 3
-lto = false
+# Optimize for SIZE: the ark-bn254 verifier left us ~53M of the 3.5B block cycle budget, so we
+# trade a little speed for a smaller code cell (1 CKB locked per binary byte on-chain). `z` + LTO
+# + strip shrinks the binary so an in-place code-cell upgrade fits the deployer's funds.
+opt-level = "z"
+lto = true
 panic = "abort"
 codegen-units = 1
 overflow-checks = false
+strip = true
 
 [workspace]
