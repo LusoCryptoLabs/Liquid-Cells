@@ -70,6 +70,12 @@
     <h2>Your pool balance</h2>
     <div><span class="bigbal" id="bal">0</span> <span class="unit">CKB</span> <span class="sub" id="pendNote"></span></div>
     <div class="sub" id="addrLine"></div>
+    <div style="margin-top:6px">
+      <button class="ghost" onclick="disconnect()" style="font-size:12px;padding:4px 11px">Disconnect wallet</button>
+      <button class="ghost" onclick="exportSession()" style="font-size:12px;padding:4px 11px">Back up session key</button>
+      <button class="ghost" onclick="importSession()" style="font-size:12px;padding:4px 11px">Restore session key</button>
+    </div>
+    <p class="note" id="sessNote">Your pool funds are controlled by a session key stored only in this browser. Back it up: if this browser's storage is cleared you would otherwise lose access. (A production wallet would derive this key deterministically from your wallet signature so it is always recoverable; JoyID's passkey signatures are non-deterministic, so here the key is exportable instead.)</p>
     <div class="rowflex">
       <input id="dep" type="number" step="1" value="100" min="73" />
       <button class="go" id="depBtn" onclick="deposit()">Deposit to pool</button>
@@ -172,7 +178,10 @@ function withdrawMsg(targetLockHash, amount, nonce, expiry) {
 
 // ---------- CCC wallet ----------
 const client = new ccc.ClientPublicTestnet();
-let signer = null, myLock = null, myAddr = null;
+let myLock = null, myAddr = null;
+// One signer instance. CCC's JoyID signer persists its connection in localStorage, so it can be
+// restored on reload (see the auto-reconnect at the bottom) without re-opening the passkey popup.
+const signer = new ccc.JoyId.CkbSigner(client, "CellTip Demo", location.origin + "/favicon.ico");
 const AS_LOCK = { codeHash: "0xd8c2346649752dc03e8e747ae6152fe13675be36b3c77e459d6f841988c2d06e", hashType: "type", args: "0x" };
 
 const $ = (id) => document.getElementById(id);
@@ -183,23 +192,69 @@ async function api(path, body) {
 const feed = [];
 function log(msg, cls) { feed.unshift(`<div class="${cls || ''}">${msg}</div>`); $("feed").innerHTML = feed.slice(0, 12).join(""); $("actCard").classList.remove("hide"); }
 
+async function finishConnect() {
+  myAddr = await signer.getRecommendedAddress();
+  myLock = (await signer.getAddressObj()).script;
+  deriveSession(myAddr); // this wallet's own session key + pool identity
+  $("connectCard").classList.add("hide");
+  for (const id of ["walletCard", "tipCard", "withdrawCard", "safeCard", "jobsCard"]) $(id).classList.remove("hide");
+  $("addrLine").innerHTML = `wallet <span class="mono">${myAddr.slice(0, 22)}…</span> · pool id <span class="mono">${hex(FROM_KEY).slice(0, 14)}…</span>`;
+  await api("/api/register", { pubkey: hex(PUB) });
+  refreshWalletBal();
+  refresh();
+}
+
 window.connect = async function () {
   try {
     $("connectStatus").textContent = "opening JoyID…";
-    signer = new ccc.JoyId.CkbSigner(client, "CellTip Demo", location.origin + "/favicon.ico");
     await signer.connect();
-    myAddr = await signer.getRecommendedAddress();
-    myLock = (await signer.getAddressObj()).script;
-    deriveSession(myAddr); // this wallet's own session key + pool identity
-    $("connectCard").classList.add("hide");
-    for (const id of ["walletCard", "tipCard", "withdrawCard", "safeCard", "jobsCard"]) $(id).classList.remove("hide");
-    $("addrLine").innerHTML = `wallet <span class="mono">${myAddr.slice(0, 22)}…</span> · pool id <span class="mono">${hex(FROM_KEY).slice(0, 14)}…</span>`;
-    await api("/api/register", { pubkey: hex(PUB) });
+    await finishConnect();
     log("Wallet connected. Your own session key derived (self-custodial, this wallet only).", "ok");
-    refreshWalletBal();
-    refresh();
   } catch (e) {
     $("connectStatus").innerHTML = `<span class="err">connect failed: ${e.message || e}</span>`;
+  }
+};
+
+window.disconnect = async function () {
+  try { await signer.disconnect(); } catch {}
+  myLock = null; myAddr = null; SK = null; PUB = null; FROM_KEY = null;
+  for (const id of ["walletCard", "tipCard", "withdrawCard", "safeCard", "jobsCard"]) $(id).classList.add("hide");
+  $("connectCard").classList.remove("hide");
+  $("connectStatus").textContent = "disconnected";
+  log("Wallet disconnected. Your session key stays saved, reconnect the same wallet to restore it.", "warn");
+};
+
+// ---------- session-key recovery: export / import the per-wallet key ----------
+// The session key is the ONLY authority over this wallet's pool funds. If localStorage is lost
+// the funds become unspendable (still safe on-chain, but unreachable). Export lets a user back
+// it up; import restores it on another device/browser. This is the demo's stand-in for the
+// production answer (deterministic derivation from the wallet), which JoyID's non-deterministic
+// passkey signatures preclude.
+window.exportSession = function () {
+  if (!SK) { log("Connect a wallet first.", "warn"); return; }
+  const skhex = "0x" + hex(SK);
+  // Copy to clipboard where available, and show it so the user can store it safely.
+  try { navigator.clipboard && navigator.clipboard.writeText(skhex); } catch {}
+  log(`Session key for <span class="mono">${myAddr.slice(0,16)}…</span> (copied to clipboard, store it somewhere safe):<br><span class="mono" style="word-break:break-all">${skhex}</span>`, "warn");
+};
+
+window.importSession = function () {
+  if (!myAddr) { log("Connect the wallet first, then restore its session key.", "warn"); return; }
+  const raw = prompt("Paste a previously backed-up session key (0x + 64 hex chars):");
+  if (!raw) return;
+  const s = raw.trim().replace(/^0x/, "").toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(s)) { log("That is not a 32-byte hex key.", "err"); return; }
+  try {
+    const sk = bytesFromHex(s);
+    secp256k1.getPublicKey(sk, true); // validates the scalar is in range
+    localStorage.setItem("lc-demo-session-" + myAddr, s);
+    deriveSession(myAddr);            // re-derive PUB / FROM_KEY from the restored key
+    api("/api/register", { pubkey: hex(PUB) });
+    $("addrLine").innerHTML = `wallet <span class="mono">${myAddr.slice(0, 22)}…</span> · pool id <span class="mono">${hex(FROM_KEY).slice(0, 14)}…</span>`;
+    refresh();
+    log("Session key restored. Your pool identity and balance are back.", "ok");
+  } catch (e) {
+    log(`Could not restore that key: ${e.message || e}`, "err");
   }
 };
 
@@ -323,7 +378,16 @@ window.addEventListener("error", (e) => {
   }
 });
 
-refresh();
+// Auto-reconnect a previously connected wallet so the session persists across reloads.
+(async () => {
+  try {
+    if (await signer.isConnected()) {
+      await finishConnect();
+      log("Wallet reconnected from your last session.", "ok");
+    }
+  } catch (e) { /* not connected; leave the connect button showing */ }
+  refresh();
+})();
 setInterval(refresh, 5000);
 </script>
 </body>
