@@ -285,6 +285,23 @@ pub fn decode_input(bytes: &[u8]) -> Result<(PoolState, Witness, Batch), CodecEr
     Ok((prev, witness, batch))
 }
 
+/// Encode a single [`Batch`] in the canonical layout (same bytes used inside
+/// [`encode_input`]). Exposed so the sequencer's durability journal can persist a
+/// sealed batch and replay it verbatim.
+pub fn encode_batch(batch: &Batch) -> Vec<u8> {
+    let mut o = Vec::new();
+    enc_batch(&mut o, batch);
+    o
+}
+
+/// Decode a [`Batch`] produced by [`encode_batch`].
+pub fn decode_batch(bytes: &[u8]) -> Result<Batch, CodecError> {
+    let mut r = R::new(bytes);
+    let b = dec_batch(&mut r)?;
+    r.finish()?;
+    Ok(b)
+}
+
 /// Decode the public values the guest committed (layout matches
 /// [`PublicValues::encode`]).
 pub fn decode_public_values(bytes: &[u8]) -> Result<PublicValues, CodecError> {

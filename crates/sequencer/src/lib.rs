@@ -37,6 +37,11 @@ pub use sharded::{shard_pool_id, ShardedSequencer};
 
 pub mod coordinator;
 
+pub mod journal;
+pub use journal::{
+    DurableSequencer, FileJournal, IntentRecord, Journal, JournalRecord, MemJournal, SealError,
+};
+
 /// Anchor cell data length (bytes): `root(32) ‖ seq(8) ‖ total(16) ‖ fee_acc(16) ‖ last_epoch(8)`.
 /// Byte-identical to the on-chain `ANCHOR_LEN` in the anchor type script.
 pub const ANCHOR_LEN: usize = 80;
