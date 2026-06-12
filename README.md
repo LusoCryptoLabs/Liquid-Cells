@@ -15,7 +15,7 @@ itself, the same base as any on-chain transaction.
 
 > Status: **Live on Pudge testnet, pre-alpha.** The deterministic STF, its SP1 proof
 > wrapped to Groth16, and the on-chain anchor type script are implemented and tested
-> end-to-end (32 STF + 36 integration tests): proof verification on CKB-VM bound to real
+> end-to-end (36 STF + 46 contract integration tests): proof verification on CKB-VM bound to real
 > deposit/withdrawal cells, value conservation, a proven L1 fee model, **data availability**,
 > a **force-exit escape hatch**, **in-pool HTLCs** for atomic-swap dust egress, and an
 > on-chain **force-refund** hatch that lets a swap's sender unilaterally reclaim a timed-out
@@ -24,12 +24,18 @@ itself, the same base as any on-chain transaction.
 > now deployed on the CKB Pudge testnet: a genesis pool was created and a first checkpoint
 > landed with the SP1 Groth16 BN254 proof verified on live CKB-VM** ([DEPLOY.md](DEPLOY.md)).
 > The on-chain verifier uses **ark-bn254**: a plain 4-pairing Groth16 check measured at **~53M
-> cycles (~1.5% of CKB's ~3.50B block limit)**, with the same SP1 proofs verifying and all 40
+> cycles (~1.5% of CKB's ~3.50B block limit)**, with the same SP1 proofs verifying and all 46
 > contract tests green. (It previously used `substrate-bn` and needed a 3-pairing `e(alpha,beta)`
 > precompute just to fit at ~3.47B = 99.3%; the port to `ark-bn254` cut that ~65x and removed the
 > hack, see [docs/PRIOR-ART.md](docs/PRIOR-ART.md).) What remains to be a usable system (not more
 > cryptography): a client SDK, the L1/Fiber swap leg, throughput (Phase 6), and, before any real
 > value, an external audit. Testnet only, unaudited.
+
+> **Hardening.** A production-hardening pass added a differential test of the hand-ported ark
+> verifier (vs the independent substrate-bn implementation, over a fuzzed corpus), an STF fuzzer
+> with an independent shadow ledger, a crash-tolerant sequencer replay journal, a deposit lock that
+> closes the always-success theft window, and session-key recovery. See **[HARDENING.md](HARDENING.md)**
+> for the work and the honest, audit-aside roadmap to mainnet.
 
 > **Honest positioning (prior art).** This is a working *implementation*, not a novel protocol.
 > Nearly every ingredient has prior art, much of it on CKB: sec-bit's **Clover** (a zkRollup on the

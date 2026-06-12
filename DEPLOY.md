@@ -3,6 +3,10 @@
 Liquid Cells is deployed on the **Pudge** testnet. **Testnet only, unaudited, no real
 value.** This records the live artifacts so a checkpoint or force-exit can be reproduced.
 
+> The **deposit lock** (`crates/ckb-contract/src/deposit_lock.rs`) is implemented and tested but
+> not yet deployed; its deploy procedure is in [HARDENING.md](HARDENING.md#deposit-lock-deploy-procedure-pending).
+> Live deposit cells still use an always-success lock until that lands.
+
 ## Live artifacts
 
 | Artifact | Value |
