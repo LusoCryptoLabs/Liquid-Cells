@@ -58,8 +58,12 @@ formality): the buildable path, ranked by leverage. Items marked done were close
 - [x] Type-id the anchor so each pool has a unique type hash (contract capability, backward
   compatible): empty args = the legacy baked `POOL_ID`; 32-byte args = a type-id'd pool whose
   identity is enforced at genesis as `blake2b(first input)`. 50 contract tests green.
-- [ ] Activate it: deploy a type-id'd pool live and route the deposit lock to its unique type
-  hash (needs a real proved checkpoint and the sequencer configured with `pool_id = type-id`).
+- [x] Activate it: live code-cell upgrade (in place, codeHash preserved) + a type-id'd pool
+  genesis'd on Pudge (tx `0x805e6252…`, pool_id `0x06865b65…`, unique anchor type hash
+  `0xf7dfded8…`). The genesis type-id enforcement is verified live (the tx committed, so the
+  on-chain `anchor_type_id() == args` check passed). See [DEPLOY.md](DEPLOY.md).
+- [ ] Advance the type-id'd pool with a proved checkpoint and route the deposit lock to its unique
+  type hash (needs the prover configured with `pool_id = type-id` and a ~7-min proof).
 - [ ] Receiver-side force-claim for HTLC egress: the one documented architectural residual
   (`force_refund` closes the sender side only). See [docs/EGRESS.md](docs/EGRESS.md).
 

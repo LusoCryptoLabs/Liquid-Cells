@@ -16,13 +16,14 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 |---|---|
 | Network | Pudge (CKB testnet) |
 | Anchor type script `codeHash` | `0x83158549bb5b2241997d1e8bb5e24b432a78e74473c8601cea276411bca99f1e` (hashType `type`) |
-| Code-cell dep outpoint (current) | `0x68f9730a2cd9bfccb5b34e733807c28646c6b74a84980827c7ffcc6df1452767:0` (depType `code`) |
+| Code-cell dep outpoint (current) | `0x557d705a672e59e89b72132f05c8e5f3e2970fb994a23959d8a3d20e7fcbd5ec:0` (depType `code`) |
 | First deploy tx | `0x25c87b3792b7e14a5efd580ea5569e954be0e824b252ea14864a1ebf152c6330` |
 | Genesis-branch upgrade tx | `0xc5b8e43d19230a1f965d95f3e1f3144f3f2f823736c92ff60f6f4b78ea7c7862` (same type-id) |
 | 3-pairing upgrade tx | `0x2e1919b45e871db6bc4267674c6810d3ac1f09b4a8abd4c9fada15af16233c7f` (same type-id) |
 | force-refund + lock-continuity upgrade tx | `0xf393b36780fe243ad70f20e3b026797d122719fc249b8fd84ca50253d7e58313` (same type-id) |
 | sequencer-reward upgrade tx | `0x4ea3eb48056ee401076c9b26668f903f46b9ec872c1462e222c31a2ead4808fc` (same type-id) |
-| **ark-bn254 verifier upgrade tx** | `0x68f9730a2cd9bfccb5b34e733807c28646c6b74a84980827c7ffcc6df1452767` (same type-id, **current**; verify 3.47B → ~80M cycles, binary 293KB → 112KB) |
+| ark-bn254 verifier upgrade tx | `0x68f9730a2cd9bfccb5b34e733807c28646c6b74a84980827c7ffcc6df1452767` (same type-id; verify 3.47B → ~80M cycles, binary 293KB → 112KB) |
+| **type-id pool-identity upgrade tx** | `0x557d705a672e59e89b72132f05c8e5f3e2970fb994a23959d8a3d20e7fcbd5ec` (same type-id, **current**; backward-compat: empty args = legacy baked POOL_ID, 32-byte args = type-id'd pool) |
 | Genesis anchor outpoint | `0xdb895bbafc29e2df3cf26cce3aac21f0132aa5f32a3edce3aac8cc60ba9ce00a:0` |
 | Genesis anchor type hash | `0xf4c1baf2fda7e9a07b762387934ce6b2d275bd4e533ae558c7233907f2f6b7a1` |
 | First checkpoint tx (seq 0→1) | `0xca6bfc76cbfae1b1dfedfbcab02fe84c1ab9019cb711defce65587091c373d51` |
@@ -39,6 +40,10 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 | Deposit-lock live test, deposit cell | `0xf05bfea8220386d25c62bacfff351f37979eea62189d612c80c89788c6bcb65e:0` (200 CKB, bound to pool type hash `0xf4c1baf2…`) |
 | Deposit-lock live test, third-party spend | **rejected on-chain** (`Inputs[0].Lock ValidationFailure`) |
 | Deposit-lock live test, refund to depositor | `0xcb512bc295c21576700893b6afd72822110fbce2b9648748e5aefa0febfbbd0d` (**accepted**) |
+| **Type-id'd pool genesis tx** | `0x805e6252b4acf34b95f36e1b19fa3b73a06387cafb5faa39423d5899bd11a309` (anchor `:0`, empty state) |
+| Type-id'd pool, `pool_id` (type-id) | `0x06865b65f867970c6d89f5e82ed530362f00e5051ea7265556646e7835b63295` (= blake2b of the genesis tx's first input) |
+| Type-id'd pool, anchor type-script hash | `0xf7dfded8046462d788e34c252a2f0ba025e4f2e57fbb9454072b15e07762a55f` (**unique to this pool**, vs the legacy pool's `0xf4c1baf2…`) |
+| Type-id'd genesis enforcement | **verified live**: the genesis tx committed, so the on-chain `anchor_type_id() == args` check passed (the args = blake2b(first input)) |
 
 ## What's verified on-chain
 
