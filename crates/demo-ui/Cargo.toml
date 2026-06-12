@@ -1,0 +1,23 @@
+[package]
+name = "liquid-cells-demo-ui"
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+
+# A local, interactive demo of Liquid Cells. It runs the REAL crates (the same STF the SP1 guest
+# proves, the real sequencer, the real client SDK), serves a single-page UI, and lets you drive a
+# creator-tipping scenario: fund accounts, send sub-1-CKB tips, seal checkpoints, then recover a
+# balance from L1 data alone and build an escape-hatch witness. The ~7-minute Groth16 proof is not
+# run per click; the UI drives the protocol logic instantly and links to the live Pudge checkpoints.
+[[bin]]
+name = "liquid-cells-demo-ui"
+path = "src/main.rs"
+
+[dependencies]
+liquid-cells-stf = { path = "../stf" }
+liquid-cells-sequencer = { path = "../sequencer" }
+liquid-cells-client = { path = "../client" }
+tiny_http = "0.12"
+serde_json = "1"
+
+[workspace]

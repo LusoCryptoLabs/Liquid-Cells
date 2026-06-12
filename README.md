@@ -148,6 +148,9 @@ liquid-cells/
     client/              # liquid-cells-client, the SDK: build+sign intents and reconstruct
       src/lib.rs         #   your leaf + force-exit/refund witness from L1 DA, on the SAME STF
       tests/             # client.rs, intents accepted by the STF; witnesses verify on-chain
+    demo-ui/             # liquid-cells-demo-ui, interactive browser demo over the real crates:
+      src/main.rs        #   a creator-tipping scenario (tips, checkpoints, trustless recovery,
+      src/index.html     #   escape hatch). cargo run -p liquid-cells-demo-ui
     sp1-guest/           # wraps the STF as an SP1 program -> Groth16 proof
     sp1-host/            # cycle/equivalence driver + fixture/proof generator
     ckb-contract/        # anchor type script: Groth16 verify + force-exit + force-refund
@@ -179,6 +182,19 @@ cargo build --release # optimized native build
 
 SP1 (`cargo-prove`, toolchain) is installed under `/root/.sp1`; the keccak SMT and
 secp256k1 choices are deliberate so the same STF proves cheaply in the zkVM.
+
+### Try it: the interactive demo
+
+```bash
+cargo run -p liquid-cells-demo-ui     # then open http://127.0.0.1:8088
+```
+
+A browser demo of a creator-tipping scenario, driven by the **real** crates (the same STF the
+proof attests, the real sequencer, the real client SDK). Send sub-1-CKB tips that could never be
+their own L1 cell, batch them into a checkpoint, then **recover a balance from L1 data alone** and
+**build an escape-hatch witness**, watching both verify against the committed root. The heavy
+7-minute Groth16 proof is not run per click; the page links to the live Pudge checkpoints where
+that exact verification already runs on-chain.
 
 ---
 
