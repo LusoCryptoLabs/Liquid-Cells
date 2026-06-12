@@ -15,7 +15,10 @@
 //!     see `force_refund` — so this is deliberately sender-only.)
 //!
 //! All modes have exactly one **input** anchor (state n) and one **output** anchor
-//! (state n+1) carrying this type script.
+//! (state n+1) carrying this type script, and all enforce **anchor lock continuity**
+//! (output anchor lock == input anchor lock) — so the genesis lock is a permanent policy
+//! for *who may sequence*: a permissive (always-success) genesis lock ⇒ a permanently
+//! **permissionless**, capture-proof pool; a specific lock ⇒ a pool pinned to it.
 //!
 //!   anchor cell data (80 bytes): root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE) ‖ last_epoch(8 BE)
 //!   checkpoint witness input_type  : proof(356) ‖ public_values(288)
@@ -859,6 +862,29 @@ fn program_entry() -> i8 {
     }
     if prev.len() != ANCHOR_LEN || new.len() != ANCHOR_LEN {
         return 30;
+    }
+
+    // Anchor lock continuity (permissionless-safety). The anchor's lock may never change across
+    // a transition: the output anchor's lock hash must equal the input anchor's. This turns the
+    // **genesis** lock into a permanent, unforgeable policy for *who may sequence*:
+    //   * a pool created with a permissive (e.g. always-success) lock is permanently
+    //     PERMISSIONLESS — anyone who can produce a valid proof may advance the root — and
+    //     **capture-proof**: no checkpoint can re-lock the anchor to seize sequencing;
+    //   * a pool created with a specific lock (multisig, governance, a single operator) stays
+    //     pinned to exactly that lock forever.
+    // Checked before mode dispatch, so it binds checkpoint, force-exit, and force-refund alike.
+    // (Genesis has no input anchor, so it returns above and never reaches here — the pool
+    // creator's initial lock choice is what gets locked in.)
+    let in_lock = match load_cell_lock_hash(0, Source::GroupInput) {
+        Ok(h) => h,
+        Err(_) => return 46,
+    };
+    let out_lock = match load_cell_lock_hash(0, Source::GroupOutput) {
+        Ok(h) => h,
+        Err(_) => return 46,
+    };
+    if in_lock != out_lock {
+        return 46;
     }
 
     // The input group's witness `input_type` selects the mode by length:

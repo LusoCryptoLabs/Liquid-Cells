@@ -69,6 +69,7 @@ struct Cfg {
     ignore_fee_cap: bool, // output capacity ignores the L1 fee draw (breaks solvency)
     tamper_da: bool,      // published DA blob != the committed diff
     drop_da: bool,        // no DA blob published at all
+    change_lock: bool,    // output anchor lock != input anchor lock (capture attempt)
 }
 
 fn build(cfg: Cfg) -> (Context, TransactionView) {
@@ -118,7 +119,13 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let contract_op = ctx.deploy_cell(bin);
     let as_op = ctx.deploy_cell(ALWAYS_SUCCESS.clone());
     let type_script = ctx.build_script(&contract_op, Bytes::new()).unwrap();
+    // The anchor lock here is always-success (different args ⇒ different hash) — i.e. these
+    // checkpoints are *permissionless*: no signature gates them, only the type script. The
+    // output anchor must keep the SAME lock (continuity); `change_lock` swaps it to model a
+    // capture attempt that re-locks the pool.
     let lock = ctx.build_script(&as_op, Bytes::from(b"lock".to_vec())).unwrap();
+    let other_lock = ctx.build_script(&as_op, Bytes::from(b"capture-lock".to_vec())).unwrap();
+    let out_lock = if cfg.change_lock { other_lock } else { lock.clone() };
 
     let anchor_in = ctx.create_cell(
         CellOutput::new_builder()
@@ -153,7 +160,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
         .output(
             CellOutput::new_builder()
                 .capacity(out_cap.pack())
-                .lock(lock)
+                .lock(out_lock)
                 .type_(Some(type_script).pack())
                 .build(),
         )
@@ -224,4 +231,16 @@ fn missing_da_blob_rejected() {
     // No DA blob published at all: the operator cannot advance the root while withholding it.
     let (ctx, tx) = build(Cfg { drop_da: true, ..Default::default() });
     assert!(ctx.verify_tx(&tx, MAX_CYCLES).is_err(), "a withheld DA blob must reject");
+}
+
+#[test]
+fn anchor_lock_change_rejected() {
+    // Anchor lock continuity: an otherwise-valid checkpoint that re-locks the output anchor to a
+    // different lock is a capture attempt (it would seize sequencing of a permissionless pool).
+    // It must reject regardless of the proof being valid.
+    let (ctx, tx) = build(Cfg { change_lock: true, ..Default::default() });
+    assert!(
+        ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
+        "changing the anchor lock across a checkpoint must reject (capture-proof)"
+    );
 }
