@@ -69,6 +69,8 @@ ckb_std::entry!(program_entry);
 ckb_std::default_alloc!();
 
 mod atomics;
+mod cells; // checkpoint cell folding + public-value binding
+mod escape; // force-exit / force-refund (the unilateral escape hatch)
 
 // ---- baked policy ----
 /// SP1 v6 Groth16 universal verifying key (identical to the g16ckb / bridge VK).
@@ -166,435 +168,15 @@ fn keccak(bytes: &[u8]) -> [u8; 32] {
     o.copy_from_slice(&Keccak256::digest(bytes));
     o
 }
-/// Must match liquid_cells_stf::transition::fold_commit: keccak(acc ‖ key ‖ amount_be).
-fn fold_commit(acc: &[u8; 32], key: &[u8; 32], amount: u128) -> [u8; 32] {
-    let mut b = [0u8; 80];
-    b[..32].copy_from_slice(acc);
-    b[32..64].copy_from_slice(key);
-    b[64..].copy_from_slice(&amount.to_be_bytes());
-    keccak(&b)
-}
 
-/// A non-anchor OUTPUT whose data begins with this marker is a **sequencer reward** cell
-/// (Phase 6b), not a user withdrawal. It is paid out of the proven `fee_withdrawal` (the rest
-/// of which is the L1 miner fee), so it is excluded from the withdrawals commitment and bounded
-/// by `fee_withdrawal` in `checkpoint()`. Marking a real withdrawal as reward (or vice versa)
-/// breaks the withdrawals-commitment match, so the marking is self-enforcing.
-static REWARD_MARKER: &[u8] = b"LIQUIDCELLS/v1/fee-reward";
-
-/// Recompute the deposits/withdrawals commitments from the real cells, and sum their
-/// amounts. Implicit format: a **deposit** is any non-anchor INPUT (credits
-/// `data[0..32]` = to_key by its capacity); a **withdrawal** is any non-anchor OUTPUT
-/// (pays its `lock_hash` its capacity) that is not a reward cell. Returns
-/// `(deposits_commitment, withdrawals_commitment, sum_deposits, sum_withdrawals, sum_reward)`.
-/// The anchor is the cell whose type script is this one.
-fn fold_cells(self_hash: &[u8; 32]) -> Result<([u8; 32], [u8; 32], i128, i128, i128), i8> {
-    let mut dep = keccak(b"LIQUIDCELLS/v1/deposits-commitment");
-    let mut sum_dep: i128 = 0;
-    let mut i = 0usize;
-    loop {
-        match load_cell_capacity(i, Source::Input) {
-            Ok(cap) => {
-                let th = load_cell_type_hash(i, Source::Input).map_err(|_| 50i8)?;
-                if th.as_ref() != Some(self_hash) {
-                    let data = load_cell_data(i, Source::Input).map_err(|_| 50i8)?;
-                    if data.len() < 32 {
-                        return Err(51);
-                    }
-                    let mut key = [0u8; 32];
-                    key.copy_from_slice(&data[..32]);
-                    dep = fold_commit(&dep, &key, cap as u128);
-                    sum_dep += cap as i128;
-                }
-                i += 1;
-            }
-            Err(SysError::IndexOutOfBound) => break,
-            Err(_) => return Err(50),
-        }
-    }
-    let mut wd = keccak(b"LIQUIDCELLS/v1/withdrawals-commitment");
-    let mut sum_wd: i128 = 0;
-    let mut sum_reward: i128 = 0;
-    let mut j = 0usize;
-    loop {
-        match load_cell_capacity(j, Source::Output) {
-            Ok(cap) => {
-                let th = load_cell_type_hash(j, Source::Output).map_err(|_| 52i8)?;
-                if th.as_ref() != Some(self_hash) {
-                    let data = load_cell_data(j, Source::Output).map_err(|_| 52i8)?;
-                    if data.len() >= REWARD_MARKER.len() && &data[..REWARD_MARKER.len()] == REWARD_MARKER
-                    {
-                        // Sequencer reward: paid out of fee_withdrawal, not a user withdrawal.
-                        sum_reward += cap as i128;
-                    } else {
-                        let lh = load_cell_lock_hash(j, Source::Output).map_err(|_| 52i8)?;
-                        wd = fold_commit(&wd, &lh, cap as u128);
-                        sum_wd += cap as i128;
-                    }
-                }
-                j += 1;
-            }
-            Err(SysError::IndexOutOfBound) => break,
-            Err(_) => return Err(52),
-        }
-    }
-    Ok((dep, wd, sum_dep, sum_wd, sum_reward))
-}
-
-/// Pin the public values to the anchor cells. Cheap; runs before the proof verify so
-/// a tampered transaction is rejected without paying for the BN254 pairing.
-fn bind(prev: &[u8], new: &[u8], pv: &[u8]) -> i8 {
-    if pv.len() != PV_LEN || prev.len() != ANCHOR_LEN || new.len() != ANCHOR_LEN {
-        return 30;
-    }
-    if pv[PV_POOL_ID..PV_POOL_ID + 32] != POOL_ID {
-        return 31;
-    }
-    if rd_u64(pv, PV_CHAIN_ID) != CHAIN_ID {
-        return 32;
-    }
-    let prev_seq = rd_u64(pv, PV_PREV_SEQ);
-    let new_seq = rd_u64(pv, PV_NEW_SEQ);
-    if prev_seq.checked_add(1) != Some(new_seq) {
-        return 33;
-    }
-    // input anchor == prev_*
-    if prev[A_ROOT..A_ROOT + 32] != pv[PV_PREV_ROOT..PV_PREV_ROOT + 32] {
-        return 34;
-    }
-    if rd_u64(prev, A_SEQ) != prev_seq {
-        return 35;
-    }
-    if rd_u128(prev, A_TOTAL) != rd_u128(pv, PV_PREV_TOTAL) {
-        return 36;
-    }
-    // output anchor == new_*
-    if new[A_ROOT..A_ROOT + 32] != pv[PV_NEW_ROOT..PV_NEW_ROOT + 32] {
-        return 37;
-    }
-    if rd_u64(new, A_SEQ) != new_seq {
-        return 38;
-    }
-    if rd_u128(new, A_TOTAL) != rd_u128(pv, PV_NEW_TOTAL) {
-        return 39;
-    }
-    // fee accumulator continuity with the L1 fee draw:
-    //   new_fee_acc == prev_fee_acc + fee_delta − fee_withdrawal,
-    // and fee_withdrawal ≤ prev_fee_acc + fee_delta (no drawing from user balances).
-    let fee_avail = match rd_u128(prev, A_FEE).checked_add(rd_u128(pv, PV_FEE_DELTA)) {
-        Some(a) => a,
-        None => return 43,
-    };
-    let fee_wd = rd_u128(pv, PV_FEE_WD);
-    if fee_wd > fee_avail || fee_avail - fee_wd != rd_u128(new, A_FEE) {
-        return 43;
-    }
-    // epoch continuity: the checkpoint records its epoch into the output anchor, this is
-    // the clock the force-exit timeout reads. `new.last_epoch == current_epoch`, and
-    // epochs never go backward. (The `since` check in `checkpoint` proves the recorded
-    // epoch is not in the future.)
-    let cur_epoch = rd_u64(pv, PV_CURRENT_EPOCH);
-    if rd_u64(new, A_LAST_EPOCH) != cur_epoch || cur_epoch < rd_u64(prev, A_LAST_EPOCH) {
-        return 44;
-    }
-    0
-}
-
-// ---- force-exit primitives ----
-
-/// Bit `i` of a 32-byte key, MSB-first (matches `liquid_cells_stf::smt::bit`).
-#[inline]
-fn bit(key: &[u8; 32], i: usize) -> u8 {
-    (key[i >> 3] >> (7 - (i & 7))) & 1
-}
-
-/// Leaf-content hash, matching `liquid_cells_stf::types::Leaf::hash`: empty `{0,0}` hashes
-/// to the all-zero `EMPTY_LEAF`; otherwise keccak(balance(16 BE) ‖ nonce(8 BE)).
-fn leaf_hash(balance: u128, nonce: u64) -> [u8; 32] {
-    if balance == 0 && nonce == 0 {
-        return [0u8; 32];
-    }
-    let mut enc = [0u8; 24];
-    enc[..16].copy_from_slice(&balance.to_be_bytes());
-    enc[16..].copy_from_slice(&nonce.to_be_bytes());
-    keccak(&enc)
-}
-
-/// Reconstruct the SMT root from a single-leaf inclusion path, bottom-up, the exact walk
-/// `liquid_cells_stf::smt::verify_proof` performs. `siblings` is 256 × 32 bytes top-down.
-fn smt_root(key: &[u8; 32], leaf: &[u8; 32], siblings: &[u8]) -> [u8; 32] {
-    let mut cur = *leaf;
-    let mut depth = SMT_DEPTH;
-    while depth > 0 {
-        depth -= 1;
-        let sib = &siblings[depth * 32..depth * 32 + 32];
-        let mut buf = [0u8; 64];
-        if bit(key, depth) == 0 {
-            buf[..32].copy_from_slice(&cur);
-            buf[32..].copy_from_slice(sib);
-        } else {
-            buf[..32].copy_from_slice(sib);
-            buf[32..].copy_from_slice(&cur);
-        }
-        cur = keccak(&buf);
-    }
-    cur
-}
-
-/// blake160(data) = first 20 bytes of CKB's default blake2b-256, the secp lock's args.
-fn blake160(data: &[u8]) -> [u8; 20] {
-    let mut h = blake2b_ref::Blake2bBuilder::new(32).personal(b"ckb-default-hash").build();
-    h.update(data);
-    let mut out = [0u8; 32];
-    h.finalize(&mut out);
-    let mut r = [0u8; 20];
-    r.copy_from_slice(&out[..20]);
-    r
-}
-
-/// Extract the epoch number from a CKB `since` that is flagged **absolute epoch**
-/// (`0x20` in the top byte). The low 24 bits are the epoch number; the index/length
-/// fraction is ignored (whole-epoch granularity). `None` if not absolute-epoch.
+/// Extract the epoch number from a CKB `since` flagged **absolute epoch** (`0x20` top byte).
+/// Low 24 bits are the epoch number; the index/length fraction is ignored (whole-epoch
+/// granularity). `None` if not absolute-epoch. Shared by `checkpoint` and the `escape` modes.
 fn abs_epoch(since: u64) -> Option<u64> {
     if (since >> 56) != 0x20 {
         return None;
     }
     Some(since & 0x00FF_FFFF)
-}
-
-/// Is there an output paying exactly `amount` to the owner's canonical secp lock
-/// (`code_hash == SECP_CODE_HASH`, hash_type == Type, `args == b160`)?
-fn has_exit_output(b160: &[u8; 20], amount: u64) -> bool {
-    let mut i = 0usize;
-    loop {
-        match load_cell_lock(i, Source::Output) {
-            Ok(lock) => {
-                if lock.code_hash().as_slice() == &SECP_CODE_HASH[..]
-                    && lock.hash_type().as_slice()[0] == 1
-                    && lock.args().raw_data().as_ref() == &b160[..]
-                {
-                    if let Ok(cap) = load_cell_capacity(i, Source::Output) {
-                        if cap == amount {
-                            return true;
-                        }
-                    }
-                }
-                i += 1;
-            }
-            Err(SysError::IndexOutOfBound) => return false,
-            Err(_) => return false,
-        }
-    }
-}
-
-/// Force-exit (escape hatch): a user unilaterally withdraws their leaf against the last
-/// committed root after the operator has been silent for `FORCE_EXIT_TIMEOUT_EPOCHS`. No
-/// SP1 proof; the witness carries `pubkey ‖ balance ‖ nonce ‖ siblings`. The payout is
-/// forced to the owner's own secp lock, the leaf is nullified (balance→0, nonce kept), and
-/// the anchor capacity/total drop by exactly the exited balance.
-fn force_exit(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
-    let pubkey = &wb[0..33];
-    let balance = rd_u128(wb, 33);
-    let nonce = rd_u64(wb, 49);
-    let siblings = &wb[57..57 + 32 * SMT_DEPTH];
-    if balance == 0 {
-        return 60; // nothing to exit
-    }
-    if balance > u64::MAX as u128 {
-        return 61; // cannot be paid out as a single capacity
-    }
-
-    let key = keccak(pubkey);
-    // Inclusion of {balance, nonce} against the committed (input) root.
-    let leaf = leaf_hash(balance, nonce);
-    if smt_root(&key, &leaf, siblings)[..] != prev[A_ROOT..A_ROOT + 32] {
-        return 62;
-    }
-    // Nullified root: balance→0, nonce kept (replay-safe), same siblings ⇒ output root.
-    let new_leaf = leaf_hash(0, nonce);
-    if smt_root(&key, &new_leaf, siblings)[..] != new[A_ROOT..A_ROOT + 32] {
-        return 63;
-    }
-
-    // Anchor continuity: seq / fee_acc / last_epoch unchanged; total -= balance.
-    if rd_u64(prev, A_SEQ) != rd_u64(new, A_SEQ)
-        || rd_u128(prev, A_FEE) != rd_u128(new, A_FEE)
-        || rd_u64(prev, A_LAST_EPOCH) != rd_u64(new, A_LAST_EPOCH)
-        || rd_u128(prev, A_TOTAL).checked_sub(balance) != Some(rd_u128(new, A_TOTAL))
-    {
-        return 64;
-    }
-
-    // Solvency: the anchor's real capacity drops by exactly the exited balance.
-    let in_cap = match load_cell_capacity(0, Source::GroupInput) {
-        Ok(c) => c,
-        Err(_) => return 65,
-    };
-    let out_cap = match load_cell_capacity(0, Source::GroupOutput) {
-        Ok(c) => c,
-        Err(_) => return 65,
-    };
-    if in_cap.checked_sub(balance as u64) != Some(out_cap) {
-        return 65;
-    }
-
-    // Timeout: only after operator silence. Input `since` (absolute epoch) must be at least
-    // `last_epoch + TIMEOUT`; CKB consensus refuses to mine the tx any earlier.
-    let since = match load_input_since(0, Source::GroupInput) {
-        Ok(s) => s,
-        Err(_) => return 66,
-    };
-    let since_epoch = match abs_epoch(since) {
-        Some(e) => e,
-        None => return 66,
-    };
-    let open_at = match rd_u64(prev, A_LAST_EPOCH).checked_add(FORCE_EXIT_TIMEOUT_EPOCHS) {
-        Some(e) => e,
-        None => return 66,
-    };
-    if since_epoch < open_at {
-        return 66;
-    }
-
-    // Payout: an output paying exactly `balance` to the owner's canonical secp lock.
-    if !has_exit_output(&blake160(pubkey), balance as u64) {
-        return 67;
-    }
-    0
-}
-
-/// Recompute an HTLC escrow leaf's SMT key, byte-identical to
-/// `liquid_cells_stf::types::htlc_id`:
-///   keccak( keccak("LIQUIDCELLS/v1/htlc-id") ‖ POOL_ID ‖ sender_key ‖ receiver_key
-///           ‖ amount(16 BE) ‖ hashlock ‖ timeout(8 BE) ‖ lock_nonce(8 BE) ).
-/// Binding the key to every lock term is what lets the escrow only ever resolve to the
-/// agreed parties on the agreed terms, so a force-refund must supply the real terms and
-/// can only pay the real sender.
-fn htlc_id(
-    sender_key: &[u8; 32],
-    receiver_key: &[u8],
-    amount: u128,
-    hashlock: &[u8],
-    timeout: u64,
-    lock_nonce: u64,
-) -> [u8; 32] {
-    let domain = keccak(b"LIQUIDCELLS/v1/htlc-id");
-    let mut b = [0u8; 192]; // 32+32+32+32+16+32+8+8
-    b[0..32].copy_from_slice(&domain);
-    b[32..64].copy_from_slice(&POOL_ID);
-    b[64..96].copy_from_slice(sender_key);
-    b[96..128].copy_from_slice(receiver_key);
-    b[128..144].copy_from_slice(&amount.to_be_bytes());
-    b[144..176].copy_from_slice(hashlock);
-    b[176..184].copy_from_slice(&timeout.to_be_bytes());
-    b[184..192].copy_from_slice(&lock_nonce.to_be_bytes());
-    keccak(&b)
-}
-
-/// Force-refund (escape hatch for a pending HTLC escrow): the *sender* unilaterally reclaims
-/// a **timed-out** escrow leaf against the last committed root, after operator silence. The
-/// witness carries the full lock terms; the script re-derives the escrow's `htlc_id`, proves
-/// the `{balance = amount, nonce = 0}` escrow leaf is included under the committed root, then
-/// nullifies it (→ empty) and forces the payout to the *sender's* own secp lock.
-///
-/// Two timeout gates, both required:
-///   * `since ≥ timeout`, the HTLC's own deadline. After it, the receiver can no longer claim
-///     (claim-after-timeout is invalid in the STF), so refund-to-sender is the *only* valid
-///     resolution; refunding before it could rob a receiver who still holds a valid claim.
-///   * `since ≥ last_epoch + FORCE_EXIT_TIMEOUT_EPOCHS`, operator silence, as for force-exit.
-///     Any anchor-consuming op conflicts with a live operator's checkpoint, so the escape
-///     hatch only opens once the operator is demonstrably dark; while it checkpoints, the
-///     cooperative `htlc_refund` is the path. (Because the silence window ≫ a dust HTLC's
-///     lifetime, the silence gate is the operative one here.)
-///
-/// Deliberately sender-only. The receiver's symmetric "force-claim" would need to fire
-/// *before* the short `timeout`, but the silence gate cannot open that fast, so a receiver's
-/// trustless on-chain claim is not expressible under a single anchor. That residual is
-/// architectural (resolved by Phase 6 permissionless sequencing), not a gap in this code;
-/// the swap counterparty mitigates it by only swapping while the operator is demonstrably
-/// live. See docs/EGRESS.md.
-fn force_refund(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
-    // sender_pubkey(33) ‖ receiver_key(32) ‖ amount(16) ‖ hashlock(32) ‖ timeout(8) ‖
-    // lock_nonce(8) ‖ siblings(256·32)
-    let sender_pubkey = &wb[0..33];
-    let receiver_key = &wb[33..65];
-    let amount = rd_u128(wb, 65);
-    let hashlock = &wb[81..113];
-    let timeout = rd_u64(wb, 113);
-    let lock_nonce = rd_u64(wb, 121);
-    let siblings = &wb[129..129 + 32 * SMT_DEPTH];
-
-    if amount == 0 {
-        return 80; // an escrow always holds a positive amount
-    }
-    if amount > u64::MAX as u128 {
-        return 81; // cannot be paid out as a single capacity
-    }
-
-    let sender_key = keccak(sender_pubkey);
-    let id = htlc_id(&sender_key, receiver_key, amount, hashlock, timeout, lock_nonce);
-
-    // Inclusion of the escrow leaf {balance = amount, nonce = 0} at `id` vs the committed root.
-    let leaf = leaf_hash(amount, 0);
-    if smt_root(&id, &leaf, siblings)[..] != prev[A_ROOT..A_ROOT + 32] {
-        return 82;
-    }
-    // Nullified: the escrow → empty {0, 0}; same siblings ⇒ the output root. A returning
-    // operator that re-syncs to this root sees the escrow consumed (no double-refund), and
-    // the same `htlc_id` cannot recur (it binds the sender's account nonce at lock time).
-    let new_leaf = leaf_hash(0, 0);
-    if smt_root(&id, &new_leaf, siblings)[..] != new[A_ROOT..A_ROOT + 32] {
-        return 83;
-    }
-
-    // Anchor continuity: seq / fee_acc / last_epoch unchanged; total -= amount.
-    if rd_u64(prev, A_SEQ) != rd_u64(new, A_SEQ)
-        || rd_u128(prev, A_FEE) != rd_u128(new, A_FEE)
-        || rd_u64(prev, A_LAST_EPOCH) != rd_u64(new, A_LAST_EPOCH)
-        || rd_u128(prev, A_TOTAL).checked_sub(amount) != Some(rd_u128(new, A_TOTAL))
-    {
-        return 84;
-    }
-
-    // Solvency: the anchor's real capacity drops by exactly the refunded amount.
-    let in_cap = match load_cell_capacity(0, Source::GroupInput) {
-        Ok(c) => c,
-        Err(_) => return 85,
-    };
-    let out_cap = match load_cell_capacity(0, Source::GroupOutput) {
-        Ok(c) => c,
-        Err(_) => return 85,
-    };
-    if in_cap.checked_sub(amount as u64) != Some(out_cap) {
-        return 85;
-    }
-
-    // Timeout gates: the input `since` (absolute epoch) must be ≥ BOTH the HTLC's own
-    // `timeout` and `last_epoch + FORCE_EXIT_TIMEOUT_EPOCHS` (operator silence).
-    let since = match load_input_since(0, Source::GroupInput) {
-        Ok(s) => s,
-        Err(_) => return 86,
-    };
-    let since_epoch = match abs_epoch(since) {
-        Some(e) => e,
-        None => return 86,
-    };
-    if since_epoch < timeout {
-        return 86;
-    }
-    let open_at = match rd_u64(prev, A_LAST_EPOCH).checked_add(FORCE_EXIT_TIMEOUT_EPOCHS) {
-        Some(e) => e,
-        None => return 86,
-    };
-    if since_epoch < open_at {
-        return 86;
-    }
-
-    // Payout: an output paying exactly `amount` to the *sender's* canonical secp lock.
-    if !has_exit_output(&blake160(sender_pubkey), amount as u64) {
-        return 87;
-    }
-    0
 }
 
 
@@ -688,8 +270,8 @@ fn program_entry() -> i8 {
     };
     match wb.len() {
         WITNESS_LEN => checkpoint(&prev, &new, &wa, &wb),
-        FORCEEXIT_LEN => force_exit(&prev, &new, &wb),
-        FORCEREFUND_LEN => force_refund(&prev, &new, &wb),
+        FORCEEXIT_LEN => escape::force_exit(&prev, &new, &wb),
+        FORCEREFUND_LEN => escape::force_refund(&prev, &new, &wb),
         _ => 42,
     }
 }
@@ -702,7 +284,7 @@ fn checkpoint(prev: &[u8], new: &[u8], wa: &WitnessArgs, wb: &[u8]) -> i8 {
     let pv = &wb[PROOF_LEN..WITNESS_LEN];
 
     // Cheap pins first, expensive pairing last.
-    let b = bind(prev, new, pv);
+    let b = cells::bind(prev, new, pv);
     if b != 0 {
         return b;
     }
@@ -726,7 +308,7 @@ fn checkpoint(prev: &[u8], new: &[u8], wa: &WitnessArgs, wb: &[u8]) -> i8 {
         Ok(h) => h,
         Err(_) => return 54,
     };
-    let (dep_c, wd_c, sum_dep, sum_wd, sum_reward) = match fold_cells(&self_hash) {
+    let (dep_c, wd_c, sum_dep, sum_wd, sum_reward) = match cells::fold_cells(&self_hash) {
         Ok(x) => x,
         Err(e) => return e,
     };

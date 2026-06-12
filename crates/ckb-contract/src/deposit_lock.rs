@@ -33,7 +33,6 @@
 #![no_main]
 
 use ckb_std::ckb_constants::Source;
-use ckb_std::ckb_types::prelude::*;
 use ckb_std::error::SysError;
 use ckb_std::high_level::{
     load_cell_capacity, load_cell_lock_hash, load_cell_type_hash, load_input_since, load_script,
