@@ -249,6 +249,7 @@ dependencies = [
 name = "liquid-cells-demo-ui"
 version = "0.0.0"
 dependencies = [
+ "hex",
  "liquid-cells-client",
  "liquid-cells-sequencer",
  "liquid-cells-stf",

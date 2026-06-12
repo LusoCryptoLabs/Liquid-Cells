@@ -13,9 +13,21 @@ license = "MIT"
 name = "liquid-cells-demo-ui"
 path = "src/main.rs"
 
+# Bootstraps the on-chain demo pool: seals a genesis -> first-deposit checkpoint and writes the
+# prove_one / CCC-submit fixtures.
+[[bin]]
+name = "sealjob"
+path = "src/bin/sealjob.rs"
+
+# Signs an intent (tip/withdrawal) and prints the demo API JSON. Test driver + JS reference oracle.
+[[bin]]
+name = "signintent"
+path = "src/bin/signintent.rs"
+
 [dependencies]
 liquid-cells-stf = { path = "../stf" }
 liquid-cells-sequencer = { path = "../sequencer" }
 liquid-cells-client = { path = "../client" }
 tiny_http = "0.12"
 serde_json = "1"
+hex = "0.4"

@@ -60,8 +60,12 @@ chain.** The complete trust-minimization design is built, tested, and deployed:
   **on-chain verifier** all exist and pass end-to-end. The CKB anchor type script verifies a
   real BN254 pairing proof **inside CKB-VM on the live Pudge testnet**, not in a simulator.
   Fitting a BN254 verifier under CKB's per-block cycle limit required a specific optimization
-  (precomputing one pairing so the verifier does three instead of four); as far as we are aware
-  this is the first SP1 Groth16 proof verified inside a live CKB block.
+  (precomputing one pairing so the verifier does three instead of four). That tight fit reflects
+  an **unoptimized** BN254 library, not a fundamental limit: a CKB-tuned library verifies Groth16
+  on CKB-VM far more cheaply. We make **no strong novelty claim**, on-chain Groth16 on CKB is
+  well-precedented (sec-bit's ckb-zkp), an SP1-verifier-for-ckb-vm effort is active, and sec-bit's
+  Clover is a zkRollup on the same cell model. See [docs/PRIOR-ART.md](docs/PRIOR-ART.md) for the
+  honest side-by-side positioning.
 - The **sequencer runs the exact same state machine the proof attests**, and it has sealed and
   landed a chain of **successive checkpoints** on Pudge, each carrying its own on-chain proof.
 - Sequencing is **permissionless**: with a permissive anchor lock and an on-chain lock-continuity

@@ -24,10 +24,22 @@ itself, the same base as any on-chain transaction.
 > now deployed on the CKB Pudge testnet: a genesis pool was created and a first checkpoint
 > landed with the SP1 Groth16 BN254 proof verified on live CKB-VM** ([DEPLOY.md](DEPLOY.md)).
 > Getting there required precomputing the constant `e(alpha,beta)` so the verifier does 3
-> pairings (~3.47B cycles) under CKB's ~3.50B block limit. What remains to be a usable system
-> (not more cryptography): a prove+submit driver to land successive checkpoints live, a client
-> SDK, the L1/Fiber swap leg, throughput (Phase 6), and, before any real value, an external
-> audit. Testnet only, unaudited.
+> pairings (~3.47B cycles) under CKB's ~3.50B block limit. **That tight fit is an artifact of an
+> unoptimized BN254 library (vendored `substrate-bn`), not a fundamental limit**: a CKB-tuned
+> library (e.g. `ckb-alt-bn128`) verifies Groth16 on CKB-VM far more cheaply, see
+> [docs/PRIOR-ART.md](docs/PRIOR-ART.md). What remains to be a usable system (not more
+> cryptography): the verifier optimization above, a client SDK, the L1/Fiber swap leg, throughput
+> (Phase 6), and, before any real value, an external audit. Testnet only, unaudited.
+
+> **Honest positioning (prior art).** This is a working *implementation*, not a novel protocol.
+> Nearly every ingredient has prior art, much of it on CKB: sec-bit's **Clover** (a zkRollup on the
+> same CKB cell model), Ethereum's **Intmax2** (a pooled, payment-focused zk-rollup with
+> client-side proofs), **ckb-zkp** (on-chain Groth16 verification on CKB-VM, ~77M cycles), the
+> optimistic **Godwoken**, payment-channel **Fiber** (live, serves CKB micropayments), and an
+> active **SP1-verifier-for-ckb-vm** effort. The contribution here is engineering and integration
+> on a live chain, plus a couple of CKB-idiomatic choices. See
+> **[docs/PRIOR-ART.md](docs/PRIOR-ART.md)** for the side-by-side comparison and what narrowly
+> differs.
 
 ---
 
@@ -183,18 +195,21 @@ cargo build --release # optimized native build
 SP1 (`cargo-prove`, toolchain) is installed under `/root/.sp1`; the keccak SMT and
 secp256k1 choices are deliberate so the same STF proves cheaply in the zkVM.
 
-### Try it: the interactive demo
+### Try it: the interactive on-chain demo ("CellTip")
 
 ```bash
 cargo run -p liquid-cells-demo-ui     # then open http://127.0.0.1:8088
 ```
 
-A browser demo of a creator-tipping scenario, driven by the **real** crates (the same STF the
-proof attests, the real sequencer, the real client SDK). Send sub-1-CKB tips that could never be
-their own L1 cell, batch them into a checkpoint, then **recover a balance from L1 data alone** and
-**build an escape-hatch witness**, watching both verify against the committed root. The heavy
-7-minute Groth16 proof is not run per click; the page links to the live Pudge checkpoints where
-that exact verification already runs on-chain.
+A browser demo that drives a **real pool on the Pudge testnet**, end to end: connect a JoyID
+wallet (CCC), **deposit real testnet CKB** into the pool (a real on-chain tx, then a proven
+checkpoint credits it, ~7 min), **tip creators** in sub-1-CKB amounts off-chain (instant), and
+**withdraw** back to your own wallet (another proven checkpoint). Deposits and withdrawals
+**batch** so many users share one proof. The session key that signs your tips is generated
+in-browser and never leaves your device (self-custodial), so each wallet is its own pool account
+and the operator can never move or redirect your funds. The server holds the `Sequencer` synced
+to the live anchor and spawns the prove+submit pipeline per checkpoint (`crates/demo-ui`).
+Operator deploy/driver scripts (genesis, checkpoint submit) build the real Pudge transactions.
 
 ---
 

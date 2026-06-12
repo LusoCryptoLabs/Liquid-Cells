@@ -3,154 +3,328 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>CellTip, tip creators in tiny amounts</title>
+<title>CellTip, real on-chain tipping on Nervos CKB</title>
 <style>
-  :root { --bg:#0e1117; --card:#171c24; --line:#262d39; --fg:#eaf0f6; --mut:#93a0b0; --acc:#3fb950; --acc2:#58a6ff; --gold:#e3b341; }
+  :root { --bg:#0e1117; --card:#171c24; --line:#262d39; --fg:#eaf0f6; --mut:#93a0b0; --acc:#3fb950; --acc2:#58a6ff; --gold:#e3b341; --warn:#d29922; --err:#f85149; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.55 -apple-system,Segoe UI,Roboto,sans-serif; }
-  .wrap { max-width:780px; margin:0 auto; padding:22px 16px 70px; }
-  .brand { display:flex; align-items:baseline; gap:10px; }
+  .wrap { max-width:800px; margin:0 auto; padding:22px 16px 80px; }
+  .brand { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
   h1 { font-size:24px; margin:0; }
   .tag { color:var(--mut); }
-  .lede { color:var(--mut); margin:6px 0 18px; font-size:14.5px; }
+  .pill { font-size:11.5px; border:1px solid var(--line); border-radius:999px; padding:2px 9px; color:var(--mut); }
+  .pill.live { color:var(--acc); border-color:#1f6f3a; }
+  .lede { color:var(--mut); margin:6px 0 16px; font-size:14.5px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:14px; }
-  .steps { display:flex; gap:8px; margin-bottom:14px; }
-  .step { flex:1; text-align:center; font-size:12.5px; color:var(--mut); border:1px solid var(--line); border-radius:10px; padding:8px 4px; }
-  .step.on { color:var(--fg); border-color:var(--acc2); background:#10202e; }
-  .bigbal { font-size:40px; font-weight:700; letter-spacing:-.5px; font-variant-numeric:tabular-nums; }
-  .unit { font-size:18px; color:var(--mut); font-weight:500; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--mut); margin:0 0 10px; }
+  .bigbal { font-size:38px; font-weight:700; letter-spacing:-.5px; font-variant-numeric:tabular-nums; }
+  .unit { font-size:17px; color:var(--mut); font-weight:500; }
   .sub { color:var(--mut); font-size:13px; }
   .rowflex { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:12px; }
-  button { background:#222a35; color:var(--fg); border:1px solid var(--line); border-radius:9px; padding:8px 13px; cursor:pointer; font-size:14px; }
-  button:hover { border-color:var(--acc2); }
+  button { background:#222a35; color:var(--fg); border:1px solid var(--line); border-radius:9px; padding:9px 14px; cursor:pointer; font-size:14px; }
+  button:hover:not(:disabled) { border-color:var(--acc2); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
   button.go { background:var(--acc); color:#08120b; border-color:var(--acc); font-weight:600; }
+  button.gold { background:var(--gold); color:#1c1500; border-color:var(--gold); font-weight:600; }
   button.ghost { background:transparent; }
-  input { background:#0e1117; color:var(--fg); border:1px solid var(--line); border-radius:9px; padding:8px 10px; width:96px; font-size:14px; }
+  input { background:#0e1117; color:var(--fg); border:1px solid var(--line); border-radius:9px; padding:9px 10px; width:120px; font-size:14px; }
   .creator { display:flex; align-items:center; justify-content:space-between; padding:11px 0; border-bottom:1px solid var(--line); }
   .creator:last-child { border-bottom:none; }
-  .who { font-weight:600; }
-  .role { color:var(--mut); font-size:12.5px; }
+  .who { font-weight:600; } .role { color:var(--mut); font-size:12.5px; }
   .earned { color:var(--gold); font-variant-numeric:tabular-nums; font-size:13px; margin-right:10px; }
   .tipbtns button { padding:5px 10px; font-size:13px; }
-  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--mut); margin:0 0 10px; }
-  .safe { border-color:#1f6f3a; }
-  .feed { font-size:13.5px; color:var(--mut); }
-  .feed div { padding:3px 0; border-bottom:1px solid #1c222c; }
-  .ok { color:var(--acc); } .err { color:#f85149; } .gold { color:var(--gold); }
-  details { color:var(--mut); font-size:13px; }
-  details summary { cursor:pointer; color:var(--acc2); }
-  .mono { font-family:ui-monospace,Menlo,monospace; font-size:12px; }
+  .feed div { padding:4px 0; border-bottom:1px solid #1c222c; font-size:13.5px; color:var(--mut); }
+  .ok { color:var(--acc); } .err { color:var(--err); } .gold2 { color:var(--gold); } .warn { color:var(--warn); }
+  details { color:var(--mut); font-size:13px; } details summary { cursor:pointer; color:var(--acc2); }
+  .mono { font-family:ui-monospace,Menlo,monospace; font-size:12px; word-break:break-all; }
   a { color:var(--acc2); text-decoration:none; } a:hover { text-decoration:underline; }
   .note { font-size:12.5px; color:var(--mut); margin-top:10px; }
+  .job { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-top:8px; font-size:13px; }
+  .job.proving { border-color:#5c4a13; } .job.confirmed { border-color:#1f6f3a; } .job.failed { border-color:#5c1f1f; }
+  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--mut); border-top-color:var(--acc2); border-radius:50%; animation:s 0.8s linear infinite; vertical-align:-1px; }
+  @keyframes s { to { transform:rotate(360deg); } }
+  .hide { display:none; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="brand"><h1>CellTip</h1><span class="tag">tip creators in tiny amounts</span></div>
-  <p class="lede">A consumer wallet for sub-1-CKB payments on Nervos CKB. Tips this small cannot exist as their own on-chain coins, here they just work, and <b>your money stays yours</b> the whole time.</p>
+  <div class="brand">
+    <h1>CellTip</h1><span class="tag">real on-chain tipping</span>
+    <span class="pill live">Nervos CKB · Pudge testnet</span>
+  </div>
+  <p class="lede">Connect a real wallet, deposit real testnet CKB into a zero-knowledge rollup pool, tip creators in tiny amounts off-chain, and withdraw back to your own wallet. Deposits and withdrawals are <b>real proven checkpoints on Pudge</b> (each takes a few minutes to prove); tips in between are instant. <b>Your money stays yours</b>, the operator can never take it or redirect a withdrawal.</p>
 
-  <div class="steps">
-    <div class="step" id="st1">1. Add funds</div>
-    <div class="step" id="st2">2. Tip creators</div>
-    <div class="step" id="st3">3. Cash out</div>
+  <!-- CONNECT -->
+  <div class="card" id="connectCard">
+    <h2>Step 1 · Connect your wallet</h2>
+    <p class="sub">CellTip uses JoyID (a passkey wallet, no extension needed). You will also get a one-time in-browser <b>session key</b> that signs your tips, it never leaves this device, so only you can move your pool funds.</p>
+    <div class="rowflex">
+      <button class="go" id="connectBtn" onclick="connect()">Connect with JoyID</button>
+      <span class="sub" id="connectStatus"></span>
+    </div>
+    <p class="note" id="loadErr"></p>
   </div>
 
-  <div class="card">
-    <h2>Your wallet</h2>
-    <div><span class="bigbal" id="bal">0</span> <span class="unit">CKB</span></div>
-    <div class="sub" id="wd-line"></div>
+  <!-- WALLET / BALANCE -->
+  <div class="card hide" id="walletCard">
+    <h2>Your pool balance</h2>
+    <div><span class="bigbal" id="bal">0</span> <span class="unit">CKB</span> <span class="sub" id="pendNote"></span></div>
+    <div class="sub" id="addrLine"></div>
     <div class="rowflex">
-      <button class="go" onclick="deposit(50)">Add 50 CKB</button>
-      <button class="go" onclick="deposit(100)">Add 100 CKB</button>
-      <input id="dep" type="number" step="1" value="25" /><button onclick="deposit()">Add</button>
+      <input id="dep" type="number" step="1" value="100" min="73" />
+      <button class="go" id="depBtn" onclick="deposit()">Deposit to pool</button>
+      <span class="sub" id="depMsg"></span>
     </div>
-    <div class="rowflex">
-      <input id="wd" type="number" step="0.01" value="25" /> <button onclick="withdraw()">Withdraw to my wallet</button>
-      <button class="ghost" onclick="withdrawAll()">Withdraw all</button>
-    </div>
-    <div id="act-out" class="note"></div>
+    <p class="note">Minimum deposit is ~73 CKB (a CKB cell carrying your 32-byte pool key cannot hold less). You then tip in sub-1-CKB amounts. Your wallet CKB balance: <span id="walletBal" class="mono">…</span></p>
   </div>
 
-  <div class="card">
-    <h2>Creators you can tip</h2>
+  <!-- TIP -->
+  <div class="card hide" id="tipCard">
+    <h2>Step 2 · Tip creators (instant, off-chain)</h2>
     <div id="creators"></div>
+    <p class="note">Tips are signed by your session key and held off-chain, instant and feeless to you (a 0.001 CKB protocol fee accrues to the pool). They are committed on-chain at your next checkpoint (a deposit, withdrawal, or "settle").</p>
+    <div class="rowflex"><button class="ghost" id="settleBtn" onclick="settle()">Settle tips on-chain now</button></div>
   </div>
 
-  <div class="card safe">
+  <!-- WITHDRAW -->
+  <div class="card hide" id="withdrawCard">
+    <h2>Step 3 · Cash out to your wallet</h2>
+    <div class="rowflex">
+      <input id="wd" type="number" step="1" value="90" min="63" />
+      <button class="gold" id="wdBtn" onclick="withdraw()">Withdraw to my wallet</button>
+      <span class="sub" id="wdMsg"></span>
+    </div>
+    <p class="note">A proven checkpoint pays an output cell to <b>your own JoyID lock</b>, the CKB lands back in your wallet. You signed the exact target with your session key, so the operator cannot send it anywhere else. Minimum ~63 CKB (output cell floor).</p>
+  </div>
+
+  <!-- SAFETY -->
+  <div class="card hide" id="safeCard">
     <h2>Is my money safe?</h2>
-    <p class="sub" id="safe-text">Add funds, then check. Your balance lives in a shared pool, but no one, not even the app operator, can take it or freeze it.</p>
-    <button onclick="checkSafe()">Prove my money is safe</button>
-    <div id="safe-out" class="note"></div>
+    <p class="sub">Even if this app vanished, your balance is reconstructable from the published on-chain data and you hold a unilateral escape hatch. The operator only orders and proves, it can never steal, inflate, or freeze your funds, and a withdrawal is bound to a lock <b>you</b> signed. That is enforced by the anchor type script that verifies every checkpoint's zk-proof on a live CKB block.</p>
   </div>
 
-  <div class="card">
+  <!-- CHECKPOINTS / JOBS -->
+  <div class="card hide" id="jobsCard">
+    <h2>On-chain checkpoints</h2>
+    <div id="jobs"></div>
+  </div>
+
+  <!-- ACTIVITY -->
+  <div class="card hide" id="actCard">
     <h2>Activity</h2>
     <div class="feed" id="feed"></div>
   </div>
 
+  <!-- UNDER THE HOOD -->
   <div class="card">
     <details>
-      <summary>Under the hood (for the curious)</summary>
-      <p class="note">Every action here runs the <b>real Liquid Cells protocol code</b>: a real signature on every tip, the real state machine, the real data-availability and exit logic. The whole pool is one on-chain cell whose 32-byte root commits to everyone's balance.</p>
-      <p class="note">pool root <span class="mono" id="uh-root"></span><br>
-        checkpoint #<span id="uh-seq">0</span>, pooled funds <span id="uh-total">0</span> CKB, settlements <span id="uh-cps">0</span></p>
-      <p class="note">Settlement here is instant so the journey flows. On the live CKB Pudge testnet the same transitions are proven and verified on-chain (the heavy 7-minute zero-knowledge proof is not run per click):
-        <a href="https://pudge.explorer.nervos.org/transaction/0xca6bfc76cbfae1b1dfedfbcab02fe84c1ab9019cb711defce65587091c373d51" target="_blank">a checkpoint with the proof verified on-chain</a>,
-        and a <a href="https://pudge.explorer.nervos.org/transaction/0x3145a2d86ca21c26f32bf14ac2ad86ecb7644c3bf0f21a8cfbff6638c3692767" target="_blank">checkpoint nobody signed</a>.</p>
-      <button class="ghost" onclick="reset()">Reset demo</button>
+      <summary>Under the hood (live pool state)</summary>
+      <p class="note">One on-chain anchor cell <b>is</b> the pool: its 32-byte root commits to everyone's balance, and every checkpoint carries an SP1 Groth16 (BN254) proof the anchor type script verifies on-chain.</p>
+      <p class="note">pool root <span class="mono" id="uh-root">…</span><br>
+        sequence #<span id="uh-seq">…</span> · pooled <span id="uh-total">…</span> CKB · fee reserve <span id="uh-fee">…</span> CKB</p>
+      <p class="note">live anchor cell: <a id="uh-anchor" class="mono" target="_blank">…</a></p>
+      <p class="note">code cell (the on-chain zk-verifier): <a href="https://pudge.explorer.nervos.org/transaction/0x4ea3eb48056ee401076c9b26668f903f46b9ec872c1462e222c31a2ead4808fc" target="_blank" class="mono">0x4ea3eb48…</a></p>
     </details>
   </div>
 </div>
 
-<script>
-const f = n => (Math.round(n*1e6)/1e6);
-async function get(p){ return (await fetch(p)).json(); }
-async function post(p,b){ return (await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json(); }
-function note(id,msg,cls){ const e=document.getElementById(id); e.className='note '+(cls||''); e.textContent=msg||''; }
+<script type="module">
+import { ccc } from "https://esm.sh/@ckb-ccc/ccc@1.1.25";
+import { keccak_256 } from "https://esm.sh/@noble/hashes@1.4.0/sha3";
+import { secp256k1 } from "https://esm.sh/@noble/curves@1.4.0/secp256k1";
 
-let bal = 0;
-async function refresh(){
-  const st = await get('/api/state');
-  bal = st.you.balanceCkb;
-  document.getElementById('bal').textContent = f(bal);
-  document.getElementById('wd-line').textContent = st.you.withdrawnCkb>0 ? `withdrawn so far: ${f(st.you.withdrawnCkb)} CKB` : 'sub-1-CKB tips, settled instantly';
-  // steps
-  const tipped = st.creators.some(c=>c.earnedCkb>0);
-  document.getElementById('st1').className='step'+(bal===0 && !tipped && st.you.withdrawnCkb===0?' on':'');
-  document.getElementById('st2').className='step'+(bal>0 && !tipped?' on':'');
-  document.getElementById('st3').className='step'+(tipped?' on':'');
+// ---------- protocol constants (must match the Rust STF byte-for-byte) ----------
+const CHAIN_ID = 0x434b42n;
+const EXPIRY = 10_000_000n;
+const CKB = 100_000_000;
+const enc = new TextEncoder();
+const keccak = (b) => keccak_256(b);
+const POOL_ID = keccak(enc.encode("sp1-pool"));
+const D_TRANSFER = keccak(enc.encode("LIQUIDCELLS/v1/transfer"));
+const D_WITHDRAW = keccak(enc.encode("LIQUIDCELLS/v1/withdraw"));
 
-  const cc = document.getElementById('creators'); cc.innerHTML='';
-  for(const c of st.creators){
-    const d=document.createElement('div'); d.className='creator';
-    d.innerHTML=`<div><div class="who">${c.name}</div><div class="role">${c.role}</div></div>
-      <div style="display:flex;align-items:center"><span class="earned">earned ${f(c.earnedCkb)} CKB</span>
-      <span class="tipbtns"><button onclick="tip('${c.name}',0.1)">+0.1</button>
-      <button onclick="tip('${c.name}',0.25)">+0.25</button>
-      <button onclick="tip('${c.name}',0.5)">+0.5</button></span></div>`;
+const hex = (b) => "0x" + [...b].map(x => x.toString(16).padStart(2, "0")).join("");
+const bytesFromHex = (h) => { h = h.replace(/^0x/, ""); const a = new Uint8Array(h.length / 2); for (let i = 0; i < a.length; i++) a[i] = parseInt(h.substr(i * 2, 2), 16); return a; };
+const cat = (...arrs) => { let n = 0; for (const a of arrs) n += a.length; const o = new Uint8Array(n); let i = 0; for (const a of arrs) { o.set(a, i); i += a.length; } return o; };
+const beN = (v, n) => { v = BigInt(v); const o = new Uint8Array(n); for (let i = n - 1; i >= 0; i--) { o[i] = Number(v & 0xffn); v >>= 8n; } return o; };
+const u64be = (v) => beN(v, 8);
+const u128be = (v) => beN(v, 16);
+
+// ---------- in-browser self-custodial session key, ONE PER WALLET ----------
+// Keyed by the connected wallet address, so each wallet is its own pool account, never shared.
+let SK = null, PUB = null, FROM_KEY = null;
+function deriveSession(addr) {
+  const id = "lc-demo-session-" + addr;
+  let s = localStorage.getItem(id);
+  if (!s) { s = hex(secp256k1.utils.randomPrivateKey()); localStorage.setItem(id, s); }
+  SK = bytesFromHex(s);
+  PUB = secp256k1.getPublicKey(SK, true); // 33-byte compressed
+  FROM_KEY = keccak(PUB);                  // SMT key = keccak(pubkey), this wallet's pool identity
+}
+const signDigest = (msg32) => secp256k1.sign(msg32, SK, { lowS: true }).toCompactRawBytes(); // 64-byte r||s
+
+function transferMsg(toKey, amount, fee, nonce, expiry) {
+  return keccak(cat(D_TRANSFER, u64be(CHAIN_ID), POOL_ID, FROM_KEY, toKey, u128be(amount), u128be(fee), u64be(nonce), u64be(expiry)));
+}
+function withdrawMsg(targetLockHash, amount, nonce, expiry) {
+  return keccak(cat(D_WITHDRAW, u64be(CHAIN_ID), POOL_ID, FROM_KEY, targetLockHash, u128be(amount), u64be(nonce), u64be(expiry)));
+}
+
+// ---------- CCC wallet ----------
+const client = new ccc.ClientPublicTestnet();
+let signer = null, myLock = null, myAddr = null;
+const AS_LOCK = { codeHash: "0xd8c2346649752dc03e8e747ae6152fe13675be36b3c77e459d6f841988c2d06e", hashType: "type", args: "0x" };
+
+const $ = (id) => document.getElementById(id);
+async function api(path, body) {
+  const opt = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+  return (await fetch(path, opt)).json();
+}
+const feed = [];
+function log(msg, cls) { feed.unshift(`<div class="${cls || ''}">${msg}</div>`); $("feed").innerHTML = feed.slice(0, 12).join(""); $("actCard").classList.remove("hide"); }
+
+window.connect = async function () {
+  try {
+    $("connectStatus").textContent = "opening JoyID…";
+    signer = new ccc.JoyId.CkbSigner(client, "CellTip Demo", location.origin + "/favicon.ico");
+    await signer.connect();
+    myAddr = await signer.getRecommendedAddress();
+    myLock = (await signer.getAddressObj()).script;
+    deriveSession(myAddr); // this wallet's own session key + pool identity
+    $("connectCard").classList.add("hide");
+    for (const id of ["walletCard", "tipCard", "withdrawCard", "safeCard", "jobsCard"]) $(id).classList.remove("hide");
+    $("addrLine").innerHTML = `wallet <span class="mono">${myAddr.slice(0, 22)}…</span> · pool id <span class="mono">${hex(FROM_KEY).slice(0, 14)}…</span>`;
+    await api("/api/register", { pubkey: hex(PUB) });
+    log("Wallet connected. Your own session key derived (self-custodial, this wallet only).", "ok");
+    refreshWalletBal();
+    refresh();
+  } catch (e) {
+    $("connectStatus").innerHTML = `<span class="err">connect failed: ${e.message || e}</span>`;
+  }
+};
+
+async function refreshWalletBal() {
+  try { const b = await signer.getBalance(); $("walletBal").textContent = (Number(b) / CKB).toFixed(2) + " CKB"; } catch { $("walletBal").textContent = "?"; }
+}
+
+window.deposit = async function () {
+  const ckb = parseFloat($("dep").value);
+  if (!(ckb >= 73)) { $("depMsg").innerHTML = '<span class="err">minimum is 73 CKB</span>'; return; }
+  const amount = BigInt(Math.round(ckb * CKB));
+  $("depBtn").disabled = true; $("depMsg").innerHTML = '<span class="spin"></span> sign in your wallet…';
+  try {
+    const tx = ccc.Transaction.from({ outputs: [{ capacity: amount, lock: ccc.Script.from(AS_LOCK) }], outputsData: [hex(FROM_KEY)] });
+    await tx.completeInputsByCapacity(signer);
+    await tx.completeFeeBy(signer, 1000);
+    const txHash = await signer.sendTransaction(tx);
+    $("depMsg").innerHTML = '<span class="spin"></span> deposit cell sent, crediting on-chain…';
+    log(`Deposit cell created on Pudge (${ckb} CKB). <a href="https://pudge.explorer.nervos.org/transaction/${txHash}" target="_blank">view</a>`, "ok");
+    await client.waitTransaction(txHash);
+    const r = await api("/api/deposit", { toKey: hex(FROM_KEY), amount: amount.toString(), txHash, index: 0 });
+    if (r.error) { $("depMsg").innerHTML = `<span class="err">${r.error}</span>`; }
+    else { const s = r.sealingInSecs ?? 8; $("depMsg").innerHTML = `<span class="ok">deposit queued, batching with others (checkpoint in ~${s}s)</span>`; log(`Deposit queued for the next batched checkpoint (${r.pendingDeposits} pending). Dozens of deposits share one proof.`, "warn"); }
+    refreshWalletBal();
+  } catch (e) {
+    $("depMsg").innerHTML = `<span class="err">${e.message || e}</span>`;
+  }
+  $("depBtn").disabled = false;
+  refresh();
+};
+
+window.tip = async function (toKey, ckb, label) {
+  const amount = BigInt(Math.round(ckb * CKB));
+  const fee = 100000n; // 0.001 CKB
+  const st = window._state;
+  const nonce = BigInt(st?.user?.nextNonce ?? 0);
+  const toKeyB = bytesFromHex(toKey);
+  const sig = signDigest(transferMsg(toKeyB, amount, fee, nonce, EXPIRY));
+  const r = await api("/api/tip", { fromPubkey: hex(PUB), toKey, amount: amount.toString(), fee: fee.toString(), nonce: nonce.toString(), expiry: EXPIRY.toString(), sig: hex(sig) });
+  if (r.error) log(`Tip failed: ${r.error}`, "err"); else log(`You tipped ${label} ${ckb} CKB (off-chain, instant).`, "gold2");
+  refresh();
+};
+
+window.withdraw = async function () {
+  const ckb = parseFloat($("wd").value);
+  if (!(ckb >= 63)) { $("wdMsg").innerHTML = '<span class="err">minimum is 63 CKB</span>'; return; }
+  const amount = BigInt(Math.round(ckb * CKB));
+  const lockObj = ccc.Script.from({ codeHash: myLock.codeHash, hashType: myLock.hashType, args: myLock.args });
+  const targetLockHash = bytesFromHex(lockObj.hash());
+  const st = window._state;
+  const nonce = BigInt(st?.user?.nextNonce ?? 0);
+  const sig = signDigest(withdrawMsg(targetLockHash, amount, nonce, EXPIRY));
+  $("wdBtn").disabled = true; $("wdMsg").innerHTML = '<span class="spin"></span> sealing exit…';
+  const r = await api("/api/withdraw", { fromPubkey: hex(PUB), targetLockHash: hex(targetLockHash), amount: amount.toString(), nonce: nonce.toString(), expiry: EXPIRY.toString(), sig: hex(sig), lock: { codeHash: myLock.codeHash, hashType: myLock.hashType, args: myLock.args } });
+  if (r.error) $("wdMsg").innerHTML = `<span class="err">${r.error}</span>`;
+  else { $("wdMsg").innerHTML = '<span class="ok">exit proving (~7 min), CKB will land in your wallet</span>'; log(`Withdrawal of ${ckb} CKB sealed, proving exit checkpoint (~7 min).`, "warn"); }
+  $("wdBtn").disabled = false;
+  refresh();
+};
+
+window.settle = async function () {
+  const r = await api("/api/settle", {});
+  if (r.error) log(`Settle: ${r.error}`, "err"); else log("Settling pending tips on-chain (proving ~7 min).", "warn");
+  refresh();
+};
+
+const explorer = (tx) => `https://pudge.explorer.nervos.org/transaction/${tx}`;
+async function refresh() {
+  const st = await api("/api/state" + (FROM_KEY ? "?key=" + hex(FROM_KEY) : ""));
+  window._state = st;
+  const u = st.user || {};
+  if (u.registered) {
+    $("bal").textContent = (u.balanceCkb ?? 0).toFixed(3);
+    const pend = (u.balanceCkb ?? 0) - (u.committedCkb ?? 0);
+    $("pendNote").textContent = Math.abs(pend) > 1e-9 ? `(${(u.committedCkb).toFixed(3)} on-chain ${pend >= 0 ? "+" : ""}${pend.toFixed(3)} pending)` : "";
+  }
+  const cc = $("creators"); cc.innerHTML = "";
+  for (const c of st.creators || []) {
+    const d = document.createElement("div"); d.className = "creator";
+    d.innerHTML = `<div><div class="who">${c.label}</div><div class="role">${c.role}</div></div>
+      <div style="display:flex;align-items:center"><span class="earned">earned ${(c.earnedCkb).toFixed(3)} CKB</span>
+      <span class="tipbtns">
+        <button onclick="tip('${c.key}',0.1,'${c.label}')">+0.1</button>
+        <button onclick="tip('${c.key}',0.25,'${c.label}')">+0.25</button>
+        <button onclick="tip('${c.key}',0.5,'${c.label}')">+0.5</button></span></div>`;
     cc.appendChild(d);
   }
-  const fd=document.getElementById('feed'); fd.innerHTML = st.activity.map(a=>`<div>${a}</div>`).join('');
-  document.getElementById('uh-root').textContent = st.underHood.root;
-  document.getElementById('uh-seq').textContent = st.underHood.seq;
-  document.getElementById('uh-total').textContent = f(st.underHood.poolTotalCkb);
-  document.getElementById('uh-cps').textContent = st.underHood.checkpoints;
+  // jobs
+  const jc = $("jobs"); jc.innerHTML = "";
+  const bt = st.batch || {};
+  const npend = (bt.pendingDeposits || 0) + (bt.pendingWithdrawals || 0);
+  if (npend > 0) {
+    const d = document.createElement("div"); d.className = "job proving";
+    const tail = bt.sealingInSecs != null ? ` → sealing into one checkpoint in ~${bt.sealingInSecs}s` : " → will seal right after the current checkpoint";
+    d.innerHTML = `<span class="spin"></span> <b>batching</b>: ${bt.pendingDeposits || 0} deposit(s) + ${bt.pendingWithdrawals || 0} withdrawal(s) pending${tail}`;
+    jc.appendChild(d);
+  }
+  for (const j of st.jobs || []) {
+    const d = document.createElement("div"); d.className = "job " + j.status;
+    const icon = j.status === "proving" ? '<span class="spin"></span> ' : j.status === "confirmed" ? "✓ " : "✕ ";
+    const link = j.anchorTx ? ` · <a href="${explorer(j.anchorTx)}" target="_blank">anchor tx</a>` : "";
+    d.innerHTML = `${icon}<b>${j.kind}</b> → checkpoint seq ${j.seq}: ${j.detail}${link}`;
+    jc.appendChild(d);
+  }
+  // Deposits/withdrawals stay enabled while a checkpoint proves: they QUEUE into the next batch.
+  // Only "settle now" needs the guard (it forces an immediate seal, which fails mid-proof).
+  $("settleBtn") && ($("settleBtn").disabled = !!st.inFlight);
+  // under the hood
+  const p = st.pool || {};
+  $("uh-root").textContent = p.root || "…";
+  $("uh-seq").textContent = p.anchorSeq ?? "…";
+  $("uh-total").textContent = (p.totalCkb ?? 0).toFixed(3);
+  $("uh-fee").textContent = (p.feeAccCkb ?? 0).toFixed(3);
+  if (p.anchorTx) { const a = $("uh-anchor"); a.href = explorer(p.anchorTx); a.textContent = `${p.anchorTx.slice(0, 18)}…:${p.anchorIndex}`; }
 }
-async function deposit(amt){ const v = amt!==undefined?amt:parseFloat(document.getElementById('dep').value); const r=await post('/api/deposit',{ckb:v}); note('act-out', r.error?('could not add funds: '+r.error):'', r.error?'err':''); refresh(); }
-async function tip(name,amt){ const r=await post('/api/tip',{to:name,ckb:amt}); note('act-out', r.error?('tip failed: '+r.error):'', r.error?'err':''); refresh(); }
-async function withdraw(amt){ const v = amt!==undefined?amt:parseFloat(document.getElementById('wd').value); const r=await post('/api/withdraw',{ckb:v}); note('act-out', r.error?('withdraw failed: '+r.error):`sent ${f(v)} CKB to your own CKB wallet`, r.error?'err':'ok'); refresh(); }
-async function withdrawAll(){ if(bal>0) await withdraw(bal); }
-async function checkSafe(){
-  const r = await get('/api/safety?name=You');
-  if(r.error){ note('safe-out','could not check yet: '+r.error,'err'); return; }
-  if(r.empty){ note('safe-out','You have no balance to protect right now. Add funds and check again.',''); return; }
-  note('safe-out',
-    `Your ${f(r.balanceCkb)} CKB was rebuilt directly from the CKB blockchain, with no help from this app, and verified: ${r.recoveredFromL1?'yes':'no'}. `+
-    `You also hold a valid escape hatch (a ${r.escapeHatchBytes}-byte on-chain proof): even if this app vanished tomorrow, you could reclaim your ${f(r.balanceCkb)} CKB yourself, no permission needed: ${r.escapeHatchValid?'yes':'no'}.`,
-    (r.recoveredFromL1 && r.escapeHatchValid)?'ok':'err');
-}
-async function reset(){ await post('/api/reset'); note('safe-out','',''); note('act-out','',''); refresh(); }
+
+// graceful CDN-load failure
+window.addEventListener("error", (e) => {
+  if (String(e.message || "").includes("import") || String(e.filename || "").includes("esm.sh")) {
+    $("loadErr").innerHTML = '<span class="err">Could not load the wallet library from the CDN. Check your connection and reload.</span>';
+  }
+});
+
 refresh();
+setInterval(refresh, 5000);
 </script>
 </body>
 </html>

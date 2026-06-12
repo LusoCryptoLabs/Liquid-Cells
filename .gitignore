@@ -17,3 +17,8 @@ elf/
 *.profraw
 .unc_probe
 .write_probe
+
+# on-chain demo run artifacts (regenerated per redeploy); keep lc-run-checkpoint.sh
+fixtures/demo/cp*/
+fixtures/demo/state.json
+fixtures/demo/*.log

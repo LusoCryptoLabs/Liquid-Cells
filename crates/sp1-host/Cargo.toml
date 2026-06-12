@@ -16,6 +16,12 @@ path = "src/main.rs"
 name = "lc-sequence"
 path = "src/bin/sequence.rs"
 
+# Generalized thin prover: prove ONE sealed checkpoint from its sp1_input blob (scenario-free).
+# The demo operator seals a batch, writes its sp1_input here, and gets a Groth16 proof to submit.
+[[bin]]
+name = "prove_one"
+path = "src/bin/prove_one.rs"
+
 [dependencies]
 # native-gnark => local Groth16 wrapping via the gnark Go FFI (no Docker required).
 sp1-sdk = { version = "6.2.3", features = ["blocking", "native-gnark"] }
