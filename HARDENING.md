@@ -50,7 +50,11 @@ formality): the buildable path, ranked by leverage. Items marked done were close
 
 **Protocol fixes (on-chain)**
 - [x] Deposit lock that removes the third-party theft window (sweep-or-refund).
-- [ ] Deploy the deposit lock live and route the demo/SDK deposit flow through it (procedure below).
+- [x] Deploy the deposit lock live (Pudge codeHash `0x0d610c61…3d3574`) and verify it on-chain: a
+  deposit cell was created under it, a third-party spend was rejected (`Inputs[0].Lock
+  ValidationFailure`), and a refund to the depositor was accepted (see [DEPLOY.md](DEPLOY.md)).
+- [ ] Route the demo/SDK deposit flow through it (the running demo still creates always-success
+  deposit cells; the sweep path needs no sequencer change, only the deposit-creation script).
 - [ ] Type-id the anchor so each pool has a unique type hash; then the deposit lock binds to a
   specific pool, not just the contract (see the note in `deposit_lock.rs`).
 - [ ] Receiver-side force-claim for HTLC egress: the one documented architectural residual
@@ -74,9 +78,10 @@ formality): the buildable path, ranked by leverage. Items marked done were close
   further iteration, so it is a mainnet step, not a testnet one.
 - [ ] Bug bounty and a capped, gradual rollout that raises limits as confidence builds.
 
-## Deposit-lock deploy procedure (pending)
+## Deposit-lock deploy procedure (done on Pudge)
 
-The lock is implemented and tested offline but not yet live. To deploy:
+The lock is deployed and verified live (codeHash `0x0d610c61…3d3574`, deploy/test hashes in
+[DEPLOY.md](DEPLOY.md)); only step 4 (routing the demo deposit flow through it) remains. The steps:
 
 1. Build: `cargo build --release` in `crates/ckb-contract` produces
    `target/riscv64imac-unknown-none-elf/release/liquid-cells-deposit-lock` (~17 KB).

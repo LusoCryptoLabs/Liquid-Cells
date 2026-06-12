@@ -3,9 +3,12 @@
 Liquid Cells is deployed on the **Pudge** testnet. **Testnet only, unaudited, no real
 value.** This records the live artifacts so a checkpoint or force-exit can be reproduced.
 
-> The **deposit lock** (`crates/ckb-contract/src/deposit_lock.rs`) is implemented and tested but
-> not yet deployed; its deploy procedure is in [HARDENING.md](HARDENING.md#deposit-lock-deploy-procedure-pending).
-> Live deposit cells still use an always-success lock until that lands.
+> The **deposit lock** (`crates/ckb-contract/src/deposit_lock.rs`) is **deployed and verified live**
+> on Pudge (codeHash `0x0d610c61…3d3574`, rows below). A deposit cell was created under it, a
+> third-party spend was **rejected on-chain** (`Inputs[0].Lock ValidationFailure`), and a refund to
+> the depositor was accepted. The demo/SDK deposit flow is not yet routed through it (the running
+> demo still creates always-success deposit cells); that wiring is the remaining step
+> ([HARDENING.md](HARDENING.md)).
 
 ## Live artifacts
 
@@ -30,6 +33,12 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 | Anchor after checkpoint 3 (current) | `0x80d4612489c59cb630d8dd8c32d5edc3d2ac2009ab8068eee9ae5b879052bec1:0` (root `0x60200160…`, seq 3) |
 | Baked program vkey | `0x00213af5b4cc8922754e5b8ee7e610de703d4cb17fabb0a187c95c37fe67c1e8` |
 | Genesis (empty SMT) root | `0xa7ff9e28ffd3def443d324547688c2c4eb98edf7da757d6bfa22bff55b9ce24a` |
+| **Deposit-lock `codeHash`** | `0x0d610c619c396b93282a1c7bbe6a89d5e5b882801baedba1ac73c6b2af3d3574` (type-id; sweep-or-refund) |
+| Deposit-lock code-cell dep | `0xcb4b5a24994522084fe3c4078e02ff6550ed7b0b95d953d39d9736dcfb0babfc:0` (depType `code`) |
+| Deposit-lock deploy tx | `0xcb4b5a24994522084fe3c4078e02ff6550ed7b0b95d953d39d9736dcfb0babfc` |
+| Deposit-lock live test, deposit cell | `0xf05bfea8220386d25c62bacfff351f37979eea62189d612c80c89788c6bcb65e:0` (200 CKB, bound to pool type hash `0xf4c1baf2…`) |
+| Deposit-lock live test, third-party spend | **rejected on-chain** (`Inputs[0].Lock ValidationFailure`) |
+| Deposit-lock live test, refund to depositor | `0xcb512bc295c21576700893b6afd72822110fbce2b9648748e5aefa0febfbbd0d` (**accepted**) |
 
 ## What's verified on-chain
 

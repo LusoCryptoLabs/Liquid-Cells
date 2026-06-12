@@ -34,7 +34,8 @@ itself, the same base as any on-chain transaction.
 > **Hardening.** A production-hardening pass added a differential test of the hand-ported ark
 > verifier (vs the independent substrate-bn implementation, over a fuzzed corpus), an STF fuzzer
 > with an independent shadow ledger, a crash-tolerant sequencer replay journal, a deposit lock that
-> closes the always-success theft window, and session-key recovery. See **[HARDENING.md](HARDENING.md)**
+> closes the always-success theft window (**deployed and verified live on Pudge**: a third-party
+> spend was rejected on-chain, a refund accepted), and session-key recovery. See **[HARDENING.md](HARDENING.md)**
 > for the work and the honest, audit-aside roadmap to mainnet.
 
 > **Honest positioning (prior art).** This is a working *implementation*, not a novel protocol.
