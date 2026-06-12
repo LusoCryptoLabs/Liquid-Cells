@@ -12,11 +12,12 @@ path = "src/main.rs"
 
 [dependencies]
 ckb-std = "0.16"
-# substrate-bn (Succinct fork): no_std BN254 pairing, the same lib the g16ckb / bridge
-# verifier uses; consumes SP1 Groth16 proofs (big-endian field elements).
-# Vendored + patched (Gt::to_bytes/from_bytes added, so the constant e(alpha,beta) pairing
-# can be baked → 3 pairings on-chain instead of 4, under the CKB block cycle limit).
-bn = { package = "substrate-bn-succinct-rs", path = "vendor/bn", default-features = false }
+# ark-bn254: modern pure-Rust BN254. Measured ~66x faster per pairing than substrate-bn on
+# CKB-VM (crates/bn-bench), so the verifier does the plain 4-pairing Groth16 check (no baked
+# e(alpha,beta) precompute needed) at ~1-2% of the block cycle limit instead of ~99%.
+ark-bn254 = { version = "0.4", default-features = false, features = ["curve"] }
+ark-ec = { version = "0.4", default-features = false }
+ark-ff = { version = "0.4", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 # keccak for recomputing the deposits/withdrawals commitments (must match the STF's fold).
 sha3 = { version = "=0.10.8", default-features = false }

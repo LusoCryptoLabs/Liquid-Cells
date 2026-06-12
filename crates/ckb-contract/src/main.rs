@@ -55,7 +55,10 @@
 #![no_main]
 
 use alloc::vec::Vec;
-use bn::{miller_loop_batch, AffineG1, AffineG2, Fq, Fq2, Fr, Gt, G1};
+use ark_bn254::{Bn254, Fq, Fq2, Fr, G1Affine, G2Affine};
+use ark_ec::pairing::Pairing;
+use ark_ec::{AffineRepr, CurveGroup};
+use ark_ff::{PrimeField, Zero};
 use ckb_std::ckb_constants::Source;
 use ckb_std::ckb_types::packed::WitnessArgs;
 use ckb_std::ckb_types::prelude::*;
@@ -75,11 +78,6 @@ mod atomics;
 // ---- baked policy ----
 /// SP1 v6 Groth16 universal verifying key (identical to the g16ckb / bridge VK).
 static GROTH16_VK: &[u8] = include_bytes!("../../../fixtures/reference/groth16_vk.bin");
-/// Precomputed constant pairing `e(alpha, beta) = pairing(vk.alpha, vk.beta)` for the VK
-/// above, as `Gt::to_bytes` (12 big-endian Fq words). Baking it lets the verifier do 3
-/// pairings instead of 4, under the CKB block cycle limit. Regenerate with the
-/// `alphabeta` test whenever the VK changes; pinned by the `valid_checkpoint_verifies` test.
-static ALPHA_BETA: &[u8; 384] = include_bytes!("../../../fixtures/reference/alpha_beta.bin");
 /// Our program's SP1 vkey hash (`0x00213af5…c1e8`), binds the proof to *this* STF.
 /// (Re-derived again in Phase 5 when the STF gained HTLC ops. History: `0x00add002…55ee9`
 /// (P4 DA), `0x00cd19a7…521f5` (2b-5 fee), `0x00fda595…ace165` (2a). Any STF change ⇒
@@ -186,69 +184,69 @@ fn deserialize_with_flags(buf: &[u8]) -> Option<(Fq, Flag)> {
     let mut xb = [0u8; 32];
     xb.copy_from_slice(buf);
     xb[0] &= !MASK;
-    let x = Fq::from_be_bytes_mod_order(&xb).ok()?;
+    let x = Fq::from_be_bytes_mod_order(&xb);
     let flag = if m == COMPRESSED_POSITIVE { Flag::Positive } else { Flag::Negative };
     Some((x, flag))
 }
 
-fn comp_x_to_g1(buf: &[u8]) -> Option<AffineG1> {
+// gnark compressed-point convention: a `Positive` flag selects the smaller y, `Negative` the
+// larger. ark's `get_point_from_x_unchecked(x, greatest)` returns the larger y when greatest is
+// true, so `greatest = (flag == Negative)`.
+fn comp_x_to_g1(buf: &[u8]) -> Option<G1Affine> {
     let (x, m) = deserialize_with_flags(buf)?;
-    let (y, neg_y) = AffineG1::get_ys_from_x_unchecked(x)?;
-    let mut fy = y;
-    if y.cmp(&neg_y) == core::cmp::Ordering::Greater {
-        if m == Flag::Positive {
-            fy = -y;
-        }
-    } else if m == Flag::Negative {
-        fy = -y;
+    if m == Flag::Infinity {
+        return Some(G1Affine::zero());
     }
-    Some(AffineG1::new_unchecked(x, fy))
+    G1Affine::get_point_from_x_unchecked(x, m == Flag::Negative)
 }
 
-fn uncomp_g1(buf: &[u8]) -> Option<AffineG1> {
+fn uncomp_g1(buf: &[u8]) -> Option<G1Affine> {
     if buf.len() != 64 {
         return None;
     }
-    let x = Fq::from_slice(&buf[..32]).ok()?;
-    let y = Fq::from_slice(&buf[32..]).ok()?;
-    AffineG1::new(x, y).ok()
+    let x = Fq::from_be_bytes_mod_order(&buf[..32]);
+    let y = Fq::from_be_bytes_mod_order(&buf[32..]);
+    let p = G1Affine::new_unchecked(x, y);
+    if !p.is_on_curve() || !p.is_in_correct_subgroup_assuming_on_curve() {
+        return None;
+    }
+    Some(p)
 }
 
-fn comp_x_to_g2(buf: &[u8]) -> Option<AffineG2> {
+fn comp_x_to_g2(buf: &[u8]) -> Option<G2Affine> {
     if buf.len() != 64 {
         return None;
     }
     let (x1, flag) = deserialize_with_flags(&buf[..32])?;
-    let x0 = Fq::from_be_bytes_mod_order(&buf[32..64]).ok()?;
+    let x0 = Fq::from_be_bytes_mod_order(&buf[32..64]);
     let x = Fq2::new(x0, x1);
     if flag == Flag::Infinity {
-        return Some(AffineG2::zero());
+        return Some(G2Affine::zero());
     }
-    let (y, neg_y) = AffineG2::get_ys_from_x_unchecked(x)?;
-    match flag {
-        Flag::Positive => Some(AffineG2::new_unchecked(x, y)),
-        Flag::Negative => Some(AffineG2::new_unchecked(x, neg_y)),
-        _ => None,
-    }
+    G2Affine::get_point_from_x_unchecked(x, flag == Flag::Negative)
 }
 
-fn uncomp_g2(buf: &[u8]) -> Option<AffineG2> {
+fn uncomp_g2(buf: &[u8]) -> Option<G2Affine> {
     if buf.len() != 128 {
         return None;
     }
-    let x1 = Fq::from_slice(&buf[0..32]).ok()?;
-    let x0 = Fq::from_slice(&buf[32..64]).ok()?;
-    let y1 = Fq::from_slice(&buf[64..96]).ok()?;
-    let y0 = Fq::from_slice(&buf[96..128]).ok()?;
-    AffineG2::new(Fq2::new(x0, x1), Fq2::new(y0, y1)).ok()
+    let x1 = Fq::from_be_bytes_mod_order(&buf[0..32]);
+    let x0 = Fq::from_be_bytes_mod_order(&buf[32..64]);
+    let y1 = Fq::from_be_bytes_mod_order(&buf[64..96]);
+    let y0 = Fq::from_be_bytes_mod_order(&buf[96..128]);
+    let p = G2Affine::new_unchecked(Fq2::new(x0, x1), Fq2::new(y0, y1));
+    if !p.is_on_curve() || !p.is_in_correct_subgroup_assuming_on_curve() {
+        return None;
+    }
+    Some(p)
 }
 
 struct Vk {
-    alpha: AffineG1,
-    k: Vec<AffineG1>,
-    beta: AffineG2,
-    gamma: AffineG2,
-    delta: AffineG2,
+    alpha: G1Affine,
+    k: Vec<G1Affine>,
+    beta: G2Affine,
+    gamma: G2Affine,
+    delta: G2Affine,
 }
 
 fn load_vk(buf: &[u8]) -> Option<Vk> {
@@ -269,13 +267,13 @@ fn load_vk(buf: &[u8]) -> Option<Vk> {
         k.push(comp_x_to_g1(&buf[off..off + 32])?);
         off += 32;
     }
-    Some(Vk { alpha, k, beta: -beta, gamma, delta })
+    Some(Vk { alpha, k, beta, gamma, delta })
 }
 
 struct Pf {
-    ar: AffineG1,
-    krs: AffineG1,
-    bs: AffineG2,
+    ar: G1Affine,
+    krs: G1Affine,
+    bs: G2Affine,
 }
 
 fn load_proof(buf: &[u8]) -> Option<Pf> {
@@ -288,44 +286,32 @@ fn load_proof(buf: &[u8]) -> Option<Pf> {
     Some(Pf { ar, krs, bs })
 }
 
-fn prepare_inputs(vk: &Vk, public_inputs: &[Fr]) -> Option<G1> {
+fn prepare_inputs(vk: &Vk, public_inputs: &[Fr]) -> Option<G1Affine> {
     if (public_inputs.len() + 1) != vk.k.len() {
         return None;
     }
-    Some(
-        public_inputs
-            .iter()
-            .zip(vk.k.iter().skip(1))
-            .fold(vk.k[0], |acc, (i, b)| if *i != Fr::zero() { acc + (*b * *i) } else { acc })
-            .into(),
-    )
+    let mut acc = vk.k[0].into_group();
+    for (i, b) in public_inputs.iter().zip(vk.k.iter().skip(1)) {
+        if !i.is_zero() {
+            acc += *b * *i;
+        }
+    }
+    Some(acc.into_affine())
 }
 
 fn verify_alg(vk: &Vk, p: &Pf, public_inputs: &[Fr]) -> bool {
-    let prepared = match prepare_inputs(vk, public_inputs) {
+    let vk_x = match prepare_inputs(vk, public_inputs) {
         Some(x) => x,
         None => return false,
     };
-    // 3 pairings, not 4: the constant e(alpha, beta) is precomputed off-chain into
-    // ALPHA_BETA, so the on-chain work is 3 Miller loops + one final exponentiation, compared
-    // against the baked constant. ~3.47B cycles (under the ~3.50B CKB block limit); the
-    // 4-pairing form was ~3.81B and over. `miller_loop_batch` takes (G2, G1) pairs.
-    let ab = match Gt::from_bytes(ALPHA_BETA) {
-        Some(g) => g,
-        None => return false,
-    };
-    let ml = match miller_loop_batch(&[
-        (p.bs.into(), -Into::<G1>::into(p.ar)),
-        (vk.gamma.into(), prepared),
-        (vk.delta.into(), p.krs.into()),
-    ]) {
-        Ok(g) => g,
-        Err(_) => return false,
-    };
-    match ml.final_exponentiation() {
-        Some(lhs) => lhs == ab,
-        None => false,
-    }
+    // Standard Groth16 check as one 4-pairing product == 1:
+    //   e(A,B) · e(-alpha,beta) · e(-vk_x,gamma) · e(-C,delta) == 1
+    // ark-bn254's multi_pairing is ~66x cheaper per pairing than substrate-bn on CKB-VM
+    // (crates/bn-bench), so no baked e(alpha,beta) precompute is needed; the 4-pairing form
+    // lands well under the block cycle limit.
+    let g1s = [p.ar, -vk.alpha, -vk_x, -p.krs];
+    let g2s = [p.bs, vk.beta, vk.gamma, vk.delta];
+    Bn254::multi_pairing(g1s, g2s).is_zero()
 }
 
 fn slice32(s: &[u8]) -> [u8; 32] {
@@ -806,10 +792,9 @@ fn verify_sp1_groth16(proof: &[u8], public_values: &[u8]) -> i8 {
     let inputs_bytes: [[u8; 32]; 5] = [VKEY_HASH, pd, exit_code, vk_root, proof_nonce];
     let mut frs: Vec<Fr> = Vec::new();
     for ib in inputs_bytes.iter() {
-        match Fr::from_slice(ib) {
-            Ok(f) => frs.push(f),
-            Err(_) => return 11,
-        }
+        // 32-byte big-endian field element; the prover ensures each is < the BN254 scalar
+        // modulus, so reduce-mod is exact (matches the previous Fr::from_slice behavior).
+        frs.push(Fr::from_be_bytes_mod_order(ib));
     }
 
     let vk = match load_vk(GROTH16_VK) {

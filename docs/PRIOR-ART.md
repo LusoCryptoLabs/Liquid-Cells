@@ -57,9 +57,16 @@ design can be optimized.
 
 Ordered by leverage:
 
-1. **Swap the BN254 library — the single biggest win.** Our verify is **measured at
-   3,474,607,239 cycles** (`valid_checkpoint_verifies`), only **0.66% under** the 3.498B block
-   limit, using the unoptimized vendored `substrate-bn`, which forced the 4→3-pairing hack to fit.
+1. **Swap the BN254 library — DONE.** The verifier was ported to `ark-bn254` and the result is
+   **measured, not projected: 3,474,607,239 → 53,308,780 cycles (a ~65x reduction)**, from 99.3%
+   of the block limit to ~1.5%, with the **same SP1 proofs verifying and all 40 contract tests
+   green** (good proof accepted, every tampered proof/root/accounting case still rejected). The
+   3-pairing `e(alpha,beta)` precompute hack was removed (plain 4-pairing check). Binary grew
+   ~293KB→420KB. Details below were the investigation that led here.
+
+   Our verify *was* **3,474,607,239 cycles** (`valid_checkpoint_verifies`), only **0.66% under**
+   the 3.498B block limit, using the unoptimized vendored `substrate-bn`, which forced the
+   4→3-pairing hack to fit.
    Two independent CKB-VM data points put a tuned BN254 verify **~45–55x lower**: ckb-zkp does a
    Groth16 BN254 verify at **~77.5M cycles** (pure Rust), and the "Optimized SP1 Verifier for
    ckb-vm" cut Plonk **6,000M → 63M** using `ckb-alt-bn128`. So the projected verify after a swap

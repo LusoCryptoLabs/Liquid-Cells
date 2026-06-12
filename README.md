@@ -23,13 +23,13 @@ itself, the same base as any on-chain transaction.
 > off the same STF, so the chain composes past the first one. **It is
 > now deployed on the CKB Pudge testnet: a genesis pool was created and a first checkpoint
 > landed with the SP1 Groth16 BN254 proof verified on live CKB-VM** ([DEPLOY.md](DEPLOY.md)).
-> Getting there required precomputing the constant `e(alpha,beta)` so the verifier does 3
-> pairings (~3.47B cycles) under CKB's ~3.50B block limit. **That tight fit is an artifact of an
-> unoptimized BN254 library (vendored `substrate-bn`), not a fundamental limit**: a CKB-tuned
-> library (e.g. `ckb-alt-bn128`) verifies Groth16 on CKB-VM far more cheaply, see
-> [docs/PRIOR-ART.md](docs/PRIOR-ART.md). What remains to be a usable system (not more
-> cryptography): the verifier optimization above, a client SDK, the L1/Fiber swap leg, throughput
-> (Phase 6), and, before any real value, an external audit. Testnet only, unaudited.
+> The on-chain verifier uses **ark-bn254**: a plain 4-pairing Groth16 check measured at **~53M
+> cycles (~1.5% of CKB's ~3.50B block limit)**, with the same SP1 proofs verifying and all 40
+> contract tests green. (It previously used `substrate-bn` and needed a 3-pairing `e(alpha,beta)`
+> precompute just to fit at ~3.47B = 99.3%; the port to `ark-bn254` cut that ~65x and removed the
+> hack, see [docs/PRIOR-ART.md](docs/PRIOR-ART.md).) What remains to be a usable system (not more
+> cryptography): a client SDK, the L1/Fiber swap leg, throughput (Phase 6), and, before any real
+> value, an external audit. Testnet only, unaudited.
 
 > **Honest positioning (prior art).** This is a working *implementation*, not a novel protocol.
 > Nearly every ingredient has prior art, much of it on CKB: sec-bit's **Clover** (a zkRollup on the
