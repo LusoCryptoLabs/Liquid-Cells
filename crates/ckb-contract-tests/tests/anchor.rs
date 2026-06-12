@@ -70,7 +70,13 @@ struct Cfg {
     tamper_da: bool,      // published DA blob != the committed diff
     drop_da: bool,        // no DA blob published at all
     change_lock: bool,    // output anchor lock != input anchor lock (capture attempt)
+    reward: bool,         // add a marked sequencer-reward output of exactly fee_withdrawal (valid)
+    reward_over: bool,    // add a reward output of fee_withdrawal + 1 (must reject)
 }
+
+/// A non-anchor output whose data starts with this marker is a sequencer reward cell (must match
+/// the contract's REWARD_MARKER).
+const REWARD_MARKER: &[u8] = b"LIQUIDCELLS/v1/fee-reward";
 
 fn build(cfg: Cfg) -> (Context, TransactionView) {
     let bin: Bytes = std::fs::read(CONTRACT_BIN).expect("build crates/ckb-contract first").into();
@@ -150,7 +156,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     }
     let w0 = wb.build().as_bytes();
 
-    let tx = TransactionBuilder::default()
+    let mut b = TransactionBuilder::default()
         .input(
             CellInput::new_builder()
                 .previous_output(anchor_in)
@@ -166,10 +172,20 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
         )
         .output_data(Bytes::from(new_anchor).pack())
         .cell_dep(CellDep::new_builder().out_point(contract_op).build())
-        .cell_dep(CellDep::new_builder().out_point(as_op).build())
-        .witness(w0.pack())
-        .build();
-    let tx = ctx.complete_tx(tx);
+        .cell_dep(CellDep::new_builder().out_point(as_op.clone()).build())
+        .witness(w0.pack());
+
+    if cfg.reward || cfg.reward_over {
+        // A sequencer reward cell: a non-anchor output, data marked, paid out of fee_withdrawal.
+        // Exactly fee_withdrawal is valid (miner fee then 0); one over must reject (code 47).
+        let reward_cap = if cfg.reward_over { fee_wd as u64 + 1 } else { fee_wd as u64 };
+        let reward_lock = ctx.build_script(&as_op, Bytes::from(b"seq-reward".to_vec())).unwrap();
+        b = b
+            .output(CellOutput::new_builder().capacity(reward_cap.pack()).lock(reward_lock).build())
+            .output_data(Bytes::from(REWARD_MARKER.to_vec()).pack());
+    }
+
+    let tx = ctx.complete_tx(b.build());
     (ctx, tx)
 }
 
@@ -242,5 +258,24 @@ fn anchor_lock_change_rejected() {
     assert!(
         ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
         "changing the anchor lock across a checkpoint must reject (capture-proof)"
+    );
+}
+
+#[test]
+fn sequencer_reward_accepted() {
+    // Phase 6b: a marked reward cell paying exactly the proven fee_withdrawal to the sequencer is
+    // accepted (excluded from withdrawals, the L1 miner fee then being fee_withdrawal - reward).
+    let (ctx, tx) = build(Cfg { reward: true, ..Default::default() });
+    ctx.verify_tx(&tx, MAX_CYCLES).expect("a reward within fee_withdrawal must verify");
+}
+
+#[test]
+fn reward_exceeds_fee_withdrawal_rejected() {
+    // A reward larger than the proven fee_withdrawal would have to come from a user balance, so
+    // it must reject (code 47).
+    let (ctx, tx) = build(Cfg { reward_over: true, ..Default::default() });
+    assert!(
+        ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
+        "a reward exceeding fee_withdrawal must reject"
     );
 }

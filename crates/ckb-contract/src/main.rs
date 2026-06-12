@@ -55,7 +55,7 @@
 #![no_main]
 
 use alloc::vec::Vec;
-use bn::{miller_loop_batch, AffineG1, AffineG2, Fq, Fq2, Fr, Gt, G1, G2};
+use bn::{miller_loop_batch, AffineG1, AffineG2, Fq, Fq2, Fr, Gt, G1};
 use ckb_std::ckb_constants::Source;
 use ckb_std::ckb_types::packed::WitnessArgs;
 use ckb_std::ckb_types::prelude::*;
@@ -357,12 +357,20 @@ fn fold_commit(acc: &[u8; 32], key: &[u8; 32], amount: u128) -> [u8; 32] {
     keccak(&b)
 }
 
+/// A non-anchor OUTPUT whose data begins with this marker is a **sequencer reward** cell
+/// (Phase 6b), not a user withdrawal. It is paid out of the proven `fee_withdrawal` (the rest
+/// of which is the L1 miner fee), so it is excluded from the withdrawals commitment and bounded
+/// by `fee_withdrawal` in `checkpoint()`. Marking a real withdrawal as reward (or vice versa)
+/// breaks the withdrawals-commitment match, so the marking is self-enforcing.
+static REWARD_MARKER: &[u8] = b"LIQUIDCELLS/v1/fee-reward";
+
 /// Recompute the deposits/withdrawals commitments from the real cells, and sum their
 /// amounts. Implicit format: a **deposit** is any non-anchor INPUT (credits
 /// `data[0..32]` = to_key by its capacity); a **withdrawal** is any non-anchor OUTPUT
-/// (pays its `lock_hash` its capacity). The anchor is the cell whose type script is
-/// this one.
-fn fold_cells(self_hash: &[u8; 32]) -> Result<([u8; 32], [u8; 32], i128, i128), i8> {
+/// (pays its `lock_hash` its capacity) that is not a reward cell. Returns
+/// `(deposits_commitment, withdrawals_commitment, sum_deposits, sum_withdrawals, sum_reward)`.
+/// The anchor is the cell whose type script is this one.
+fn fold_cells(self_hash: &[u8; 32]) -> Result<([u8; 32], [u8; 32], i128, i128, i128), i8> {
     let mut dep = keccak(b"LIQUIDCELLS/v1/deposits-commitment");
     let mut sum_dep: i128 = 0;
     let mut i = 0usize;
@@ -388,15 +396,23 @@ fn fold_cells(self_hash: &[u8; 32]) -> Result<([u8; 32], [u8; 32], i128, i128), 
     }
     let mut wd = keccak(b"LIQUIDCELLS/v1/withdrawals-commitment");
     let mut sum_wd: i128 = 0;
+    let mut sum_reward: i128 = 0;
     let mut j = 0usize;
     loop {
         match load_cell_capacity(j, Source::Output) {
             Ok(cap) => {
                 let th = load_cell_type_hash(j, Source::Output).map_err(|_| 52i8)?;
                 if th.as_ref() != Some(self_hash) {
-                    let lh = load_cell_lock_hash(j, Source::Output).map_err(|_| 52i8)?;
-                    wd = fold_commit(&wd, &lh, cap as u128);
-                    sum_wd += cap as i128;
+                    let data = load_cell_data(j, Source::Output).map_err(|_| 52i8)?;
+                    if data.len() >= REWARD_MARKER.len() && &data[..REWARD_MARKER.len()] == REWARD_MARKER
+                    {
+                        // Sequencer reward: paid out of fee_withdrawal, not a user withdrawal.
+                        sum_reward += cap as i128;
+                    } else {
+                        let lh = load_cell_lock_hash(j, Source::Output).map_err(|_| 52i8)?;
+                        wd = fold_commit(&wd, &lh, cap as u128);
+                        sum_wd += cap as i128;
+                    }
                 }
                 j += 1;
             }
@@ -404,7 +420,7 @@ fn fold_cells(self_hash: &[u8; 32]) -> Result<([u8; 32], [u8; 32], i128, i128), 
             Err(_) => return Err(52),
         }
     }
-    Ok((dep, wd, sum_dep, sum_wd))
+    Ok((dep, wd, sum_dep, sum_wd, sum_reward))
 }
 
 /// Pin the public values to the anchor cells. Cheap; runs before the proof verify so
@@ -939,7 +955,7 @@ fn checkpoint(prev: &[u8], new: &[u8], wa: &WitnessArgs, wb: &[u8]) -> i8 {
         Ok(h) => h,
         Err(_) => return 54,
     };
-    let (dep_c, wd_c, sum_dep, sum_wd) = match fold_cells(&self_hash) {
+    let (dep_c, wd_c, sum_dep, sum_wd, sum_reward) = match fold_cells(&self_hash) {
         Ok(x) => x,
         Err(e) => return e,
     };
@@ -966,10 +982,18 @@ fn checkpoint(prev: &[u8], new: &[u8], wa: &WitnessArgs, wb: &[u8]) -> i8 {
     if prev_total + sum_dep - sum_wd - fee_wd != new_total {
         return 57;
     }
+    // Sequencer reward (Phase 6b): the operator may pay itself reward cells out of the proven
+    // fee_withdrawal (the remainder is the L1 miner fee). Bounded by fee_withdrawal, which the
+    // STF caps at accrued fee revenue, so a reward can never be drawn from a user balance. This
+    // is what makes permissionless sequencing profitable, hence self-sustaining.
+    if sum_reward > fee_wd {
+        return 47;
+    }
     // solvency: the anchor's real capacity delta must equal Σdep − Σwd − fee_withdrawal.
-    // Since the only inputs are the anchor + deposits and the only outputs are the
-    // anchor + withdrawals, the tx's miner fee (Σin − Σout) is then exactly the proven
-    // fee_withdrawal, drawn from accumulated fees, never from a user balance.
+    // Inputs are the anchor + deposits; outputs are the anchor + withdrawals + reward cells.
+    // The reward cells (capacity sum_reward) are not in this equation, so the tx's miner fee
+    // (Σin − Σout) works out to exactly fee_withdrawal − sum_reward, all of it drawn from
+    // accumulated fees, never from a user balance.
     let in_cap = match load_cell_capacity(0, Source::GroupInput) {
         Ok(c) => c as i128,
         Err(_) => return 58,
