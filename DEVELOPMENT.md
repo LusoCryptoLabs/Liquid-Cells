@@ -8,6 +8,116 @@ decided, what is next.
 
 ---
 
+## 2026-06-12, Phase 6b: sequencer reward + anti-griefing + sharding
+
+The three pieces that make permissionless operation self-sustaining, efficient, and scalable.
+None is a new trust primitive; the system was already trustless and safe.
+
+**6b-1 sequencer reward (contract-only, no proof change).** The operator may pay itself out of
+the proven `fee_withdrawal`. A non-anchor output whose data starts with `LIQUIDCELLS/v1/fee-reward`
+is a reward cell: excluded from the withdrawals commitment, summed separately, and bounded by
+`fee_withdrawal` (code 47). Since the STF already caps `fee_withdrawal` at accrued fee revenue, a
+reward can never come from a user balance, and the miner fee works out to `fee_withdrawal -
+sum_reward`. Key realization: no STF or proof change is needed, the sequencer just splits an
+already-proven draw, so the vkey is unchanged and the fixtures verify as-is. The marking is
+self-enforcing (mismarking breaks the withdrawals-commitment match). `anchor.rs` 11 tests.
+**Live on Pudge** (code-cell upgrade tx `0x4ea3eb48…`).
+
+**6b-2 anti-griefing (off-chain leader election).** Racing sequencers waste proofs, an efficiency
+problem, not a trust one (the system is safe via force-exit and rational via the reward). For each
+root, every sequencer computes the same priority order (`keccak(id | root)`, lowest leads) over the
+gossiped active set, so only the leader proves, with ranked failover. The heavy on-chain
+commit-reveal alternative is deliberately deferred as over-engineering for a non-trust concern.
+`crates/sequencer/src/coordinator.rs`, 4 tests.
+
+**6b-3 anchor sharding.** No contract change: the type script already supports any number of
+independent pools. `ShardedSequencer` runs K of them in parallel (distinct deterministic pool ids)
+for K-fold throughput. No cross-shard atomicity needed, a user holds a leaf in whatever shards they
+transact in, and the client aggregates. 2 tests.
+
+**Open.** A live demo of a sequencer earning a fee (the reward cell must clear the 61-CKB floor, so
+it needs a fee-accrued checkpoint), the L1/Fiber egress leg, a TS/WASM SDK wrapper, and the
+external audit that gates mainnet.
+
+---
+
+## 2026-06-12, Phase 6a: permissionless sequencing (lock continuity)
+
+Make the operator non-privileged. The type script already guaranteed correctness regardless of who
+submits, so the only thing making sequencing permissioned was the anchor's lock. The fix is **anchor
+lock continuity**: the contract requires `output anchor lock == input anchor lock`, before mode
+dispatch, so the genesis lock is a permanent, unforgeable policy for who may sequence. A permissive
+(always-success) genesis lock then yields a permanently **permissionless**, capture-proof pool (no
+checkpoint can re-lock the anchor to seize sequencing); a specific lock pins it forever. One small
+check, backward-compatible (the original deployer-locked pool is unaffected). `anchor.rs` gains a
+capture-rejection test.
+
+**Live on Pudge.** Upgraded the code cell (also carrying force-refund) and created a second pool
+with an always-success lock: a deployer-funded cp1 set it up, then **cp2 advanced the root with no
+signature at all** (`0x3145a2d8…`), gated only by the BN254 proof and lock continuity. This is the
+on-chain demonstration that sequencing is permissionless. The pool reuses the original pool's proofs
+(same baked `pool_id`, so the same batch reaches the identical state).
+
+---
+
+## 2026-06-12, sequencer loop + successive checkpoints + client SDK
+
+**Sequencer loop (`crates/sequencer`).** The off-chain half of the keystone: an in-memory state, a
+mempool of signed intents, and `seal_batch()` that emits a `CheckpointJob` (the SP1 guest input,
+both anchor-cell byte images, the DA blob, and the deposit/withdrawal cell specs) and advances the
+in-memory root, so successive checkpoints chain. STF-only dependency (no SP1), so its loop logic
+tests in milliseconds.
+
+**Successive checkpoints, live.** A prove-and-submit driver (`crates/sp1-host/src/bin/sequence.rs`)
+seeded the sequencer to the live seq-1 state (asserting the reproduced root matches the on-chain
+root before proving) and landed two more checkpoints, advancing the deployed pool seq 1 to 2 to 3,
+each consuming the prior anchor, each a BN254 proof verified on a live CKB block. Proving lesson:
+prove one checkpoint per process, the SP1 native-gnark FFI does not reliably survive a second
+Groth16 proof in the same process.
+
+**Client SDK (`crates/client`).** Build and sign Transfer/Withdrawal/HTLC intents, track the account
+nonce, and recover the account's `{balance, nonce}` plus an SMT inclusion proof from L1 DA alone,
+then assemble the exact force-exit / force-refund witness bytes. All on the same `liquid-cells-stf`
+the sequencer and guest run, so a client can never diverge from them. 6 tests prove the intents are
+accepted by the canonical STF and the witnesses verify against the committed root.
+
+---
+
+## 2026-06-11, Phase 5b: on-chain force-refund (HTLC escape hatch, sender side)
+
+Close the sender's exposure from Phase 5's documented liveness limitation. A third anchor mode
+(witness length 8321): the sender of a pending in-pool HTLC unilaterally reclaims a timed-out escrow
+against the committed root. The contract re-derives `htlc_id` from the supplied lock terms, proves
+the `{amount, 0}` escrow leaf's SMT inclusion, nullifies it, drops `total` by `amount`, and forces
+the payout to the sender's own secp lock. Gated by both `since >= timeout` (so a live receiver claim
+is never robbed) and operator silence (so it is an escape hatch, not a routine race). No proof or STF
+change, so the vkey is unchanged. `forcerefund.rs`, 9 tests.
+
+**Honest scope.** This closes the sender side only. The symmetric receiver "force-claim" is not
+expressible under a single anchor (it would need to fire inside the short HTLC timeout, but any
+escape hatch must be silence-gated or it griefs live checkpoints), an architectural residual.
+[docs/EGRESS.md](docs/EGRESS.md) was rewritten to state this precisely, correcting an earlier draft
+that overclaimed force-refund "removes the limitation entirely."
+
+---
+
+## 2026-06-11, Phase 2b-6: deployed to Pudge, BN254 proof verified on a live CKB block
+
+The anchor type script is live on Pudge, and a real SP1 Groth16 BN254 proof was verified inside a
+live CKB block, as far as we are aware a first for CKB.
+
+**The deploy lesson.** The first checkpoint was rejected: `ExceededMaximumCycles`. The 4-pairing
+BN254 verifier cost ~3.81B cycles, over a CKB block's ~3.50B budget, and the local ckb-testtool
+suite had hidden it by running at its own 5B limit. Fix: precompute the constant `e(alpha, beta)` so
+the verifier does **3 pairings instead of 4** (~3.47B cycles, under the limit, with a regression
+assertion guarding the margin). Baking that constant needed a vendored + patched `bn`
+(`crates/ckb-contract/vendor/bn`, adding `Gt::to_bytes`/`from_bytes`, since the library exposed no
+way to serialize a `Gt`). Also added a genesis branch (creating an anchor runs the type script on an
+output with no input anchor, which the original code rejected). Every live hash is in
+[DEPLOY.md](DEPLOY.md).
+
+---
+
 ## 2026-06-11, Phase 5: in-pool HTLC for atomic-swap dust egress
 
 **Why.** Force-exit produces a single L1 cell (~61-CKB floor), so dust can't self-exit. The

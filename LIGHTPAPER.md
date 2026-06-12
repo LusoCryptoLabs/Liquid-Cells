@@ -2,11 +2,12 @@
 
 **A fully trustless, pooled micro-payment rollup for Nervos CKB.**
 
-> **Status (read first):** the protocol's trust design is **complete and tested in a local
-> CKB-VM**, but it is **not deployed and not audited**. It is **not usable with real funds
-> today.** This document describes what has been built and proven, what remains, and what a
-> grant or partnership would fund. We lead with this on purpose, see *§6 What's proven vs.
-> what isn't*.
+> **Status (read first):** the protocol's trust design is **complete, tested, and live on the
+> CKB Pudge testnet**: the anchor type script verifies real SP1 Groth16 proofs inside CKB-VM on
+> a public chain, the sequencer has landed a chain of successive checkpoints, and sequencing is
+> **permissionless** (a checkpoint that nobody signed has advanced the root on-chain). It is
+> **testnet-only and not audited**, so it is **not usable with real funds today.** We lead with
+> this on purpose, see *§6 What's proven vs. what isn't*.
 
 ---
 
@@ -52,29 +53,40 @@ half.
 
 ## 3. Why this is credible now
 
-The usual risk for an ambitious rollup, *"can this even work?"*, is **already retired.**
-The complete trust-minimization design is built and tested:
+The usual risk for an ambitious rollup, *"can this even work?"*, is **retired, on a public
+chain.** The complete trust-minimization design is built, tested, and deployed:
 
-- The deterministic state machine, its **SP1 zero-knowledge proof**, and the **on-chain
-  verifier** all exist and pass end-to-end. The CKB anchor type script verifies a real
-  Groth16 proof **inside CKB-VM** (the RISC-V VM can run the BN254 pairing on-chain).
-- All four trust guarantees (§4) are implemented and exercised adversarially:
-  **55 tests** (31 native state-machine + 24 CKB-VM integration), including the negative
-  cases that matter, tampered proofs, withheld data, premature exits, double-exit attempts.
+- The deterministic state machine, its **SP1 zero-knowledge proof** wrapped to Groth16, and the
+  **on-chain verifier** all exist and pass end-to-end. The CKB anchor type script verifies a
+  real BN254 pairing proof **inside CKB-VM on the live Pudge testnet**, not in a simulator.
+  Fitting a BN254 verifier under CKB's per-block cycle limit required a specific optimization
+  (precomputing one pairing so the verifier does three instead of four); as far as we are aware
+  this is the first SP1 Groth16 proof verified inside a live CKB block.
+- The **sequencer runs the exact same state machine the proof attests**, and it has sealed and
+  landed a chain of **successive checkpoints** on Pudge, each carrying its own on-chain proof.
+- Sequencing is **permissionless**: with a permissive anchor lock and an on-chain lock-continuity
+  rule, anyone with a valid proof can advance the root. A checkpoint that carried **no signature
+  at all** has advanced a live pool, gated only by the proof.
+- All trust guarantees (§4) are implemented and exercised adversarially across **80+ tests**
+  spanning the state machine, the on-chain contract, the sequencer, and the client, including
+  the negative cases that matter: tampered proofs, withheld data, premature exits, double-exit
+  and capture attempts.
 
 This is the non-obvious strategic point: **CKB is one of the few chains where a *trustless*
 pooled micro-payment ledger is technically possible at all**, because it can verify a zk proof
 cheaply on-chain. The chain's own capability is what makes the solution to the chain's own gap
-feasible, and we have demonstrated it works.
+feasible, and we have demonstrated it works on the public testnet.
 
 ---
 
-## 4. How it works, and the four guarantees
+## 4. How it works, and the guarantees
 
 Balances live off-chain in a sparse Merkle tree anchored by **one on-chain cell**. An operator
-("sequencer") orders transactions and advances the tree, but it is **powerless to cheat**.
-The keystone: *the sequencer runs the exact same code the zk-proof attests*, so the two can
-never disagree, and every checkpoint to L1 carries a validity proof the anchor cell verifies.
+("sequencer") orders transactions and advances the tree, but it is **powerless to cheat**, and
+under permissionless sequencing it is not even privileged: anyone with a valid proof can take
+its place. The keystone: *the sequencer runs the exact same code the zk-proof attests*, so the
+two can never disagree, and every checkpoint to L1 carries a validity proof the anchor cell
+verifies.
 
 ```
         off-chain                              on-chain (CKB)
@@ -90,14 +102,16 @@ never disagree, and every checkpoint to L1 carries a validity proof the anchor c
                                   • value conserved   • exits honored
 ```
 
-The operator degrades to a pure sequencer. Four guarantees, each implemented and tested:
+The operator degrades to a pure, replaceable sequencer. The guarantees, each implemented and
+tested:
 
 | Guarantee | What it kills |
 |---|---|
 | **Validity proofs**, every state change carries a zk proof the anchor verifies | Theft, balance inflation, forged or stale settlement, *impossible by construction*, no fraud-proof game |
 | **On-chain data availability**, each checkpoint publishes the state diff, bound to the proof | Data withholding, any user can rebuild their balance and an exit proof from L1 alone |
 | **Force-exit / escape hatch**, after operator silence, any user withdraws unilaterally against the last committed state | Censorship / freezing, the operator cannot trap funds by going dark |
-| **Atomic-swap egress**, hash-locked swaps move sub-61-CKB balances out without a 61-CKB cell | Dust entrapment, small balances have a trustless exit, at any denomination |
+| **Atomic-swap egress** (+ a sender force-refund for timed-out swaps), hash-locked swaps move sub-61-CKB balances out without a 61-CKB cell | Dust entrapment, small balances have a trustless exit, at any denomination |
+| **Permissionless sequencing**, a permissive anchor lock + lock continuity let anyone advance the root, with a fee reward so it is self-sustaining | A privileged operator, sequencing is open and capture-proof |
 
 The only trust assumptions are cryptographic hardness and CKB Layer 1 itself, the same base
 as any on-chain transaction.
@@ -108,12 +122,13 @@ as any on-chain transaction.
 
 | Stage | Deliverable | State |
 |---|---|---|
-| Trust design | State machine + zk proof + on-chain verifier + all four guarantees, tested | **done** |
-| Testnet deploy | Anchor + code cell on Pudge; sequencer builds real checkpoint transactions | next |
+| Trust design | State machine + zk proof + on-chain verifier + all guarantees, tested | **done** |
+| Testnet deploy | Anchor + code cell on Pudge; real checkpoints with the proof verified on live CKB-VM | **done** |
+| Sequencer + client | Off-chain sequencer sealing successive checkpoints; a client SDK to sign intents and exit from L1 data | **done** |
+| Permissionless + reward + sharding | Anyone may sequence (lock continuity), a fee reward makes it self-sustaining, K independent pools for throughput | **done** |
 | **External audit** | Independent review of the state machine + contract | **gates mainnet** |
 | Egress integration | L1 HTLC counterparty + Fiber payment leg for dust swaps | planned |
-| Throughput | Permissionless sequencing + anchor sharding (remove single-anchor contention) | planned |
-| Wallet / app integration | SDK + reference tipping / creator / game integrations | planned |
+| Wallet / app integration | TS/WASM SDK + reference tipping / creator / game integrations | planned |
 
 ---
 
@@ -122,22 +137,25 @@ as any on-chain transaction.
 Sophisticated reviewers have seen enough vaporware to value candor. Here it is.
 
 **Proven / de-risked**
-- The full trust design is implemented and adversarially tested (55 tests).
-- The Groth16 proof is verified **on-chain in CKB-VM**, not a spec, running code.
-- The four guarantees are exercised including their attack cases.
+- The full trust design is implemented and adversarially tested (80+ tests).
+- The Groth16 proof is verified **on-chain in a live CKB block on Pudge**, not a spec, running code.
+- The sequencer has landed **successive** checkpoints on-chain, and an **unsigned, permissionless**
+  checkpoint has advanced a live pool. The guarantees are exercised including their attack cases.
 
 **Not yet, and why each matters**
 - **Unaudited.** A validity proof attests that the program *ran* correctly, **not that the
   program is correct.** Closing that gap is an external audit's job and is the hard gate
   before any real value. *(Fundable milestone.)*
-- **Local-only.** Verified in a faithful local CKB-VM, not yet on a public testnet. *(Fundable.)*
+- **Testnet only.** Live on Pudge, not mainnet; no real funds. *(Fundable.)*
 - **Trusted setup.** The Groth16 proving system inherits a trusted-setup assumption; this is a
   real, named assumption, mitigated by using an established public ceremony.
-- **Throughput.** All checkpoints currently serialize through one anchor cell, and each carries
-  a fixed on-chain verification cost. The design is suited to *high-volume batched* throughput;
-  removing single-anchor contention is planned (sharding), not built.
-- **Egress liveness.** A pending atomic-swap escrow relies on the operator resuming to settle;
-  a documented refinement (force-refund of a timed-out swap) removes the last edge.
+- **Throughput at scale.** Sharding (K independent pools) is built, so throughput scales by
+  running more pools, but it has not been stress-tested at production volume, and each checkpoint
+  still carries a fixed on-chain verification cost.
+- **Egress, receiver side.** The sender of a timed-out atomic swap can now force-refund on-chain;
+  the symmetric receiver "force-claim" is not expressible under a single anchor (a documented,
+  architectural residual), so the receiver still relies on the operator being live across the
+  short swap window.
 
 None of these are unknowns, they are scoped, named, and on the roadmap.
 
@@ -154,19 +172,20 @@ None of these are unknowns, they are scoped, named, and on the roadmap.
 
 ## 8. The ask
 
-A grant or partnership would fund the path from *proven design* to *production primitive*:
+A grant or partnership would fund the path from *proven, live-on-testnet primitive* to
+*production primitive*:
 
 1. **External security audit** of the state machine and on-chain contract, the mainnet gate.
-2. **Testnet → mainnet deployment**, plus the sequencer and liquidity-provider infrastructure.
+2. **Mainnet deployment**, plus the production sequencer and liquidity-provider infrastructure.
 3. **Egress integration** with Fiber / atomic-swap liquidity for dust exits.
-4. **Wallet and application integrations** (SDK + reference tipping / creator / gaming apps) to
-   bring CKB the consumer micro-payment vertical it cannot serve today.
+4. **Wallet and application integrations** (TS/WASM SDK + reference tipping / creator / gaming
+   apps) to bring CKB the consumer micro-payment vertical it cannot serve today.
 
 > _Specifics, funding amount, milestone timeline, team, and any existing ecosystem
 > conversations, to be completed by the project lead._
 
 ---
 
-*Liquid Cells is pre-alpha, local-only, and unaudited. Nothing here is an offer or a
+*Liquid Cells is pre-alpha, testnet-only, and unaudited. Nothing here is an offer or a
 recommendation to deposit funds. Deep technical documentation lives alongside the code
-(`docs/ARCHITECTURE.md`, `THREAT-MODEL.md`, `DA.md`, `FORCE-EXIT.md`, `EGRESS.md`).*
+(`docs/ARCHITECTURE.md`, `THREAT-MODEL.md`, `DA.md`, `FORCE-EXIT.md`, `EGRESS.md`, `DEPLOY.md`).*
