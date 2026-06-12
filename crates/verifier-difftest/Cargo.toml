@@ -1,0 +1,31 @@
+# Differential test of the on-chain Groth16 verifier.
+#
+# The live anchor type script verifies SP1's Groth16 proof with a hand-ported ark-bn254
+# implementation (crates/ckb-contract). This crate re-runs that exact verifier AND the
+# independent pre-port substrate-bn implementation it replaced (recovered from git, commit
+# 3e1b425^), then asserts the two AGREE on accept/reject for every real proof and every
+# input in a fuzzed corpus. Two different curve libraries, two different deserializers,
+# written months apart: if the port changed behaviour on any input, this catches it.
+#
+# Standalone (own [workspace]) so the lean root workspace stays free of the BN254 deps.
+[package]
+name = "verifier-difftest"
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+description = "Differential test: live ark-bn254 Groth16 verifier vs the pre-port substrate-bn one."
+
+[dependencies]
+# live verifier
+ark-bn254 = { version = "0.4", default-features = false, features = ["curve"] }
+ark-ec = { version = "0.4", default-features = false }
+ark-ff = { version = "0.4", default-features = false }
+# pre-port verifier (the vendored, CKB-patched substrate-bn fork)
+bn = { package = "substrate-bn-succinct-rs", path = "../ckb-contract/vendor/bn", default-features = false }
+# shared: SP1 public-input derivation (sha256 of the public values, vkey hash)
+sha2 = { version = "0.10", default-features = false }
+
+[profile.release]
+opt-level = 3
+
+[workspace]
