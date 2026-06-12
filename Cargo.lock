@@ -225,6 +225,7 @@ dependencies = [
 name = "liquid-cells-sequencer"
 version = "0.0.0"
 dependencies = [
+ "liquid-cells-client",
  "liquid-cells-stf",
 ]
 

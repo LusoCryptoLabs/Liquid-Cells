@@ -12,3 +12,9 @@ repository = { workspace = true }
 # milliseconds; proving + CKB submission live in a separate driver.
 [dependencies]
 liquid-cells-stf = { path = "../stf" }
+
+# The end-to-end demo (`examples/demo.rs`) drives the sequencer with client-built,
+# client-signed intents and then recovers a balance from L1 DA on the client side, so it
+# needs the client SDK. Dev-only: it never enters the sequencer's own dependency graph.
+[dev-dependencies]
+liquid-cells-client = { path = "../client" }
