@@ -54,11 +54,6 @@
 #![no_std]
 #![no_main]
 
-use alloc::vec::Vec;
-use ark_bn254::{Bn254, Fq, Fq2, Fr, G1Affine, G2Affine};
-use ark_ec::pairing::Pairing;
-use ark_ec::{AffineRepr, CurveGroup};
-use ark_ff::{PrimeField, Zero};
 use ckb_std::ckb_constants::Source;
 use ckb_std::ckb_types::packed::WitnessArgs;
 use ckb_std::ckb_types::prelude::*;
@@ -67,8 +62,8 @@ use ckb_std::high_level::{
     load_cell_capacity, load_cell_data, load_cell_lock, load_cell_lock_hash, load_cell_type_hash,
     load_input_since, load_script_hash, load_witness_args,
 };
-use sha2::{Digest, Sha256};
-use sha3::Keccak256;
+use liquid_cells_groth16::{verify_sp1_groth16, PROOF_LEN};
+use sha3::{Digest, Keccak256};
 
 ckb_std::entry!(program_entry);
 ckb_std::default_alloc!();
@@ -122,7 +117,8 @@ static EMPTY_ROOT: [u8; 32] = [
 // ---- layouts ----
 const ANCHOR_LEN: usize = 80; // root(32) seq(8) total(16) fee_acc(16) last_epoch(8)
 const PV_LEN: usize = 288;
-const PROOF_LEN: usize = 356;
+// PROOF_LEN (356) is imported from liquid-cells-groth16 (the SP1 proof format), the single source
+// of truth for the verifier.
 const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 644, checkpoint witness input_type
 /// Force-exit witness input_type: pubkey(33) ‖ balance(16) ‖ nonce(8) ‖ siblings(256·32).
 const FORCEEXIT_LEN: usize = 33 + 16 + 8 + 32 * SMT_DEPTH; // 8249
@@ -155,170 +151,6 @@ const PV_FEE_WD: usize = 240;
 const PV_CURRENT_EPOCH: usize = 232;
 const PV_DA_COMMIT: usize = 256;
 
-const MASK: u8 = 0b11 << 6;
-const COMPRESSED_POSITIVE: u8 = 0b10 << 6;
-const COMPRESSED_NEGATIVE: u8 = 0b11 << 6;
-const COMPRESSED_INFINITY: u8 = 0b01 << 6;
-
-#[derive(PartialEq)]
-enum Flag {
-    Positive,
-    Negative,
-    Infinity,
-}
-
-fn deserialize_with_flags(buf: &[u8]) -> Option<(Fq, Flag)> {
-    if buf.len() != 32 {
-        return None;
-    }
-    let m = buf[0] & MASK;
-    if m == 0 {
-        return None;
-    }
-    if m == COMPRESSED_INFINITY {
-        if buf[0] & !MASK == 0 && buf[1..].iter().all(|&b| b == 0) {
-            return Some((Fq::zero(), Flag::Infinity));
-        }
-        return None;
-    }
-    let mut xb = [0u8; 32];
-    xb.copy_from_slice(buf);
-    xb[0] &= !MASK;
-    let x = Fq::from_be_bytes_mod_order(&xb);
-    let flag = if m == COMPRESSED_POSITIVE { Flag::Positive } else { Flag::Negative };
-    Some((x, flag))
-}
-
-// gnark compressed-point convention: a `Positive` flag selects the smaller y, `Negative` the
-// larger. ark's `get_point_from_x_unchecked(x, greatest)` returns the larger y when greatest is
-// true, so `greatest = (flag == Negative)`.
-fn comp_x_to_g1(buf: &[u8]) -> Option<G1Affine> {
-    let (x, m) = deserialize_with_flags(buf)?;
-    if m == Flag::Infinity {
-        return Some(G1Affine::zero());
-    }
-    G1Affine::get_point_from_x_unchecked(x, m == Flag::Negative)
-}
-
-fn uncomp_g1(buf: &[u8]) -> Option<G1Affine> {
-    if buf.len() != 64 {
-        return None;
-    }
-    let x = Fq::from_be_bytes_mod_order(&buf[..32]);
-    let y = Fq::from_be_bytes_mod_order(&buf[32..]);
-    let p = G1Affine::new_unchecked(x, y);
-    if !p.is_on_curve() || !p.is_in_correct_subgroup_assuming_on_curve() {
-        return None;
-    }
-    Some(p)
-}
-
-fn comp_x_to_g2(buf: &[u8]) -> Option<G2Affine> {
-    if buf.len() != 64 {
-        return None;
-    }
-    let (x1, flag) = deserialize_with_flags(&buf[..32])?;
-    let x0 = Fq::from_be_bytes_mod_order(&buf[32..64]);
-    let x = Fq2::new(x0, x1);
-    if flag == Flag::Infinity {
-        return Some(G2Affine::zero());
-    }
-    G2Affine::get_point_from_x_unchecked(x, flag == Flag::Negative)
-}
-
-fn uncomp_g2(buf: &[u8]) -> Option<G2Affine> {
-    if buf.len() != 128 {
-        return None;
-    }
-    let x1 = Fq::from_be_bytes_mod_order(&buf[0..32]);
-    let x0 = Fq::from_be_bytes_mod_order(&buf[32..64]);
-    let y1 = Fq::from_be_bytes_mod_order(&buf[64..96]);
-    let y0 = Fq::from_be_bytes_mod_order(&buf[96..128]);
-    let p = G2Affine::new_unchecked(Fq2::new(x0, x1), Fq2::new(y0, y1));
-    if !p.is_on_curve() || !p.is_in_correct_subgroup_assuming_on_curve() {
-        return None;
-    }
-    Some(p)
-}
-
-struct Vk {
-    alpha: G1Affine,
-    k: Vec<G1Affine>,
-    beta: G2Affine,
-    gamma: G2Affine,
-    delta: G2Affine,
-}
-
-fn load_vk(buf: &[u8]) -> Option<Vk> {
-    if buf.len() < 292 {
-        return None;
-    }
-    let alpha = comp_x_to_g1(&buf[..32])?;
-    let beta = comp_x_to_g2(&buf[64..128])?;
-    let gamma = comp_x_to_g2(&buf[128..192])?;
-    let delta = comp_x_to_g2(&buf[224..288])?;
-    let num_k = u32::from_be_bytes([buf[288], buf[289], buf[290], buf[291]]);
-    let mut k = Vec::new();
-    let mut off = 292usize;
-    if (buf.len() as u64) < (num_k as u64) * 32 + off as u64 {
-        return None;
-    }
-    for _ in 0..num_k {
-        k.push(comp_x_to_g1(&buf[off..off + 32])?);
-        off += 32;
-    }
-    Some(Vk { alpha, k, beta, gamma, delta })
-}
-
-struct Pf {
-    ar: G1Affine,
-    krs: G1Affine,
-    bs: G2Affine,
-}
-
-fn load_proof(buf: &[u8]) -> Option<Pf> {
-    if buf.len() != 256 {
-        return None;
-    }
-    let ar = uncomp_g1(&buf[..64])?;
-    let bs = uncomp_g2(&buf[64..192])?;
-    let krs = uncomp_g1(&buf[192..256])?;
-    Some(Pf { ar, krs, bs })
-}
-
-fn prepare_inputs(vk: &Vk, public_inputs: &[Fr]) -> Option<G1Affine> {
-    if (public_inputs.len() + 1) != vk.k.len() {
-        return None;
-    }
-    let mut acc = vk.k[0].into_group();
-    for (i, b) in public_inputs.iter().zip(vk.k.iter().skip(1)) {
-        if !i.is_zero() {
-            acc += *b * *i;
-        }
-    }
-    Some(acc.into_affine())
-}
-
-fn verify_alg(vk: &Vk, p: &Pf, public_inputs: &[Fr]) -> bool {
-    let vk_x = match prepare_inputs(vk, public_inputs) {
-        Some(x) => x,
-        None => return false,
-    };
-    // Standard Groth16 check as one 4-pairing product == 1:
-    //   e(A,B) · e(-alpha,beta) · e(-vk_x,gamma) · e(-C,delta) == 1
-    // ark-bn254's multi_pairing is ~66x cheaper per pairing than substrate-bn on CKB-VM
-    // (crates/bn-bench), so no baked e(alpha,beta) precompute is needed; the 4-pairing form
-    // lands well under the block cycle limit.
-    let g1s = [p.ar, -vk.alpha, -vk_x, -p.krs];
-    let g2s = [p.bs, vk.beta, vk.gamma, vk.delta];
-    Bn254::multi_pairing(g1s, g2s).is_zero()
-}
-
-fn slice32(s: &[u8]) -> [u8; 32] {
-    let mut a = [0u8; 32];
-    a.copy_from_slice(s);
-    a
-}
 fn rd_u64(b: &[u8], off: usize) -> u64 {
     let mut a = [0u8; 8];
     a.copy_from_slice(&b[off..off + 8]);
@@ -765,52 +597,6 @@ fn force_refund(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
     0
 }
 
-/// Verify an SP1 Groth16 proof of `public_values`. 0 = ok, else a stage code.
-fn verify_sp1_groth16(proof: &[u8], public_values: &[u8]) -> i8 {
-    if proof.len() != PROOF_LEN {
-        return 10;
-    }
-    let vkh = Sha256::digest(GROTH16_VK);
-    if vkh[..4] != proof[..4] {
-        return 10;
-    }
-    let exit_code = slice32(&proof[4..36]);
-    let vk_root = slice32(&proof[36..68]);
-    let proof_nonce = slice32(&proof[68..100]);
-    let gnark = &proof[100..356];
-
-    if exit_code != [0u8; 32] {
-        return 20;
-    }
-    if vk_root != VK_ROOT {
-        return 21;
-    }
-
-    let mut pd: [u8; 32] = Sha256::digest(public_values).into();
-    pd[0] &= 0x1F; // sha256(pv) with top 3 bits cleared, to fit BN254 Fr
-
-    let inputs_bytes: [[u8; 32]; 5] = [VKEY_HASH, pd, exit_code, vk_root, proof_nonce];
-    let mut frs: Vec<Fr> = Vec::new();
-    for ib in inputs_bytes.iter() {
-        // 32-byte big-endian field element; the prover ensures each is < the BN254 scalar
-        // modulus, so reduce-mod is exact (matches the previous Fr::from_slice behavior).
-        frs.push(Fr::from_be_bytes_mod_order(ib));
-    }
-
-    let vk = match load_vk(GROTH16_VK) {
-        Some(v) => v,
-        None => return 12,
-    };
-    let pf = match load_proof(gnark) {
-        Some(p) => p,
-        None => return 13,
-    };
-    if verify_alg(&vk, &pf, &frs) {
-        0
-    } else {
-        1
-    }
-}
 
 /// Genesis (pool creation): an OUTPUT anchor with **no input anchor**, which must hold the
 /// canonical empty state (empty SMT root, all counters zero). The type script runs when the
@@ -991,5 +777,5 @@ fn checkpoint(prev: &[u8], new: &[u8], wa: &WitnessArgs, wb: &[u8]) -> i8 {
         return 58;
     }
 
-    verify_sp1_groth16(proof, pv)
+    verify_sp1_groth16(proof, pv, GROTH16_VK, &VKEY_HASH, &VK_ROOT)
 }

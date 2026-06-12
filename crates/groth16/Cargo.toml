@@ -1,0 +1,18 @@
+# SP1 Groth16 (BN254) verifier for Liquid Cells. no_std, ark-bn254. This is the SINGLE source of
+# truth for the verifier: the on-chain anchor type script (crates/ckb-contract) and the differential
+# test (crates/verifier-difftest) both call it, so the deployed code and the tested code are the same
+# bytes. Standalone (own [workspace]) so it can be a path dep of the contract's own workspace.
+[package]
+name = "liquid-cells-groth16"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+description = "SP1 Groth16 BN254 verifier (no_std, ark-bn254) for the Liquid Cells anchor type script."
+
+[dependencies]
+ark-bn254 = { version = "0.4", default-features = false, features = ["curve"] }
+ark-ec = { version = "0.4", default-features = false }
+ark-ff = { version = "0.4", default-features = false }
+sha2 = { version = "0.10", default-features = false }
+
+[workspace]

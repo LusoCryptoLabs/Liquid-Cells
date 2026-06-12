@@ -274,6 +274,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
+name = "liquid-cells-groth16"
+version = "0.0.1"
+dependencies = [
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "sha2",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -456,9 +466,7 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 name = "verifier-difftest"
 version = "0.0.0"
 dependencies = [
- "ark-bn254",
- "ark-ec",
- "ark-ff",
+ "liquid-cells-groth16",
  "sha2",
  "substrate-bn-succinct-rs",
 ]

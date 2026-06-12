@@ -11,6 +11,7 @@ use ckb_testtool::builtin::ALWAYS_SUCCESS;
 use ckb_testtool::ckb_types::core::TransactionView;
 use ckb_testtool::ckb_types::{bytes::Bytes, core::TransactionBuilder, packed::*, prelude::*};
 use ckb_testtool::context::Context;
+use liquid_cells_ckb_tests::{abs_epoch};
 
 const MAX_CYCLES: u64 = 100_000_000;
 const LOCK_BIN: &str =
@@ -19,9 +20,6 @@ const LOCK_BIN: &str =
 const TIMEOUT: u64 = 1000;
 const DEP_CAP: u64 = 100_00000000; // 100 CKB
 
-fn abs_epoch(e: u64) -> u64 {
-    (0x20u64 << 56) | e
-}
 
 #[derive(Clone)]
 enum Spend {

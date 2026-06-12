@@ -1,7 +1,8 @@
-//! Two faithful copies of the on-chain Groth16 verifier, side by side.
+//! The on-chain Groth16 verifier against an independent reference, side by side.
 //!
-//! * [`ark_verify`] is the **live** verifier (ark-bn254), copied verbatim from
-//!   `crates/ckb-contract/src/main.rs`.
+//! * [`ark_verify`] is the **live** verifier: it calls `liquid_cells_groth16::verify_sp1_groth16`
+//!   directly, the exact ark-bn254 implementation the deployed contract runs (no copy, so this
+//!   test can never drift from the deployed code).
 //! * [`bn_verify`] is the **pre-port** verifier (the vendored, CKB-patched substrate-bn
 //!   fork), copied verbatim from git commit `3e1b425^`, the implementation the port
 //!   replaced. It uses the 3-pairing form with the baked `e(alpha,beta)` constant.
@@ -27,6 +28,7 @@ static VK_ROOT: [u8; 32] = [
 
 const MASK: u8 = 0b11 << 6;
 const COMPRESSED_POSITIVE: u8 = 0b10 << 6;
+#[allow(dead_code)] // documents the bit pattern; deserialize takes the `else` branch for it
 const COMPRESSED_NEGATIVE: u8 = 0b11 << 6;
 const COMPRESSED_INFINITY: u8 = 0b01 << 6;
 
@@ -48,9 +50,10 @@ pub fn both(proof: &[u8], public_values: &[u8]) -> (i8, i8) {
     (ark_verify(proof, public_values), bn_verify(proof, public_values))
 }
 
-/// The live (ark-bn254) verifier path.
+/// The live (ark-bn254) verifier path: the ACTUAL deployed implementation from the shared
+/// `liquid-cells-groth16` crate (not a copy), so this test guards the real code path.
 pub fn ark_verify(proof: &[u8], public_values: &[u8]) -> i8 {
-    ark_verifier::verify_sp1_groth16(proof, public_values)
+    liquid_cells_groth16::verify_sp1_groth16(proof, public_values, GROTH16_VK, &VKEY_HASH, &VK_ROOT)
 }
 
 /// The pre-port (substrate-bn) verifier path.
@@ -58,200 +61,6 @@ pub fn bn_verify(proof: &[u8], public_values: &[u8]) -> i8 {
     bn_verifier::verify_sp1_groth16(proof, public_values)
 }
 
-// =====================================================================================
-// LIVE verifier: ark-bn254. Verbatim from crates/ckb-contract/src/main.rs.
-// =====================================================================================
-mod ark_verifier {
-    use super::*;
-    use ark_bn254::{Bn254, Fq, Fq2, Fr, G1Affine, G2Affine};
-    use ark_ec::pairing::Pairing;
-    use ark_ec::{AffineRepr, CurveGroup};
-    use ark_ff::{PrimeField, Zero};
-    use sha2::{Digest, Sha256};
-
-    fn deserialize_with_flags(buf: &[u8]) -> Option<(Fq, Flag)> {
-        if buf.len() != 32 {
-            return None;
-        }
-        let m = buf[0] & MASK;
-        if m == 0 {
-            return None;
-        }
-        if m == COMPRESSED_INFINITY {
-            if buf[0] & !MASK == 0 && buf[1..].iter().all(|&b| b == 0) {
-                return Some((Fq::zero(), Flag::Infinity));
-            }
-            return None;
-        }
-        let mut xb = [0u8; 32];
-        xb.copy_from_slice(buf);
-        xb[0] &= !MASK;
-        let x = Fq::from_be_bytes_mod_order(&xb);
-        let flag = if m == COMPRESSED_POSITIVE { Flag::Positive } else { Flag::Negative };
-        Some((x, flag))
-    }
-
-    fn comp_x_to_g1(buf: &[u8]) -> Option<G1Affine> {
-        let (x, m) = deserialize_with_flags(buf)?;
-        if m == Flag::Infinity {
-            return Some(G1Affine::zero());
-        }
-        G1Affine::get_point_from_x_unchecked(x, m == Flag::Negative)
-    }
-
-    fn uncomp_g1(buf: &[u8]) -> Option<G1Affine> {
-        if buf.len() != 64 {
-            return None;
-        }
-        let x = Fq::from_be_bytes_mod_order(&buf[..32]);
-        let y = Fq::from_be_bytes_mod_order(&buf[32..]);
-        let p = G1Affine::new_unchecked(x, y);
-        if !p.is_on_curve() || !p.is_in_correct_subgroup_assuming_on_curve() {
-            return None;
-        }
-        Some(p)
-    }
-
-    fn comp_x_to_g2(buf: &[u8]) -> Option<G2Affine> {
-        if buf.len() != 64 {
-            return None;
-        }
-        let (x1, flag) = deserialize_with_flags(&buf[..32])?;
-        let x0 = Fq::from_be_bytes_mod_order(&buf[32..64]);
-        let x = Fq2::new(x0, x1);
-        if flag == Flag::Infinity {
-            return Some(G2Affine::zero());
-        }
-        G2Affine::get_point_from_x_unchecked(x, flag == Flag::Negative)
-    }
-
-    fn uncomp_g2(buf: &[u8]) -> Option<G2Affine> {
-        if buf.len() != 128 {
-            return None;
-        }
-        let x1 = Fq::from_be_bytes_mod_order(&buf[0..32]);
-        let x0 = Fq::from_be_bytes_mod_order(&buf[32..64]);
-        let y1 = Fq::from_be_bytes_mod_order(&buf[64..96]);
-        let y0 = Fq::from_be_bytes_mod_order(&buf[96..128]);
-        let p = G2Affine::new_unchecked(Fq2::new(x0, x1), Fq2::new(y0, y1));
-        if !p.is_on_curve() || !p.is_in_correct_subgroup_assuming_on_curve() {
-            return None;
-        }
-        Some(p)
-    }
-
-    struct Vk {
-        alpha: G1Affine,
-        k: Vec<G1Affine>,
-        beta: G2Affine,
-        gamma: G2Affine,
-        delta: G2Affine,
-    }
-
-    fn load_vk(buf: &[u8]) -> Option<Vk> {
-        if buf.len() < 292 {
-            return None;
-        }
-        let alpha = comp_x_to_g1(&buf[..32])?;
-        let beta = comp_x_to_g2(&buf[64..128])?;
-        let gamma = comp_x_to_g2(&buf[128..192])?;
-        let delta = comp_x_to_g2(&buf[224..288])?;
-        let num_k = u32::from_be_bytes([buf[288], buf[289], buf[290], buf[291]]);
-        let mut k = Vec::new();
-        let mut off = 292usize;
-        if (buf.len() as u64) < (num_k as u64) * 32 + off as u64 {
-            return None;
-        }
-        for _ in 0..num_k {
-            k.push(comp_x_to_g1(&buf[off..off + 32])?);
-            off += 32;
-        }
-        Some(Vk { alpha, k, beta, gamma, delta })
-    }
-
-    struct Pf {
-        ar: G1Affine,
-        krs: G1Affine,
-        bs: G2Affine,
-    }
-
-    fn load_proof(buf: &[u8]) -> Option<Pf> {
-        if buf.len() != 256 {
-            return None;
-        }
-        let ar = uncomp_g1(&buf[..64])?;
-        let bs = uncomp_g2(&buf[64..192])?;
-        let krs = uncomp_g1(&buf[192..256])?;
-        Some(Pf { ar, krs, bs })
-    }
-
-    fn prepare_inputs(vk: &Vk, public_inputs: &[Fr]) -> Option<G1Affine> {
-        if (public_inputs.len() + 1) != vk.k.len() {
-            return None;
-        }
-        let mut acc = vk.k[0].into_group();
-        for (i, b) in public_inputs.iter().zip(vk.k.iter().skip(1)) {
-            if !i.is_zero() {
-                acc += *b * *i;
-            }
-        }
-        Some(acc.into_affine())
-    }
-
-    fn verify_alg(vk: &Vk, p: &Pf, public_inputs: &[Fr]) -> bool {
-        let vk_x = match prepare_inputs(vk, public_inputs) {
-            Some(x) => x,
-            None => return false,
-        };
-        let g1s = [p.ar, -vk.alpha, -vk_x, -p.krs];
-        let g2s = [p.bs, vk.beta, vk.gamma, vk.delta];
-        Bn254::multi_pairing(g1s, g2s).is_zero()
-    }
-
-    pub fn verify_sp1_groth16(proof: &[u8], public_values: &[u8]) -> i8 {
-        if proof.len() != PROOF_LEN {
-            return 10;
-        }
-        let vkh = Sha256::digest(GROTH16_VK);
-        if vkh[..4] != proof[..4] {
-            return 10;
-        }
-        let exit_code = slice32(&proof[4..36]);
-        let vk_root = slice32(&proof[36..68]);
-        let proof_nonce = slice32(&proof[68..100]);
-        let gnark = &proof[100..356];
-
-        if exit_code != [0u8; 32] {
-            return 20;
-        }
-        if vk_root != VK_ROOT {
-            return 21;
-        }
-
-        let mut pd: [u8; 32] = Sha256::digest(public_values).into();
-        pd[0] &= 0x1F;
-
-        let inputs_bytes: [[u8; 32]; 5] = [VKEY_HASH, pd, exit_code, vk_root, proof_nonce];
-        let mut frs: Vec<Fr> = Vec::new();
-        for ib in inputs_bytes.iter() {
-            frs.push(Fr::from_be_bytes_mod_order(ib));
-        }
-
-        let vk = match load_vk(GROTH16_VK) {
-            Some(v) => v,
-            None => return 12,
-        };
-        let pf = match load_proof(gnark) {
-            Some(p) => p,
-            None => return 13,
-        };
-        if verify_alg(&vk, &pf, &frs) {
-            0
-        } else {
-            1
-        }
-    }
-}
 
 // =====================================================================================
 // PRE-PORT verifier: substrate-bn (vendored fork). Verbatim from git 3e1b425^.

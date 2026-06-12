@@ -7,6 +7,7 @@ use ckb_testtool::builtin::ALWAYS_SUCCESS;
 use ckb_testtool::ckb_types::core::{TransactionBuilder, TransactionView};
 use ckb_testtool::ckb_types::{bytes::Bytes, packed::*, prelude::*};
 use ckb_testtool::context::Context;
+use liquid_cells_ckb_tests::{anchor};
 
 const MAX_CYCLES: u64 = 5_000_000_000;
 const CONTRACT_BIN: &str =
@@ -18,15 +19,6 @@ const EMPTY_ROOT: [u8; 32] = [
     0xeb, 0x98, 0xed, 0xf7, 0xda, 0x75, 0x7d, 0x6b, 0xfa, 0x22, 0xbf, 0xf5, 0x5b, 0x9c, 0xe2, 0x4a,
 ];
 
-fn anchor(root: &[u8], seq: u64, total: u128, fee: u128, last_epoch: u64) -> Vec<u8> {
-    let mut a = Vec::with_capacity(80);
-    a.extend_from_slice(root);
-    a.extend_from_slice(&seq.to_be_bytes());
-    a.extend_from_slice(&total.to_be_bytes());
-    a.extend_from_slice(&fee.to_be_bytes());
-    a.extend_from_slice(&last_epoch.to_be_bytes());
-    a
-}
 
 fn build(data: Vec<u8>) -> (Context, TransactionView) {
     let bin: Bytes = std::fs::read(CONTRACT_BIN).expect("build crates/ckb-contract first").into();

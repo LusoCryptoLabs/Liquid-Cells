@@ -317,13 +317,20 @@ checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 name = "liquid-cells-ckb-contract"
 version = "0.0.1"
 dependencies = [
+ "blake2b-ref",
+ "ckb-std",
+ "liquid-cells-groth16",
+ "sha3",
+]
+
+[[package]]
+name = "liquid-cells-groth16"
+version = "0.0.1"
+dependencies = [
  "ark-bn254",
  "ark-ec",
  "ark-ff",
- "blake2b-ref",
- "ckb-std",
  "sha2",
- "sha3",
 ]
 
 [[package]]

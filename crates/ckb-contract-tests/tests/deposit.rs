@@ -13,6 +13,7 @@ use ckb_testtool::builtin::ALWAYS_SUCCESS;
 use ckb_testtool::ckb_types::core::TransactionView;
 use ckb_testtool::ckb_types::{bytes::Bytes, core::TransactionBuilder, packed::*, prelude::*};
 use ckb_testtool::context::Context;
+use liquid_cells_ckb_tests::{abs_epoch,anchor,rd_u128,rd_u64};
 
 const MAX_CYCLES: u64 = 5_000_000_000;
 const CONTRACT_BIN: &str =
@@ -32,28 +33,6 @@ const PV_FEE_DELTA: usize = 216;
 const PV_CURRENT_EPOCH: usize = 232;
 const PV_FEE_WD: usize = 240;
 
-fn rd_u64(b: &[u8], o: usize) -> u64 {
-    let mut a = [0u8; 8];
-    a.copy_from_slice(&b[o..o + 8]);
-    u64::from_be_bytes(a)
-}
-fn rd_u128(b: &[u8], o: usize) -> u128 {
-    let mut a = [0u8; 16];
-    a.copy_from_slice(&b[o..o + 16]);
-    u128::from_be_bytes(a)
-}
-fn anchor(root: &[u8], seq: u64, total: u128, fee: u128, last_epoch: u64) -> Vec<u8> {
-    let mut a = Vec::with_capacity(80);
-    a.extend_from_slice(root);
-    a.extend_from_slice(&seq.to_be_bytes());
-    a.extend_from_slice(&total.to_be_bytes());
-    a.extend_from_slice(&fee.to_be_bytes());
-    a.extend_from_slice(&last_epoch.to_be_bytes());
-    a
-}
-fn abs_epoch(e: u64) -> u64 {
-    (0x20u64 << 56) | e
-}
 
 #[derive(Clone, Default)]
 struct Cfg {

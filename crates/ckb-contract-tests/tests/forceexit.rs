@@ -14,6 +14,7 @@ use ckb_testtool::ckb_types::core::{ScriptHashType, TransactionBuilder, Transact
 use ckb_testtool::ckb_types::{bytes::Bytes, packed::*, prelude::*};
 use ckb_testtool::context::Context;
 use liquid_cells_stf::*;
+use liquid_cells_ckb_tests::{abs_epoch,anchor};
 
 const MAX_CYCLES: u64 = 5_000_000_000;
 const CONTRACT_BIN: &str =
@@ -35,9 +36,6 @@ fn secret(n: u8) -> [u8; 32] {
     s[31] = n;
     s
 }
-fn abs_epoch(e: u64) -> u64 {
-    (0x20u64 << 56) | e
-}
 fn blake160(data: &[u8]) -> [u8; 20] {
     let mut h = blake2b_ref::Blake2bBuilder::new(32).personal(b"ckb-default-hash").build();
     h.update(data);
@@ -55,15 +53,6 @@ fn secp_lock(b160: &[u8; 20]) -> Script {
         .build()
 }
 /// anchor data = root(32) ‖ seq(8) ‖ total(16) ‖ fee_acc(16) ‖ last_epoch(8)
-fn anchor(root: &[u8], seq: u64, total: u128, fee: u128, last_epoch: u64) -> Vec<u8> {
-    let mut a = Vec::with_capacity(80);
-    a.extend_from_slice(root);
-    a.extend_from_slice(&seq.to_be_bytes());
-    a.extend_from_slice(&total.to_be_bytes());
-    a.extend_from_slice(&fee.to_be_bytes());
-    a.extend_from_slice(&last_epoch.to_be_bytes());
-    a
-}
 
 #[derive(Clone, Default)]
 struct Cfg {
