@@ -65,14 +65,20 @@ Ordered by leverage:
    ckb-vm" cut Plonk **6,000M → 63M** using `ckb-alt-bn128`. So the projected verify after a swap
    is **~70–100M cycles (a ~35–50x reduction)**, comfortably under the limit, and the 3-pairing
    precompute hack disappears.
-   *Investigation status (attempted):* `ckb-alt-bn128` = mohanson's C++ `bn128` (EIP-196/197). Two
-   real blockers stopped a same-session microbench: (a) it depends on a **ckb-patched `intx`**
-   (the no-STL `libraries/intx` fork) that is not publicly cloneable in this environment, and the
-   bare-metal `riscv64-unknown-elf-g++` here lacks the full C++20 STL that upstream `intx` needs;
-   (b) FFI-ing C++ into our `no_std` Rust contract is a separate, non-trivial task. **Recommended
-   route: skip the C++/FFI path and port the verifier to a pure-Rust CKB-tuned curve** (ckb-zkp
-   already reaches ~77.5M in Rust), which avoids the C++ toolchain entirely, then re-bake the VK
-   constants and re-measure with the existing `valid_checkpoint_verifies` cycle test.
+   *Investigation status (MEASURED, on this CKB-VM).* A microbench (`crates/bn-bench`, run under
+   `ckb-debugger`) timed **one** BN254 pairing each way:
+   - `substrate-bn` (our current verifier's lib): **1,119,056,067 cycles** (~1067M/pairing).
+   - `ark-bn254` (modern pure Rust, `no_std`): **16,853,046 cycles** (~16.1M/pairing).
+
+   That is a **~66x speedup per pairing, in pure Rust**, no C++/FFI. (The C++ `ckb-alt-bn128` =
+   mohanson `bn128` was a dead end here: it needs a ckb-patched `intx` not publicly cloneable, the
+   bare-metal `riscv64-unknown-elf-g++` lacks the full C++20 STL upstream `intx` pulls, and FFI
+   into `no_std` Rust is its own task, **and it turns out to be unnecessary**.) Our 3.47B verify is
+   3 `substrate-bn` pairings (~1B each) + final-exp + MSM; porting to `ark-bn254` projects the full
+   verifier to **~40-80M cycles**, i.e. from **99.3% of the block limit to ~1-2%**, and the
+   3-pairing precompute hack can be dropped. **Next step: port the anchor verifier to `ark-bn254`
+   / `ark-groth16`, re-bake the VK in ark encoding, and confirm the SAME SP1 proofs still verify
+   via `valid_checkpoint_verifies` (which also re-measures the new cycle count).**
 2. **Reconsider the proof system for the on-chain leg.** Groth16-via-zkVM is ergonomic but the
    most expensive on-chain option. Cheaper paths: the optimized **Plonk** SP1 verifier (~63M
    cycles, already exists for ckb-vm), or a **Clover-style aSVC / hand-rolled circuit** for the
