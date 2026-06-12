@@ -55,8 +55,11 @@ formality): the buildable path, ranked by leverage. Items marked done were close
   ValidationFailure`), and a refund to the depositor was accepted (see [DEPLOY.md](DEPLOY.md)).
 - [ ] Route the demo/SDK deposit flow through it (the running demo still creates always-success
   deposit cells; the sweep path needs no sequencer change, only the deposit-creation script).
-- [ ] Type-id the anchor so each pool has a unique type hash; then the deposit lock binds to a
-  specific pool, not just the contract (see the note in `deposit_lock.rs`).
+- [x] Type-id the anchor so each pool has a unique type hash (contract capability, backward
+  compatible): empty args = the legacy baked `POOL_ID`; 32-byte args = a type-id'd pool whose
+  identity is enforced at genesis as `blake2b(first input)`. 50 contract tests green.
+- [ ] Activate it: deploy a type-id'd pool live and route the deposit lock to its unique type
+  hash (needs a real proved checkpoint and the sequencer configured with `pool_id = type-id`).
 - [ ] Receiver-side force-claim for HTLC egress: the one documented architectural residual
   (`force_refund` closes the sender side only). See [docs/EGRESS.md](docs/EGRESS.md).
 
