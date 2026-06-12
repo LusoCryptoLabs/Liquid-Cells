@@ -1,11 +1,11 @@
-//! Force-exit (escape hatch) integration tests — Phase 3.
+//! Force-exit (escape hatch) integration tests, Phase 3.
 //!
 //! Force-exit has no SP1 proof, so these build the whole scenario *natively* with
 //! `liquid-cells-stf`: fund a couple of leaves, take the committed root and one leaf's SMT
 //! inclusion proof, then drive the anchor type script's force-exit mode. The payout is
 //! forced to the owner's canonical secp256k1_blake160 lock (`args = blake160(pubkey)`), the
 //! leaf is nullified (balance→0), and the anchor capacity/total drop by exactly the exited
-//! balance — only after the operator-silence timeout. Tampering any of these must reject.
+//! balance, only after the operator-silence timeout. Tampering any of these must reject.
 //!
 //! Requires the contract built first:
 //!   (cd crates/ckb-contract && cargo build --release)

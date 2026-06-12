@@ -1,7 +1,7 @@
 //! Compute the withdrawal target lock hash that the proof must commit, and write it to
 //! fixtures/wd/target_lock_hash.bin. The host bakes this into the withdrawal it proves,
 //! and tests/withdrawal.rs builds the identical lock (`withdraw_lock()`) for the
-//! withdrawal output cell — so the recomputed `withdrawals_commitment` matches the proof.
+//! withdrawal output cell, so the recomputed `withdrawals_commitment` matches the proof.
 
 use ckb_testtool::ckb_types::prelude::*;
 use liquid_cells_ckb_tests::withdraw_lock;

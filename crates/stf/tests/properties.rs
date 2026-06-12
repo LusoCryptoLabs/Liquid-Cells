@@ -193,7 +193,7 @@ fn l1_fee_withdrawal_draws_only_from_accumulated_fees() {
 fn over_drawing_l1_fee_is_rejected() {
     let mut st = funded_state(&[(1, 100_000_000)]);
     // Only 1_000 of fee revenue accrues this batch (fee_acc starts at 0), so a 5_000
-    // draw must be rejected — the sequencer cannot reach into user balances.
+    // draw must be rejected, the sequencer cannot reach into user balances.
     let t = signed_transfer(1, key_for(2), 25_000_000, 1_000, 0, 100);
     let batch = Batch { current_epoch: 1, transfers: vec![t], fee_withdrawal: 5_000, ..Default::default() };
     assert_eq!(apply(&mut st, &batch), Err(StfError::InsufficientFees));

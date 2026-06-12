@@ -1,4 +1,4 @@
-# On-Chain Cell Format (v1 — implicit)
+# On-Chain Cell Format (v1, implicit)
 
 How deposits and withdrawals are represented in a checkpoint transaction, and how the
 anchor type script binds them to the proof. v1 uses the **implicit** format: deposit
@@ -28,7 +28,7 @@ cell_deps: [ this contract, ... ]
 * **Withdrawal** = any *other* output. Pays its `lock_hash` its capacity.
 
 Trade-off (accepted for v1): a checkpoint tx may contain **only** the anchor + deposit
-/ withdrawal cells — no unrelated inputs/outputs — because position is the classifier.
+/ withdrawal cells, no unrelated inputs/outputs, because position is the classifier.
 A later version can switch to an explicit marker type if composability is needed.
 
 ## Anchor cell data (80 bytes)
@@ -40,12 +40,12 @@ root(32) ‖ seq(8 BE) ‖ total(16 BE) ‖ fee_acc(16 BE) ‖ last_epoch(8 BE)
 Invariant the script maintains: **anchor capacity == pool total** (the anchor holds the
 pool's funds), so capacity deltas track accounting deltas. `total = Σ balances + fee_acc`:
 `fee_acc` is the sequencer's accumulated in-pool fee revenue, held inside the anchor until
-drawn (see *L1 fee* below). `last_epoch` is the epoch the last checkpoint recorded — the
+drawn (see *L1 fee* below). `last_epoch` is the epoch the last checkpoint recorded, the
 clock the force-exit timeout reads ([docs/FORCE-EXIT.md](FORCE-EXIT.md)).
 
 The anchor has a **second spending mode**, `force-exit`, selected by the witness
 `input_type` length (644 = checkpoint, 8249 = force-exit). It lets a user unilaterally
-withdraw their leaf against the last committed root after operator silence, with no proof —
+withdraw their leaf against the last committed root after operator silence, with no proof, 
 see [docs/FORCE-EXIT.md](FORCE-EXIT.md). Everything below describes the checkpoint mode.
 
 ## What the type script enforces (in order)
@@ -72,12 +72,12 @@ see [docs/FORCE-EXIT.md](FORCE-EXIT.md). Everything below describes the checkpoi
 ## L1 fee
 
 A CKB checkpoint transaction must leave a positive miner fee (`Σinputs − Σoutputs > 0`).
-The pool funds it with a proven **`fee_withdrawal`** — CKB the sequencer draws from its
+The pool funds it with a proven **`fee_withdrawal`**, CKB the sequencer draws from its
 own accumulated fee revenue:
 
 * The in-circuit STF caps `fee_withdrawal ≤ prev.fee_acc + fee_delta` (this batch's fee
   revenue plus what was banked before). Because `total = Σ balances + fee_acc` and the
-  draw reduces `total` and `fee_acc` by the same amount, **`Σ balances` is invariant** —
+  draw reduces `total` and `fee_acc` by the same amount, **`Σ balances` is invariant**, 
   an L1 fee can never be skimmed from a user deposit. That bound is *proven*, and the
   anchor re-checks it (step 1) before trusting the cell.
 * Since the only inputs are the anchor + deposit cells and the only outputs are the
@@ -100,5 +100,5 @@ other way (e.g. a future explicit sequencer-funded input).
 Both the deposit and withdrawal paths are covered by integration tests. The withdrawal
 test uses a fixed, deterministic target lock (`crates/ckb-contract-tests` `withdraw_lock`)
 shared by the `wd_target` helper (which the proof commits) and the test (which builds the
-output) — `Context::build_script` can't be used for this because its hash varies per
+output), `Context::build_script` can't be used for this because its hash varies per
 `Context`.

@@ -1,7 +1,7 @@
 //! Canonical types and the byte layouts that get hashed or signed.
 //!
-//! Everything that is hashed uses an explicit, fixed-width big-endian layout — no
-//! serde, no molecule — so independent implementations (sequencer, guest, on-chain
+//! Everything that is hashed uses an explicit, fixed-width big-endian layout, no
+//! serde, no molecule, so independent implementations (sequencer, guest, on-chain
 //! verifier, client SDK) recompute byte-identical roots and message digests. This
 //! is the defence against the "divergent root" class of disputes.
 
@@ -93,7 +93,7 @@ pub struct Withdrawal {
 }
 
 /// A credit authorized by an on-chain deposit cell (bound via the deposits
-/// commitment). Needs no signature — its authority is the consumed L1 cell.
+/// commitment). Needs no signature, its authority is the consumed L1 cell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Deposit {
     pub to_key: Hash,
@@ -130,7 +130,7 @@ pub struct HtlcRef {
 }
 
 /// Claim a pending HTLC by revealing the preimage (before `timeout`): pays the receiver.
-/// No signature — knowledge of the preimage is the authority, and the receiver is fixed
+/// No signature, knowledge of the preimage is the authority, and the receiver is fixed
 /// by `htlc_id`, so a claim can only ever pay the agreed receiver.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HtlcClaim {
@@ -138,7 +138,7 @@ pub struct HtlcClaim {
     pub preimage: Vec<u8>,
 }
 
-/// Refund a pending HTLC after `timeout`: returns the amount to the sender. No signature —
+/// Refund a pending HTLC after `timeout`: returns the amount to the sender. No signature, 
 /// the timeout is the authority, and the sender is fixed by `htlc_id`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HtlcRefund {
@@ -202,7 +202,7 @@ pub struct PublicValues {
     /// fee_withdrawal`]). `new_total = prev_total + Σdeposits − Σwithdrawals −
     /// fee_withdrawal`, and `new_fee_acc = prev_fee_acc + fee_delta − fee_withdrawal`.
     pub fee_withdrawal: u128,
-    /// `keccak` of this checkpoint's data-availability blob — the post-state of the
+    /// `keccak` of this checkpoint's data-availability blob, the post-state of the
     /// touched leaves (see [`crate::da`]). Computed in-circuit; the anchor type script
     /// binds it to the blob bytes the checkpoint tx publishes in its witness, so the
     /// diff can never be withheld.
@@ -281,7 +281,7 @@ pub fn withdraw_msg(
 
 /// Deterministic SMT key for an HTLC escrow leaf. It commits to *every* lock term, so the
 /// escrowed funds can only be resolved (claimed/refunded) to the parties and on the terms
-/// agreed at lock time — the binding that makes a non-custodial swap safe.
+/// agreed at lock time, the binding that makes a non-custodial swap safe.
 #[allow(clippy::too_many_arguments)]
 pub fn htlc_id(
     pool_id: &Hash,

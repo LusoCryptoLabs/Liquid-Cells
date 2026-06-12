@@ -4,15 +4,15 @@
 //! drive a stream of signed intents through several `seal_batch()` calls and check the four
 //! properties that make a chain of checkpoints a real rollup, not a one-shot demo:
 //!
-//!   1. **Succession** — each checkpoint's `prev_anchor` is the previous one's `new_anchor`
+//!   1. **Succession**, each checkpoint's `prev_anchor` is the previous one's `new_anchor`
 //!      (byte-identical), and `seq` increments by exactly 1. So checkpoint *n+1* consumes the
 //!      cell checkpoint *n* created.
-//!   2. **Genesis pinning** — the first checkpoint's `prev_anchor` is the canonical empty
+//!   2. **Genesis pinning**, the first checkpoint's `prev_anchor` is the canonical empty
 //!      anchor (the cell created at pool genesis).
-//!   3. **Value conservation across the chain** — final `total` equals
+//!   3. **Value conservation across the chain**, final `total` equals
 //!      Σdeposits − Σwithdrawals − Σfee_withdrawals, and `Σ balances + fee_acc == total`
 //!      holds at the end.
-//!   4. **Data availability across the chain** — replaying every checkpoint's published DA
+//!   4. **Data availability across the chain**, replaying every checkpoint's published DA
 //!      blob (oldest first) rebuilds the exact tree, so any user can recover their leaf and a
 //!      force-exit inclusion proof from L1 data alone.
 
@@ -63,7 +63,7 @@ fn anchor_seq(a: &[u8; ANCHOR_LEN]) -> u64 {
 fn successive_checkpoints_chain_conserve_and_reconstruct() {
     let mut seq = Sequencer::genesis(pool_id(), CHAIN_ID);
 
-    // The empty anchor the pool is created with — what checkpoint 1 must consume.
+    // The empty anchor the pool is created with, what checkpoint 1 must consume.
     let genesis_anchor = encode_anchor(seq.pool(), 0);
     assert_eq!(anchor_root(&genesis_anchor), Smt::new().root(), "genesis root is the empty SMT");
     assert_eq!(anchor_seq(&genesis_anchor), 0);

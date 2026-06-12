@@ -1,11 +1,11 @@
-//! In-pool HTLC tests — the building block for trustless atomic-swap egress of dust.
+//! In-pool HTLC tests, the building block for trustless atomic-swap egress of dust.
 //!
 //! A swap moves an in-pool dust balance to a liquidity provider in exchange for an L1/Fiber
 //! payment, atomically, via a shared hash preimage. Here we exercise the *in-pool* leg: a
 //! sender escrows funds under a hashlock+timeout (`htlc_lock`), the receiver claims by
 //! revealing the preimage before the timeout (`htlc_claim`), or the sender refunds after it
 //! (`htlc_refund`). The escrow is keyed by `htlc_id`, which commits to every lock term, so
-//! funds can only resolve to the agreed parties — and the escrow removes them from the
+//! funds can only resolve to the agreed parties, and the escrow removes them from the
 //! sender's spendable balance, so there is no double-spend.
 
 use liquid_cells_stf::*;
@@ -140,7 +140,7 @@ fn htlc_refund_before_timeout_rejected() {
 #[test]
 fn htlc_id_binds_the_receiver() {
     // Escrow to Bob; a claim that names a different receiver addresses a different htlc_id,
-    // where there is no escrow — so the sequencer cannot redirect the funds.
+    // where there is no escrow, so the sequencer cannot redirect the funds.
     let mut st = funded_state(&[(1, 100_000_000)]);
     let bob = key_for(2);
     let lock = signed_lock(1, bob, 5_000_000, 1_000, hashlock(), 50, 0);

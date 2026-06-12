@@ -1,4 +1,4 @@
-//! Pins the genesis (empty-tree) pool root — the value that goes on-chain in the genesis
+//! Pins the genesis (empty-tree) pool root, the value that goes on-chain in the genesis
 //! anchor cell's data. Independent of pool_id/chain_id (it's just the empty SMT root).
 
 use liquid_cells_stf::*;

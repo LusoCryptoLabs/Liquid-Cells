@@ -4,7 +4,7 @@ use ckb_testtool::ckb_types::core::ScriptHashType;
 use ckb_testtool::ckb_types::{bytes::Bytes, packed::Script, prelude::*};
 
 /// A **deterministic** lock script with the given args. Used as the withdrawal target:
-/// it is an output-cell lock in the checkpoint, so it never executes here — only its
+/// it is an output-cell lock in the checkpoint, so it never executes here, only its
 /// script hash matters, and it must be byte-identical in the `wd_target` helper (which
 /// the proof commits) and the withdrawal test (which builds the output). `Context::
 /// build_script` is *not* usable for this: it deploys with a type-id, so its hash

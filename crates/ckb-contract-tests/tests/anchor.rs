@@ -1,7 +1,7 @@
 //! Real CKB-VM integration tests for the Liquid Cells anchor type script.
 //!
-//! Builds a checkpoint transaction — one input anchor cell (state n), one output
-//! anchor cell (state n+1), and a witness carrying `proof ‖ public_values` — from the
+//! Builds a checkpoint transaction, one input anchor cell (state n), one output
+//! anchor cell (state n+1), and a witness carrying `proof ‖ public_values`, from the
 //! Phase-2a fixtures, and runs it through ckb-testtool's VM. The positive case must
 //! verify; tampering any pinned field must be rejected. Cheap pins are checked before
 //! the BN254 pairing, so the cell-tampering negatives fail fast; the public-values
@@ -119,7 +119,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let contract_op = ctx.deploy_cell(bin);
     let as_op = ctx.deploy_cell(ALWAYS_SUCCESS.clone());
     let type_script = ctx.build_script(&contract_op, Bytes::new()).unwrap();
-    // The anchor lock here is always-success (different args ⇒ different hash) — i.e. these
+    // The anchor lock here is always-success (different args ⇒ different hash), i.e. these
     // checkpoints are *permissionless*: no signature gates them, only the type script. The
     // output anchor must keep the SAME lock (continuity); `change_lock` swaps it to model a
     // capture attempt that re-locks the pool.
@@ -202,7 +202,7 @@ fn fee_acc_mismatch_rejected() {
 
 #[test]
 fn tampered_public_values_caught_by_proof() {
-    // bind() passes (anchor rebuilt to match), so only the Groth16 proof can reject —
+    // bind() passes (anchor rebuilt to match), so only the Groth16 proof can reject, 
     // this exercises the full pairing path.
     let (ctx, tx) = build(Cfg { tamper_pv: true, ..Default::default() });
     assert!(ctx.verify_tx(&tx, MAX_CYCLES).is_err(), "tampered public values must fail the proof");

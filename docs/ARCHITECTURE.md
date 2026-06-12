@@ -1,4 +1,4 @@
-# Liquid Cells — Architecture
+# Liquid Cells, Architecture
 
 This document describes the fully trustless design. It is the contract that the
 sequencer, the SP1 guest, the on-chain anchor type script, and client SDKs must all
@@ -31,7 +31,7 @@ Leaf { balance: u128 (shannons), nonce: u64 }
 * The owner identity is **not** stored in the leaf. The SMT **key** is the identity:
   `key = keccak256(compressed_secp256k1_pubkey)`. Ownership is proven only when
   *spending* (the spender supplies the pubkey; the STF checks `keccak(pubkey) == key`
-  and verifies the signature). This means **receiving needs no registration** — a
+  and verifies the signature). This means **receiving needs no registration**, a
   transfer can credit a key that has never been seen.
 * Keying by `keccak(pubkey)` randomizes placement, so an attacker cannot grind a
   chosen `participant_id` to occupy a victim's sibling path.
@@ -65,8 +65,8 @@ new_total       ==  prev_total + Σ deposits − Σ withdrawals
 
 ## 3. Canonical serialization & domain separation
 
-Everything hashed or signed uses an explicit fixed-width big-endian layout — no
-serde, no molecule — so all implementations recompute byte-identical digests. This is
+Everything hashed or signed uses an explicit fixed-width big-endian layout, no
+serde, no molecule, so all implementations recompute byte-identical digests. This is
 the defence against "divergent root" disputes.
 
 Signed message digests are domain-separated and bound to chain + pool + version:
@@ -89,14 +89,14 @@ transfer signature being replayed as a withdrawal, or a Pool-A intent on Pool B.
 invalidates the whole batch (no partial application). Order within a batch:
 **deposits → transfers → withdrawals.**
 
-**Deposit** (`{to_key, amount}`) — authority is the on-chain deposit cell, bound via
+**Deposit** (`{to_key, amount}`), authority is the on-chain deposit cell, bound via
 the deposits commitment; **no signature**. Credits the leaf, increases `total`.
 
 **Transfer** (`{from_pubkey, to_key, amount, fee, nonce, expiry, sig}`):
 1. `from_key = keccak(from_pubkey)`, reject `from_key == to_key`.
-2. `nonce == from.nonce` (else `BadNonce` — replay protection).
+2. `nonce == from.nonce` (else `BadNonce`, replay protection).
 3. `expiry >= current_epoch` (else `Expired`).
-4. **Verify `sig` over `transfer_msg`** — the sole debit authority.
+4. **Verify `sig` over `transfer_msg`**, the sole debit authority.
 5. `from.balance >= amount + fee` (else `InsufficientBalance`).
 6. `from -= amount+fee; from.nonce += 1; to += amount; fee_acc += fee`.
    `total` is unchanged (the fee stays in the pool).
@@ -160,7 +160,7 @@ Because DA is on-chain, **no honest-watcher assumption is needed anywhere**.
 ### 7.1 Single-leaf force-exit (no proving)
 
 An individual exit is a plain **SMT inclusion proof** of one leaf against the last
-committed `new_root`, verified natively in the type script — cheap, no zk. The user
+committed `new_root`, verified natively in the type script, cheap, no zk. The user
 reconstructs their proof from on-chain DA, so it works even if the operator is gone.
 
 ### 7.2 Escape hatch
@@ -181,7 +181,7 @@ L1/Fiber: LP sends B−fee locked by the same H, with a timeout
           (no reveal → both legs time out → no harm)
 ```
 
-This needs one extra transfer variant (hashlock + timeout) in the STF — Phase 5.
+This needs one extra transfer variant (hashlock + timeout) in the STF, Phase 5.
 
 ---
 
@@ -203,6 +203,6 @@ With the escape hatch live, both are performance knobs, not safety assumptions.
   free and the divergent-root class of bugs cannot occur.
 * SP1 precompiles for **secp256k1** and **keccak** make the two dominant in-circuit
   costs (signature checks, SMT hashing) tractable, and let in-pool signatures stay
-  native secp256k1 — no SNARK-friendly scheme required.
+  native secp256k1, no SNARK-friendly scheme required.
 * The STARK is wrapped to **Groth16**, which CKB can already verify on-chain in a
   type script, reusing existing tooling.

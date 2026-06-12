@@ -1,7 +1,7 @@
 # Data Availability (Phase 4)
 
 The third pillar of the trust model: **the operator cannot advance the pool root while
-withholding what changed.** Validity proofs alone don't give you this — a proof says "the
+withholding what changed.** Validity proofs alone don't give you this, a proof says "the
 transition was correct," not "you can see the new state." Without DA, a hostile sequencer
 could publish valid roots whose leaf data only it knows, and users would be unable to
 construct the inclusion proof a force-exit needs. So funds would be *frozen* even though
@@ -20,7 +20,7 @@ da_commitment = keccak(da_blob)
 
 The checkpoint transaction must carry that **exact** `da_blob` in the anchor input
 witness's `output_type` field (witnesses are fee-priced by tx weight, not locked as cell
-capacity — the right place for bulk data). The anchor type script recomputes
+capacity, the right place for bulk data). The anchor type script recomputes
 `keccak(output_type)` and requires it to equal `da_commitment` (reject **code 59**).
 
 Because `da_commitment` is proven from the real post-states and keccak is collision
@@ -31,12 +31,12 @@ substitute, shrink, or omit it and still produce an accepting checkpoint.
 
 The blob carries the **post-state** (not the delta) of every touched leaf. Replaying every
 checkpoint's blob from genesis, in order, overwriting each key with its latest value,
-reproduces the **exact** tree — untouched keys stay empty, touched keys end at their last
+reproduces the **exact** tree, untouched keys stay empty, touched keys end at their last
 published value. A leaf that ends empty (`{0,0}`) hashes to `EMPTY_LEAF`, matching the
 on-chain SMT. So from the L1 blobs alone, anyone can:
 
 1. rebuild the full tree and check `root == ` the latest on-chain anchor root, then
-2. extract any leaf's `(balance, nonce)` and its sibling path —
+2. extract any leaf's `(balance, nonce)` and its sibling path, 
 3. which is exactly the inclusion proof a single-leaf **force-exit** (Phase 3) submits.
 
 No cooperation from the sequencer is required at any step. This is implemented as
@@ -47,9 +47,9 @@ proof for a leaf verifies against that root.
 
 ## Cost
 
-The blob is `56 · (touched leaves)` bytes — for the `MAX_LEAVES_PER_BATCH = 1024` ceiling,
+The blob is `56 · (touched leaves)` bytes, for the `MAX_LEAVES_PER_BATCH = 1024` ceiling,
 ~57 KB, paid as tx fee, once per checkpoint. The contract's extra work is a single keccak
-over the blob — negligible beside the ~3.6B-cycle BN254 pairing.
+over the blob, negligible beside the ~3.6B-cycle BN254 pairing.
 
 ## Scope / open
 

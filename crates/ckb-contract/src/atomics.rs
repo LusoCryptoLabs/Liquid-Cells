@@ -1,7 +1,7 @@
 //! Single-threaded polyfills for the legacy `__sync_*` atomic builtins.
 //!
 //! CKB-VM has no A (atomic) extension and runs scripts single-threaded, so `spin`/
-//! `lazy_static` (pulled in by `bn`) only need single-hart semantics — i.e. plain
+//! `lazy_static` (pulled in by `bn`) only need single-hart semantics, i.e. plain
 //! read-modify-write. With `-C target-feature=-a,+forced-atomics`, LLVM lowers
 //! atomic load/store inline and resolves the C11 `__atomic_*` family via
 //! compiler-builtins, but the legacy `__sync_*` RMW/CAS libcalls are unprovided; we

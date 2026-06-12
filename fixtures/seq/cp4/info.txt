@@ -1,0 +1,4 @@
+new_seq=4
+current_epoch=3
+fee_withdrawal=100000
+new_root=0x769bbee31b3ae9abf6c05ba921e088e12a99b024d9c4beeaa6af8dd6c36ed1fc

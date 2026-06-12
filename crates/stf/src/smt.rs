@@ -7,7 +7,7 @@
 //!
 //! This is the *full-tree* reference implementation used by the sequencer and the
 //! tests. The SP1 guest will operate on a *partial* tree (only the touched leaves
-//! plus their sibling hashes) — the node-hashing rules here are the contract both
+//! plus their sibling hashes), the node-hashing rules here are the contract both
 //! sides must match. Root/proof building is intentionally simple and obviously
 //! correct; the production sequencer will keep an incremental tree.
 
@@ -151,8 +151,8 @@ fn frontier(full: &[(Hash, Hash)], touched: &[Hash], depth: usize, out: &mut Vec
 /// Reconstruct a root from a multi-leaf witness. `entries` are the `(key, leaf_hash)`
 /// pairs (sorted by key, exactly the touched set); `siblings` are the frontier hashes
 /// from [`Smt::frontier_siblings`]. Returns `None` on a malformed witness (sibling
-/// under/overflow). The guest runs this twice — over pre-state and post-state entries
-/// with the *same* siblings — to verify `prev_root` and compute `new_root`.
+/// under/overflow). The guest runs this twice, over pre-state and post-state entries
+/// with the *same* siblings, to verify `prev_root` and compute `new_root`.
 pub fn root_from_witness(entries: &[(Hash, Hash)], siblings: &[Hash]) -> Option<Hash> {
     if entries.is_empty() {
         return None;

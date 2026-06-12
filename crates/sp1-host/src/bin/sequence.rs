@@ -1,11 +1,11 @@
 //! Sequencer prove-and-stage driver: turn successive `CheckpointJob`s into the fixtures a
-//! submission driver lands on Pudge — proving that the sequencer loop composes *on the live
+//! submission driver lands on Pudge, proving that the sequencer loop composes *on the live
 //! chain*, not just in memory.
 //!
 //! It seeds a [`Sequencer`] to the **exact current on-chain state** by replaying the genesis
 //! batch (asserting the reproduced root equals the live seq-1 root from DEPLOY.md), then seals
 //! two more checkpoints (transfer-only, so each on-chain tx is just anchor-in → anchor-out with
-//! the miner fee paid from the proven `fee_withdrawal` — no deposit/withdrawal cells to
+//! the miner fee paid from the proven `fee_withdrawal`, no deposit/withdrawal cells to
 //! coordinate). For each it Groth16-proves the `CheckpointJob`'s SP1 input, verifies it,
 //! asserts the proven public values equal the sequencer's, and writes
 //! `fixtures/seq/cp{n}/{groth16_proof,public_values,da_blob,new_anchor}.bin`.
@@ -14,7 +14,7 @@
 //!   lc-sequence <elf>                  # check only: reproduce state + chain, no proving (fast)
 //!   lc-sequence <elf> groth16 cp2      # Groth16-prove + stage ONLY cp2
 //!   lc-sequence <elf> groth16 cp3      # Groth16-prove + stage ONLY cp3
-//!   lc-sequence <elf> groth16          # both (one process) — AVOID: the native-gnark FFI
+//!   lc-sequence <elf> groth16          # both (one process), AVOID: the native-gnark FFI
 //!                                      #   does not reliably survive a second proof per process
 //!
 //! Prove one checkpoint per process invocation (`cp2`, then `cp3`): each run rebuilds the whole
@@ -22,7 +22,7 @@
 //! selected checkpoint, so the gnark prover is invoked exactly once.
 //!
 //! The STF is unchanged from the deployed code cell, so the guest vkey still matches the
-//! baked `VKEY_HASH` — asserted before proving.
+//! baked `VKEY_HASH`, asserted before proving.
 
 use liquid_cells_sequencer::{CheckpointJob, Sequencer};
 use liquid_cells_stf::*;
@@ -38,6 +38,10 @@ const EXPECTED_VKEY: &str = "0x00213af5b4cc8922754e5b8ee7e610de703d4cb17fabb0a18
 /// it exactly, or cp2's `prev_root` would not match the on-chain anchor and the contract would
 /// reject. This is the safety gate before any proving.
 const LIVE_SEQ1_ROOT: &str = "f3283454dade507e46be473e99b0885b7a12abe024758171e4a8b387d4626843";
+/// The live seq-3 anchor root (third checkpoint, currently the chain tip, DEPLOY.md / queried
+/// on Pudge). The in-memory chain must reproduce it before cp4 is proved, or cp4's `prev_root`
+/// would not match the on-chain anchor cp4 consumes. Safety gate before proving cp4.
+const LIVE_SEQ3_ROOT: &str = "602001602cab52d01c6900e470799e3c8f31d5205f74e2a3ae3be6ea1b336985";
 
 fn secret(n: u32) -> [u8; 32] {
     let mut s = [0u8; 32];
@@ -90,12 +94,24 @@ fn main() {
     seq.submit_transfer(signed_transfer(1, key_for(4), 1_000, 100_000, 2, 1_000_000));
     let job3 = seq.seal_batch(2, 100_000).expect("cp3 seal");
 
-    // succession sanity (the whole point): cp2 chains onto the live anchor, cp3 onto cp2.
+    // cp3 is the live chain tip: its reproduced root MUST equal the on-chain seq-3 anchor,
+    // or cp4's `prev_root` would not match the anchor cp4 consumes. Gate before proving cp4.
+    assert_eq!(hex::encode(job3.new_root()), LIVE_SEQ3_ROOT, "cp3 root != live seq-3 anchor root");
+    let seq3_anchor = job3.new_anchor; // == the on-chain seq-3 anchor data (last_epoch 2)
+
+    // cp4 (seq 3 -> 4): one more transfer-only checkpoint chaining onto the live tip.
+    // key_for(1)'s account nonce is 3 after the cp2/cp3 transfers.
+    seq.submit_transfer(signed_transfer(1, key_for(5), 1_000, 100_000, 3, 1_000_000));
+    let job4 = seq.seal_batch(3, 100_000).expect("cp4 seal");
+
+    // succession sanity (the whole point): cp2 chains onto the live anchor, cp3 onto cp2,
+    // cp4 onto the live seq-3 tip.
     assert_eq!(job2.prev_anchor, live_anchor, "cp2 must consume the live seq-1 anchor");
     assert_eq!(job3.prev_anchor, job2.new_anchor, "cp3 must consume cp2's output anchor");
-    assert_eq!((job2.new_seq(), job3.new_seq()), (2, 3));
+    assert_eq!(job4.prev_anchor, seq3_anchor, "cp4 must consume the live seq-3 anchor");
+    assert_eq!((job2.new_seq(), job3.new_seq(), job4.new_seq()), (2, 3, 4));
 
-    for (i, job) in [(2u32, &job2), (3u32, &job3)] {
+    for (i, job) in [(2u32, &job2), (3u32, &job3), (4u32, &job4)] {
         println!(
             "cp{i}: prev_root=0x{} -> new_root=0x{} new_seq={} fee_wd={} epoch={}",
             hex::encode(&job.prev_anchor[0..32]),
@@ -107,7 +123,7 @@ fn main() {
     }
 
     if !do_groth16 {
-        println!("CHECK OK — state + chain reproduce; rerun with `groth16` to prove + stage.");
+        println!("CHECK OK, state + chain reproduce; rerun with `groth16` to prove + stage.");
         return;
     }
 
@@ -153,13 +169,17 @@ fn main() {
     // reliably survive two proofs in one process). With neither token, prove both (legacy).
     let want2 = args.iter().any(|a| a == "cp2");
     let want3 = args.iter().any(|a| a == "cp3");
-    let both = !want2 && !want3;
+    let want4 = args.iter().any(|a| a == "cp4");
+    let both = !want2 && !want3 && !want4;
     if both || want2 {
         stage(2, &job2);
     }
     if both || want3 {
         stage(3, &job3);
     }
+    if both || want4 {
+        stage(4, &job4);
+    }
     println!("vkey={vkey} circuit_version={SP1_CIRCUIT_VERSION}");
-    println!("STAGED — ready to submit to Pudge.");
+    println!("STAGED, ready to submit to Pudge.");
 }

@@ -1,22 +1,22 @@
-//! Liquid Cells anchor type script — guards the pool anchor cell in three modes,
+//! Liquid Cells anchor type script, guards the pool anchor cell in three modes,
 //! selected by the input group's witness `input_type` length:
 //!
-//!   * **checkpoint** (`input_type` len 644): a sequencer state transition — verify its
+//!   * **checkpoint** (`input_type` len 644): a sequencer state transition, verify its
 //!     SP1 Groth16 proof inside CKB-VM and pin the public values to chain facts.
 //!   * **force-exit** (`input_type` len 8249): a *unilateral* user withdrawal of an ordinary
-//!     account leaf against the last committed root after operator silence — no proof, an SMT
+//!     account leaf against the last committed root after operator silence, no proof, an SMT
 //!     inclusion path. The escape hatch that makes the operator unable to freeze funds by
 //!     going dark.
 //!   * **force-refund** (`input_type` len 8321): the same escape hatch for a *timed-out HTLC
-//!     escrow leaf* — the sender reclaims an escrow whose `timeout` has passed (so the
+//!     escrow leaf*, the sender reclaims an escrow whose `timeout` has passed (so the
 //!     receiver can no longer claim it) by proving the lock terms, against the committed root,
 //!     after operator silence. Closes the dust-swap sender's exposure if the operator dies
-//!     mid-swap. (The receiver's symmetric force-claim cannot be given under a single anchor —
-//!     see `force_refund` — so this is deliberately sender-only.)
+//!     mid-swap. (The receiver's symmetric force-claim cannot be given under a single anchor, 
+//!     see `force_refund`, so this is deliberately sender-only.)
 //!
 //! All modes have exactly one **input** anchor (state n) and one **output** anchor
 //! (state n+1) carrying this type script, and all enforce **anchor lock continuity**
-//! (output anchor lock == input anchor lock) — so the genesis lock is a permanent policy
+//! (output anchor lock == input anchor lock), so the genesis lock is a permanent policy
 //! for *who may sequence*: a permissive (always-success) genesis lock ⇒ a permanently
 //! **permissionless**, capture-proof pool; a specific lock ⇒ a pool pinned to it.
 //!
@@ -32,7 +32,7 @@
 //! values to the input/output anchor cell data and checks sequence/fee continuity
 //! (`new_fee_acc == prev_fee_acc + fee_delta − fee_withdrawal`); (2) recomputes the
 //! deposits/withdrawals commitments from the real non-anchor cells and binds them to
-//! the proof; (3) checks value conservation — accounting
+//! the proof; (3) checks value conservation, accounting
 //! (`prev_total + Σdep − Σwd − fee_withdrawal == new_total`) and solvency
 //! (`out_cap − in_cap == Σdep − Σwd − fee_withdrawal`), which pins the L1 miner fee to
 //! the proven `fee_withdrawal`; then (4) verifies the SP1 Groth16 proof of the public
@@ -48,7 +48,7 @@
 //! Data availability (Phase 4): the proof commits `da_commitment = keccak(da_blob)` over
 //! the touched leaves' post-state, and the checkpoint tx must carry that exact blob in
 //! the anchor witness `output_type`. The script recomputes `keccak(blob)` and binds it
-//! (code 59), so the operator cannot advance the root while withholding the diff — any
+//! (code 59), so the operator cannot advance the root while withholding the diff, any
 //! user can replay the published blobs and force-exit.
 
 #![no_std]
@@ -77,10 +77,10 @@ mod atomics;
 static GROTH16_VK: &[u8] = include_bytes!("../../../fixtures/reference/groth16_vk.bin");
 /// Precomputed constant pairing `e(alpha, beta) = pairing(vk.alpha, vk.beta)` for the VK
 /// above, as `Gt::to_bytes` (12 big-endian Fq words). Baking it lets the verifier do 3
-/// pairings instead of 4 — under the CKB block cycle limit. Regenerate with the
+/// pairings instead of 4, under the CKB block cycle limit. Regenerate with the
 /// `alphabeta` test whenever the VK changes; pinned by the `valid_checkpoint_verifies` test.
 static ALPHA_BETA: &[u8; 384] = include_bytes!("../../../fixtures/reference/alpha_beta.bin");
-/// Our program's SP1 vkey hash (`0x00213af5…c1e8`) — binds the proof to *this* STF.
+/// Our program's SP1 vkey hash (`0x00213af5…c1e8`), binds the proof to *this* STF.
 /// (Re-derived again in Phase 5 when the STF gained HTLC ops. History: `0x00add002…55ee9`
 /// (P4 DA), `0x00cd19a7…521f5` (2b-5 fee), `0x00fda595…ace165` (2a). Any STF change ⇒
 /// this must be re-baked.)
@@ -103,7 +103,7 @@ const CHAIN_ID: u64 = 0x0043_4b42;
 /// CKB system `secp256k1_blake160_sighash_all` lock code hash (hash_type = Type; the same
 /// constant on mainnet and Pudge). Force-exit payouts are forced to this lock with
 /// `args = blake160(pubkey)`, so a unilateral exit can only pay the leaf owner's own
-/// address — no in-contract signature needed.
+/// address, no in-contract signature needed.
 static SECP_CODE_HASH: [u8; 32] = [
     0x9b, 0xd7, 0xe0, 0x6f, 0x3e, 0xcf, 0x4b, 0xe0, 0xf2, 0xfc, 0xd2, 0x18, 0x8b, 0x23, 0xf1, 0xb9,
     0xfc, 0xc8, 0x8e, 0x5d, 0x4b, 0x65, 0xa8, 0x63, 0x7b, 0x17, 0x72, 0x3b, 0xbd, 0xa3, 0xcc, 0xe8,
@@ -114,7 +114,7 @@ static SECP_CODE_HASH: [u8; 32] = [
 const FORCE_EXIT_TIMEOUT_EPOCHS: u64 = 180;
 const SMT_DEPTH: usize = 256;
 
-/// The empty sparse-Merkle-tree root (depth-256, keccak) — the genesis pool root. Must
+/// The empty sparse-Merkle-tree root (depth-256, keccak), the genesis pool root. Must
 /// equal `liquid_cells_stf::smt::Smt::new().root()` (pinned by `crates/stf/tests/genesis.rs`).
 static EMPTY_ROOT: [u8; 32] = [
     0xa7, 0xff, 0x9e, 0x28, 0xff, 0xd3, 0xde, 0xf4, 0x43, 0xd3, 0x24, 0x54, 0x76, 0x88, 0xc2, 0xc4,
@@ -125,7 +125,7 @@ static EMPTY_ROOT: [u8; 32] = [
 const ANCHOR_LEN: usize = 80; // root(32) seq(8) total(16) fee_acc(16) last_epoch(8)
 const PV_LEN: usize = 288;
 const PROOF_LEN: usize = 356;
-const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 644 — checkpoint witness input_type
+const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 644, checkpoint witness input_type
 /// Force-exit witness input_type: pubkey(33) ‖ balance(16) ‖ nonce(8) ‖ siblings(256·32).
 const FORCEEXIT_LEN: usize = 33 + 16 + 8 + 32 * SMT_DEPTH; // 8249
 /// Force-refund witness input_type: sender_pubkey(33) ‖ receiver_key(32) ‖ amount(16) ‖
@@ -455,7 +455,7 @@ fn bind(prev: &[u8], new: &[u8], pv: &[u8]) -> i8 {
     if fee_wd > fee_avail || fee_avail - fee_wd != rd_u128(new, A_FEE) {
         return 43;
     }
-    // epoch continuity: the checkpoint records its epoch into the output anchor — this is
+    // epoch continuity: the checkpoint records its epoch into the output anchor, this is
     // the clock the force-exit timeout reads. `new.last_epoch == current_epoch`, and
     // epochs never go backward. (The `since` check in `checkpoint` proves the recorded
     // epoch is not in the future.)
@@ -486,7 +486,7 @@ fn leaf_hash(balance: u128, nonce: u64) -> [u8; 32] {
     keccak(&enc)
 }
 
-/// Reconstruct the SMT root from a single-leaf inclusion path, bottom-up — the exact walk
+/// Reconstruct the SMT root from a single-leaf inclusion path, bottom-up, the exact walk
 /// `liquid_cells_stf::smt::verify_proof` performs. `siblings` is 256 × 32 bytes top-down.
 fn smt_root(key: &[u8; 32], leaf: &[u8; 32], siblings: &[u8]) -> [u8; 32] {
     let mut cur = *leaf;
@@ -507,7 +507,7 @@ fn smt_root(key: &[u8; 32], leaf: &[u8; 32], siblings: &[u8]) -> [u8; 32] {
     cur
 }
 
-/// blake160(data) = first 20 bytes of CKB's default blake2b-256 — the secp lock's args.
+/// blake160(data) = first 20 bytes of CKB's default blake2b-256, the secp lock's args.
 fn blake160(data: &[u8]) -> [u8; 20] {
     let mut h = blake2b_ref::Blake2bBuilder::new(32).personal(b"ckb-default-hash").build();
     h.update(data);
@@ -634,7 +634,7 @@ fn force_exit(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
 ///   keccak( keccak("LIQUIDCELLS/v1/htlc-id") ‖ POOL_ID ‖ sender_key ‖ receiver_key
 ///           ‖ amount(16 BE) ‖ hashlock ‖ timeout(8 BE) ‖ lock_nonce(8 BE) ).
 /// Binding the key to every lock term is what lets the escrow only ever resolve to the
-/// agreed parties on the agreed terms — so a force-refund must supply the real terms and
+/// agreed parties on the agreed terms, so a force-refund must supply the real terms and
 /// can only pay the real sender.
 fn htlc_id(
     sender_key: &[u8; 32],
@@ -664,17 +664,17 @@ fn htlc_id(
 /// nullifies it (→ empty) and forces the payout to the *sender's* own secp lock.
 ///
 /// Two timeout gates, both required:
-///   * `since ≥ timeout` — the HTLC's own deadline. After it, the receiver can no longer claim
+///   * `since ≥ timeout`, the HTLC's own deadline. After it, the receiver can no longer claim
 ///     (claim-after-timeout is invalid in the STF), so refund-to-sender is the *only* valid
 ///     resolution; refunding before it could rob a receiver who still holds a valid claim.
-///   * `since ≥ last_epoch + FORCE_EXIT_TIMEOUT_EPOCHS` — operator silence, as for force-exit.
+///   * `since ≥ last_epoch + FORCE_EXIT_TIMEOUT_EPOCHS`, operator silence, as for force-exit.
 ///     Any anchor-consuming op conflicts with a live operator's checkpoint, so the escape
 ///     hatch only opens once the operator is demonstrably dark; while it checkpoints, the
 ///     cooperative `htlc_refund` is the path. (Because the silence window ≫ a dust HTLC's
 ///     lifetime, the silence gate is the operative one here.)
 ///
 /// Deliberately sender-only. The receiver's symmetric "force-claim" would need to fire
-/// *before* the short `timeout`, but the silence gate cannot open that fast — so a receiver's
+/// *before* the short `timeout`, but the silence gate cannot open that fast, so a receiver's
 /// trustless on-chain claim is not expressible under a single anchor. That residual is
 /// architectural (resolved by Phase 6 permissionless sequencing), not a gap in this code;
 /// the swap counterparty mitigates it by only swapping while the operator is demonstrably
@@ -813,7 +813,7 @@ fn verify_sp1_groth16(proof: &[u8], public_values: &[u8]) -> i8 {
 
 /// Genesis (pool creation): an OUTPUT anchor with **no input anchor**, which must hold the
 /// canonical empty state (empty SMT root, all counters zero). The type script runs when the
-/// anchor cell is first created, so this branch is required — otherwise creating the pool is
+/// anchor cell is first created, so this branch is required, otherwise creating the pool is
 /// rejected for lack of an input group. Anyone may create such a pool; it always starts
 /// empty, so genesis confers no power. (A production singleton would seal it with a type-id
 /// in the anchor args; v1 keeps empty args + baked policy.)
@@ -843,7 +843,7 @@ fn genesis() -> i8 {
 
 fn program_entry() -> i8 {
     // The anchor type script runs whenever an anchor cell is consumed or created. Genesis
-    // (pool creation) has an output anchor but no input anchor — handle it first, else the
+    // (pool creation) has an output anchor but no input anchor, handle it first, else the
     // `GroupInput` load below would reject the creation (code 41).
     let prev = match load_cell_data(0, Source::GroupInput) {
         Ok(d) => d,
@@ -868,12 +868,12 @@ fn program_entry() -> i8 {
     // a transition: the output anchor's lock hash must equal the input anchor's. This turns the
     // **genesis** lock into a permanent, unforgeable policy for *who may sequence*:
     //   * a pool created with a permissive (e.g. always-success) lock is permanently
-    //     PERMISSIONLESS — anyone who can produce a valid proof may advance the root — and
+    //     PERMISSIONLESS, anyone who can produce a valid proof may advance the root, and
     //     **capture-proof**: no checkpoint can re-lock the anchor to seize sequencing;
     //   * a pool created with a specific lock (multisig, governance, a single operator) stays
     //     pinned to exactly that lock forever.
     // Checked before mode dispatch, so it binds checkpoint, force-exit, and force-refund alike.
-    // (Genesis has no input anchor, so it returns above and never reaches here — the pool
+    // (Genesis has no input anchor, so it returns above and never reaches here, the pool
     // creator's initial lock choice is what gets locked in.)
     let in_lock = match load_cell_lock_hash(0, Source::GroupInput) {
         Ok(h) => h,
@@ -969,7 +969,7 @@ fn checkpoint(prev: &[u8], new: &[u8], wa: &WitnessArgs, wb: &[u8]) -> i8 {
     // solvency: the anchor's real capacity delta must equal Σdep − Σwd − fee_withdrawal.
     // Since the only inputs are the anchor + deposits and the only outputs are the
     // anchor + withdrawals, the tx's miner fee (Σin − Σout) is then exactly the proven
-    // fee_withdrawal — drawn from accumulated fees, never from a user balance.
+    // fee_withdrawal, drawn from accumulated fees, never from a user balance.
     let in_cap = match load_cell_capacity(0, Source::GroupInput) {
         Ok(c) => c as i128,
         Err(_) => return 58,

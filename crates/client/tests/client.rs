@@ -20,7 +20,7 @@ fn secret(n: u8) -> [u8; 32] {
 }
 
 /// Apply a batch and return the DA blob the checkpoint would publish (post-state of touched
-/// leaves) — the bytes a client later reconstructs from L1.
+/// leaves), the bytes a client later reconstructs from L1.
 fn apply_and_blob(st: &mut State, batch: &Batch) -> Vec<u8> {
     apply(st, batch).expect("apply");
     st.da_blob(batch)
@@ -150,7 +150,7 @@ fn reconstruct_leaf_and_force_exit_witness_from_da() {
     assert_eq!(lp.leaf, st.get_leaf(&alice.key()));
     assert_eq!(alice.nonce(), st.get_leaf(&alice.key()).nonce);
 
-    // ...and the force-exit witness the client builds includes against the committed root —
+    // ...and the force-exit witness the client builds includes against the committed root, 
     // exactly the check the on-chain force-exit mode performs.
     let w = alice.force_exit_witness(&blobs).unwrap();
     assert!(force_exit_includes(&w, &st.pool.root), "client force-exit witness must verify on-chain");
@@ -195,7 +195,7 @@ fn htlc_lock_and_force_refund_witness_from_da() {
 
 #[test]
 fn force_refund_witness_rejects_a_foreign_htlc() {
-    // An HtlcRef whose sender is not this account yields no witness — a client can only
+    // An HtlcRef whose sender is not this account yields no witness, a client can only
     // force-refund its own escrows.
     let alice = Account::new(pool_id(), CHAIN_ID, secret(1));
     let foreign = HtlcRef {

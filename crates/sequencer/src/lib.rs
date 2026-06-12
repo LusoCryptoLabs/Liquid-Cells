@@ -2,7 +2,7 @@
 //!
 //! The off-chain half of the keystone. The sequencer runs the *exact*
 //! [`liquid_cells_stf`] state-transition function the SP1 guest proves, accepts signed
-//! intents into a mempool, and **seals successive checkpoints** — each building on the
+//! intents into a mempool, and **seals successive checkpoints**, each building on the
 //! last committed root. It produces a [`CheckpointJob`] per checkpoint: everything a
 //! prover + CKB submission driver needs (the SP1 guest input, the anchor cell bytes for
 //! both states, the DA blob, and the deposit/withdrawal cell specs), with the in-memory
@@ -13,7 +13,7 @@
 //! (heavy) driver; this crate is the deterministic loop, and its succession property is
 //! tested in milliseconds.
 //!
-//! The trust model is unchanged by anything here: the sequencer only *orders* — it cannot
+//! The trust model is unchanged by anything here: the sequencer only *orders*, it cannot
 //! steal, inflate, censor permanently, or withhold data, because the on-chain anchor type
 //! script re-derives and checks every fact this crate emits.
 //!
@@ -51,7 +51,7 @@ pub fn encode_anchor(pool: &PoolState, last_epoch: u64) -> [u8; ANCHOR_LEN] {
 }
 
 /// Everything a prover + CKB submission driver needs to turn one sealed batch into an
-/// on-chain checkpoint — and everything the next checkpoint chains onto.
+/// on-chain checkpoint, and everything the next checkpoint chains onto.
 #[derive(Clone, Debug)]
 pub struct CheckpointJob {
     /// The input anchor cell's data (state *n*). Equals the previous job's `new_anchor`
@@ -59,7 +59,7 @@ pub struct CheckpointJob {
     pub prev_anchor: [u8; ANCHOR_LEN],
     /// The output anchor cell's data (state *n+1*) the checkpoint tx must create.
     pub new_anchor: [u8; ANCHOR_LEN],
-    /// The SP1 guest input bundle `(prev, witness, batch)` — feed straight to the prover.
+    /// The SP1 guest input bundle `(prev, witness, batch)`, feed straight to the prover.
     pub sp1_input: Vec<u8>,
     /// The public values the guest commits (and the anchor type script pins). `keccak`-bound
     /// to `da_blob` and consistent with `prev_anchor`/`new_anchor`.
@@ -67,10 +67,10 @@ pub struct CheckpointJob {
     /// The data-availability blob to publish in the checkpoint tx's anchor witness
     /// `output_type`. `keccak(da_blob) == public_values.da_commitment`.
     pub da_blob: Vec<u8>,
-    /// Deposits credited this checkpoint — the driver builds one input cell per entry
+    /// Deposits credited this checkpoint, the driver builds one input cell per entry
     /// (data = `to_key`, capacity = `amount`).
     pub deposits: Vec<Deposit>,
-    /// Withdrawals paid this checkpoint as `(target_lock_hash, amount)` — the driver builds
+    /// Withdrawals paid this checkpoint as `(target_lock_hash, amount)`, the driver builds
     /// one output cell per entry (that lock, capacity = amount).
     pub withdrawals: Vec<(Hash, u128)>,
     /// CKB drawn from accumulated fees to fund the L1 miner fee (the tx's miner fee must
@@ -199,7 +199,7 @@ impl Sequencer {
     pub fn state(&self) -> &State {
         &self.state
     }
-    /// The anchor cell data for the *current* committed state — the cell a checkpoint or
+    /// The anchor cell data for the *current* committed state, the cell a checkpoint or
     /// force-exit consumes.
     pub fn anchor(&self) -> [u8; ANCHOR_LEN] {
         encode_anchor(&self.state.pool, self.last_epoch)

@@ -5,7 +5,7 @@
 //! type script must recompute `deposits_commitment` from that cell and match the
 //! proof, and check value conservation (accounting total delta + anchor capacity
 //! delta). Tampering the deposit's to_key / amount, dropping the cell, or breaking the
-//! anchor capacity delta must all be rejected — before the pairing.
+//! anchor capacity delta must all be rejected, before the pairing.
 //!
 //! Requires the contract built and `fixtures/dw/` generated (scripts/groth16.sh ... dw).
 

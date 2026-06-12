@@ -1,5 +1,5 @@
 # Real CKB-VM integration tests for the Liquid Cells anchor type script. Standalone
-# (its own [workspace], host target) — loads the riscv contract binary + the Phase-2a
+# (its own [workspace], host target), loads the riscv contract binary + the Phase-2a
 # fixtures and runs them through ckb-testtool's VM. Build the contract first.
 [package]
 name = "liquid-cells-ckb-tests"
@@ -24,7 +24,7 @@ hex = "0.4"
 [dev-dependencies]
 liquid-cells-stf = { path = "../stf" }
 blake2b-ref = "0.3"
-# The vendored+patched BN254 lib — to compute the constant e(alpha,beta) Gt for baking.
+# The vendored+patched BN254 lib, to compute the constant e(alpha,beta) Gt for baking.
 bn = { package = "substrate-bn-succinct-rs", path = "../ckb-contract/vendor/bn" }
 
 [workspace]

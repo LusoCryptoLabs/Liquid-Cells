@@ -1,4 +1,4 @@
-//! Force-refund (HTLC escape hatch) integration tests — Phase 5 follow-up.
+//! Force-refund (HTLC escape hatch) integration tests, Phase 5 follow-up.
 //!
 //! A pending HTLC escrow is keyed by `htlc_id` (not `keccak(pubkey)`), so the account-leaf
 //! force-exit cannot reach it. Force-refund is the *sender's* unilateral escape: once the
@@ -12,7 +12,7 @@
 //! These build the whole scenario *natively* with `liquid-cells-stf` (force-refund carries no
 //! SP1 proof), under the contract's BAKED pool id (`keccak("sp1-pool")`) and chain id, because
 //! the on-chain `htlc_id` recompute uses them. The escrow amount is ≥ 61 CKB so the L1 payout
-//! cell is valid — like force-exit, force-refund pays out to L1 and so inherits the 61-CKB
+//! cell is valid, like force-exit, force-refund pays out to L1 and so inherits the 61-CKB
 //! cell floor; sub-61-CKB escrows under operator silence are the architectural residual that
 //! Phase 6 (permissionless sequencing) resolves. See docs/EGRESS.md.
 //!
@@ -79,7 +79,7 @@ fn anchor(root: &[u8], seq: u64, total: u128, fee: u128, last_epoch: u64) -> Vec
 #[derive(Clone, Default)]
 struct Cfg {
     too_early_silence: bool,   // since < last_epoch + TIMEOUT (operator-silence gate)
-    before_htlc_timeout: bool, // timeout pushed past `since` — silence passes, htlc gate fails
+    before_htlc_timeout: bool, // timeout pushed past `since`, silence passes, htlc gate fails
     wrong_receiver: bool,      // witness names a receiver_key the escrow wasn't locked to
     tamper_amount: bool,       // witness claims a different amount than the escrow holds
     wrong_payout: bool,        // pay a lock that isn't the sender's secp lock
@@ -147,7 +147,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     assert_eq!(escrow.nonce, 0, "escrow leaf has nonce 0");
 
     let root = st.pool.root;
-    let total = st.pool.total; // unchanged by the lock — value stayed in the pool
+    let total = st.pool.total; // unchanged by the lock, value stayed in the pool
     let fee_acc = st.pool.fee_acc;
     let seq = st.pool.seq;
     let siblings = st.smt.proof(&id); // 256 sibling hashes, top-down

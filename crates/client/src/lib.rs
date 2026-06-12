@@ -1,23 +1,23 @@
 //! # liquid-cells-client
 //!
 //! The client side of Liquid Cells: hold an account, build and sign intents, and recover your
-//! own balance + a unilateral-exit proof from Layer-1 data — all on the **exact**
+//! own balance + a unilateral-exit proof from Layer-1 data, all on the **exact**
 //! [`liquid_cells_stf`] the sequencer and SP1 guest run.
 //!
 //! That reuse is the whole point. A client must sign over the same canonical byte layouts and
 //! rebuild the same keccak SMT the contract checks; reimplementing any of it (in this or any
 //! other language) would reintroduce the "divergent root" class of bugs the protocol is built
-//! to avoid. So this crate is deliberately thin — it wires the STF's primitives into an
+//! to avoid. So this crate is deliberately thin, it wires the STF's primitives into an
 //! account-shaped API and adds nothing cryptographic of its own.
 //!
 //! What it does:
-//!   * **Identity** — a secp256k1 secret → compressed pubkey → SMT key (`keccak(pubkey)`), plus
+//!   * **Identity**, a secp256k1 secret → compressed pubkey → SMT key (`keccak(pubkey)`), plus
 //!     the CKB `secp256k1_blake160` lock args a force-exit must pay to.
-//!   * **Signed intents** — [`Account::transfer`], [`Account::withdraw`], [`Account::htlc_lock`]
+//!   * **Signed intents**, [`Account::transfer`], [`Account::withdraw`], [`Account::htlc_lock`]
 //!     (sign over the STF's `*_msg` digests), and the unsigned [`htlc_claim`]/[`htlc_refund`].
-//!   * **Local nonce tracking** — each spend advances the account nonce; [`Account::sync_from_da`]
+//!   * **Local nonce tracking**, each spend advances the account nonce; [`Account::sync_from_da`]
 //!     resyncs it to the authoritative L1 value.
-//!   * **Trustless recovery** — [`proof_from_da`] rebuilds your `{balance, nonce}` and an SMT
+//!   * **Trustless recovery**, [`proof_from_da`] rebuilds your `{balance, nonce}` and an SMT
 //!     inclusion proof from the published DA blobs, with no help from the sequencer, and
 //!     [`Account::force_exit_witness`] / [`Account::force_refund_witness`] assemble the exact
 //!     witness bytes the on-chain anchor type script's escape-hatch modes consume.
@@ -51,7 +51,7 @@ pub const FORCE_EXIT_WITNESS_LEN: usize = 33 + 16 + 8 + 32 * SMT_DEPTH; // 8249
 /// `FORCEREFUND_LEN`.
 pub const FORCE_REFUND_WITNESS_LEN: usize = 33 + 32 + 16 + 32 + 8 + 8 + 32 * SMT_DEPTH; // 8321
 
-/// `blake160(data)` = first 20 bytes of CKB's default blake2b-256 — the args of a
+/// `blake160(data)` = first 20 bytes of CKB's default blake2b-256, the args of a
 /// `secp256k1_blake160` lock. A force-exit/refund payout is forced to the lock with
 /// `args = blake160(pubkey)`, so it can only ever reach the owner's own address.
 pub fn blake160(data: &[u8]) -> [u8; 20] {
@@ -64,7 +64,7 @@ pub fn blake160(data: &[u8]) -> [u8; 20] {
     r
 }
 
-/// A leaf recovered from L1 data, with its inclusion path — everything a unilateral exit needs.
+/// A leaf recovered from L1 data, with its inclusion path, everything a unilateral exit needs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LeafProof {
     pub leaf: Leaf,
@@ -73,7 +73,7 @@ pub struct LeafProof {
 }
 
 /// The latest `{balance, nonce}` recorded for `key` across an ordered (oldest-first) sequence of
-/// DA blobs — the post-state the most recent checkpoint published. `Leaf::default()` (`{0,0}`) if
+/// DA blobs, the post-state the most recent checkpoint published. `Leaf::default()` (`{0,0}`) if
 /// the key never appears. `None` only if a blob is malformed.
 pub fn latest_leaf(blobs: &[Vec<u8>], key: &Hash) -> Option<Leaf> {
     let mut leaf = Leaf::default();
@@ -88,7 +88,7 @@ pub fn latest_leaf(blobs: &[Vec<u8>], key: &Hash) -> Option<Leaf> {
 }
 
 /// Rebuild the tree from the published DA blobs (oldest-first) and return `key`'s current leaf
-/// plus its inclusion proof — the trust-minimised recovery path: no sequencer cooperation, just
+/// plus its inclusion proof, the trust-minimised recovery path: no sequencer cooperation, just
 /// L1 data. The returned proof verifies against the latest on-chain anchor root
 /// (`liquid_cells_stf::verify_proof`), and is exactly what a force-exit consumes. `None` if any
 /// blob is malformed.
@@ -104,14 +104,14 @@ pub fn reconstruct_tree(blobs: &[Vec<u8>]) -> Option<Smt> {
     reconstruct(blobs)
 }
 
-/// Build a claim for a pending HTLC by revealing its preimage. Unsigned — knowledge of the
+/// Build a claim for a pending HTLC by revealing its preimage. Unsigned, knowledge of the
 /// preimage is the authority, and the receiver is fixed by the escrow's `htlc_id`. Anyone can
 /// build it, so it is a free function, not an [`Account`] method.
 pub fn htlc_claim(htlc: HtlcRef, preimage: Vec<u8>) -> HtlcClaim {
     HtlcClaim { htlc, preimage }
 }
 
-/// Build a refund for a timed-out HTLC. Unsigned — the timeout is the authority and the sender
+/// Build a refund for a timed-out HTLC. Unsigned, the timeout is the authority and the sender
 /// is fixed by `htlc_id`.
 pub fn htlc_refund(htlc: HtlcRef) -> HtlcRefund {
     HtlcRefund { htlc }
@@ -139,7 +139,7 @@ impl Account {
         Self { secret, pubkey, key, pool_id, chain_id, nonce: 0 }
     }
 
-    /// The account's SMT key (`keccak(pubkey)`) — its identity in the pool, and where others
+    /// The account's SMT key (`keccak(pubkey)`), its identity in the pool, and where others
     /// address payments.
     pub fn key(&self) -> Hash {
         self.key
@@ -157,7 +157,7 @@ impl Account {
     pub fn set_nonce(&mut self, nonce: u64) {
         self.nonce = nonce;
     }
-    /// The CKB `secp256k1_blake160` lock args (`blake160(pubkey)`) — the only lock a force-exit
+    /// The CKB `secp256k1_blake160` lock args (`blake160(pubkey)`), the only lock a force-exit
     /// or force-refund of this account may pay out to.
     pub fn ckb_lock_args(&self) -> [u8; 20] {
         blake160(&self.pubkey)

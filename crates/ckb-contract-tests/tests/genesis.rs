@@ -1,5 +1,5 @@
 //! Genesis (pool creation) tests. Creating the anchor cell runs the type script on the
-//! OUTPUT with no input anchor — so the contract's genesis branch must accept the canonical
+//! OUTPUT with no input anchor, so the contract's genesis branch must accept the canonical
 //! empty state and reject anything else. (The other suites always have an input + output
 //! anchor, so this path is only covered here.)
 
@@ -36,7 +36,7 @@ fn build(data: Vec<u8>) -> (Context, TransactionView) {
     let type_script = ctx.build_script(&contract_op, Bytes::new()).unwrap();
     let lock = ctx.build_script(&as_op, Bytes::from(b"lock".to_vec())).unwrap();
 
-    // A plain funding input (no anchor type) — so the anchor type group has no input.
+    // A plain funding input (no anchor type), so the anchor type group has no input.
     let funding = ctx.create_cell(
         CellOutput::new_builder().capacity(1000u64.pack()).lock(lock.clone()).build(),
         Bytes::new(),

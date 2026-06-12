@@ -6,7 +6,7 @@
 //! [`crate::transition`]). The anchor type script binds that commitment to the blob
 //! bytes the checkpoint transaction carries in its witness. Because the commitment is
 //! proven from the real post-states and keccak is collision-resistant, a valid
-//! checkpoint is **forced to publish the true diff** — the operator cannot advance the
+//! checkpoint is **forced to publish the true diff**, the operator cannot advance the
 //! root while hiding what changed.
 //!
 //! That is exactly what unilateral exit needs: replaying every checkpoint's blob from

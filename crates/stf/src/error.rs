@@ -1,5 +1,5 @@
 //! State-transition errors. Any error means the whole batch is invalid and the
-//! root does not advance — there are no partial applications.
+//! root does not advance, there are no partial applications.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StfError {
@@ -10,7 +10,7 @@ pub enum StfError {
     /// Leaf balance is too small for amount (+ fee).
     InsufficientBalance,
     /// The batch's `fee_withdrawal` exceeds the pool's accumulated fees
-    /// (`prev.fee_acc + fee_delta`) — the sequencer may only draw L1 fees from fee
+    /// (`prev.fee_acc + fee_delta`), the sequencer may only draw L1 fees from fee
     /// revenue, never from user balances.
     InsufficientFees,
     /// Signature did not verify for the claimed pubkey/message.

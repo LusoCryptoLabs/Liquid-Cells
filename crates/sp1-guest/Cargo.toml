@@ -1,4 +1,4 @@
-# SP1 zkVM guest. Standalone (its own [workspace]) — built with `cargo prove build`
+# SP1 zkVM guest. Standalone (its own [workspace]), built with `cargo prove build`
 # against the succinct toolchain, not the host toolchain.
 [package]
 name = "liquid-cells-guest"

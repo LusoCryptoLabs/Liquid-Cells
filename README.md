@@ -5,15 +5,15 @@
 > New here? The **[lightpaper](LIGHTPAPER.md)** is the 5-minute overview (problem, trust
 > model, status, roadmap). This README is the developer entry point.
 
-Liquid Cells lets many participants hold and move sub-1-CKB balances off-chain —
-tips, game antes, creator micro-payments — anchored by a single on-chain cell,
+Liquid Cells lets many participants hold and move sub-1-CKB balances off-chain, 
+tips, game antes, creator micro-payments, anchored by a single on-chain cell,
 with **no trust in the operator**. It is a zk-rollup (validity proofs + on-chain
 data availability), not a custodial pool: the sequencer cannot steal, cannot
 inflate balances, cannot censor permanently, and cannot withhold the data users
 need to exit. The only trust assumptions are cryptographic hardness and CKB Layer 1
-itself — the same base as any on-chain transaction.
+itself, the same base as any on-chain transaction.
 
-> Status: **Live on Pudge testnet — pre-alpha.** The deterministic STF, its SP1 proof
+> Status: **Live on Pudge testnet, pre-alpha.** The deterministic STF, its SP1 proof
 > wrapped to Groth16, and the on-chain anchor type script are implemented and tested
 > end-to-end (32 STF + 36 integration tests): proof verification on CKB-VM bound to real
 > deposit/withdrawal cells, value conservation, a proven L1 fee model, **data availability**,
@@ -26,7 +26,7 @@ itself — the same base as any on-chain transaction.
 > Getting there required precomputing the constant `e(alpha,beta)` so the verifier does 3
 > pairings (~3.47B cycles) under CKB's ~3.50B block limit. What remains to be a usable system
 > (not more cryptography): a prove+submit driver to land successive checkpoints live, a client
-> SDK, the L1/Fiber swap leg, throughput (Phase 6), and — before any real value — an external
+> SDK, the L1/Fiber swap leg, throughput (Phase 6), and, before any real value, an external
 > audit. Testnet only, unaudited.
 
 ---
@@ -34,7 +34,7 @@ itself — the same base as any on-chain transaction.
 ## Why it exists
 
 On CKB every Layer-1 state change consumes and creates cells, and a standard cell
-needs **~61 CKB** of capacity. That makes direct micro-payments uneconomical — you
+needs **~61 CKB** of capacity. That makes direct micro-payments uneconomical, you
 cannot give someone a 0.25-CKB tip as its own cell. Existing primitives each solve
 part of the problem:
 
@@ -47,7 +47,7 @@ part of the problem:
 
 Liquid Cells is the missing piece: a **pooled, multi-recipient ledger** where
 balances live off-chain in a sparse Merkle tree, every transition is proven correct,
-and any user can always recover their funds — combined with **Fiber/atomic-swap
+and any user can always recover their funds, combined with **Fiber/atomic-swap
 egress** so even dust balances have a trustless way out.
 
 ---
@@ -67,9 +67,9 @@ Because both run identical code, they can never disagree on a root, and the proo
 attests the two invariants the protocol's safety rests on (enforced in
 [`transition.rs`](crates/stf/src/transition.rs)):
 
-1. **No debit without a signature** — a leaf's balance only decreases via a
+1. **No debit without a signature**, a leaf's balance only decreases via a
    `Transfer`/`Withdrawal` carrying a valid secp256k1 signature from that leaf's owner.
-2. **Value conservation** — `Σ balances + fees == total`, and
+2. **Value conservation**, `Σ balances + fees == total`, and
    `new_total == prev_total + Σ deposits − Σ withdrawals`.
 
 Together these make operator theft and balance inflation *impossible*, not merely
@@ -77,21 +77,21 @@ disputable. There is no fraud-proof game to get wrong.
 
 ---
 
-## Trust model — the four pillars
+## Trust model, the four pillars
 
 | # | Pillar | What it kills |
 |---|---|---|
-| 1 | **Validity proofs** — every root transition carries an SP1→Groth16 proof the anchor type script verifies | Forged transitions, balance inflation, stale-root settlement, the need for honest watchers |
-| 2 | **On-chain data availability** — each checkpoint posts the compressed state diff in tx **witnesses** (fee-priced, not capacity-locked) | Data withholding; every user can always reconstruct their leaf + proof from L1 alone |
-| 3 | **Permissionless escape hatch** — after operator silence for `T` epochs, anyone force-exits against the last committed root with a plain SMT inclusion proof | Liveness capture; the operator cannot freeze funds by going dark |
-| 4 | **Atomic-swap / Fiber egress** — hash-locked swaps move any-size balances out without a 61-CKB cell | Dust entrapment, while staying fully trustless (the swap is atomic) |
+| 1 | **Validity proofs**, every root transition carries an SP1→Groth16 proof the anchor type script verifies | Forged transitions, balance inflation, stale-root settlement, the need for honest watchers |
+| 2 | **On-chain data availability**, each checkpoint posts the compressed state diff in tx **witnesses** (fee-priced, not capacity-locked) | Data withholding; every user can always reconstruct their leaf + proof from L1 alone |
+| 3 | **Permissionless escape hatch**, after operator silence for `T` epochs, anyone force-exits against the last committed root with a plain SMT inclusion proof | Liveness capture; the operator cannot freeze funds by going dark |
+| 4 | **Atomic-swap / Fiber egress**, hash-locked swaps move any-size balances out without a 61-CKB cell | Dust entrapment, while staying fully trustless (the swap is atomic) |
 
 The operator degrades to a **sequencer**: it can order transactions and be live,
 nothing more.
 
 ### The 61-CKB reality (stated plainly)
 
-A balance below ~61 CKB cannot become its *own* L1 cell — that is physics, not a
+A balance below ~61 CKB cannot become its *own* L1 cell, that is physics, not a
 trust choice. So the **normal** exit is not a self-cell; it is a hash-locked atomic
 swap where an LP (or Fiber) pays the user on L1/Fiber against an in-pool transfer
 locked by the same preimage. No reveal → both legs time out → no harm. The
@@ -132,7 +132,7 @@ witness blob; and the epoch bound matches the tx `since`. See
 ```
 liquid-cells/
   crates/
-    stf/                 # liquid-cells-stf — the deterministic STF (Phase 0, done)
+    stf/                 # liquid-cells-stf, the deterministic STF (Phase 0, done)
       src/
         hash.rs          # keccak-256 (SP1-precompile friendly)
         smt.rs           # sparse Merkle tree over 256-bit keccak keys
@@ -141,13 +141,13 @@ liquid-cells/
         transition.rs    # apply(state, batch): the two-invariant state machine
         error.rs
       tests/properties.rs# no-debit-without-sig, conservation, replay, SMT proofs
-    sequencer/           # liquid-cells-sequencer — runs the STF off-chain: a mempool +
+    sequencer/           # liquid-cells-sequencer, runs the STF off-chain: a mempool +
       src/lib.rs         #   seal_batch() that emits a CheckpointJob and advances the root,
                          #   so successive checkpoints chain (STF-only dep, no SP1)
-      tests/             # loop_succession.rs — multi-checkpoint chain, conservation, DA
-    client/              # liquid-cells-client — the SDK: build+sign intents and reconstruct
+      tests/             # loop_succession.rs, multi-checkpoint chain, conservation, DA
+    client/              # liquid-cells-client, the SDK: build+sign intents and reconstruct
       src/lib.rs         #   your leaf + force-exit/refund witness from L1 DA, on the SAME STF
-      tests/             # client.rs — intents accepted by the STF; witnesses verify on-chain
+      tests/             # client.rs, intents accepted by the STF; witnesses verify on-chain
     sp1-guest/           # wraps the STF as an SP1 program -> Groth16 proof
     sp1-host/            # cycle/equivalence driver + fixture/proof generator
     ckb-contract/        # anchor type script: Groth16 verify + force-exit + force-refund
@@ -195,16 +195,17 @@ secp256k1 choices are deliberate so the same STF proves cheaply in the zkVM.
 | **2b-4** | Withdrawal-path coverage (deterministic lock-hash coordination); comprehensive deposit+withdrawal checkpoint; 14/14 ckb-testtool tests | **done** |
 | **2b-5** | Proven L1 fee model: `fee_withdrawal` drawn only from accumulated fees (user balances provably untouched), fee-aware accounting + solvency pin the miner fee to the proven draw; 15/15 ckb-testtool tests | **done** |
 | **4** | **Data availability**: in-circuit `da_commitment` over touched post-state, bound on-chain to the published witness blob; independent reconstruction rebuilds the tree + a force-exit inclusion proof from L1 alone ([docs/DA.md](docs/DA.md)). 17/17 ckb-testtool + DA reconstruction test | **done** (standalone CLI = follow-up) |
-| **3** | **Force-exit / escape hatch**: a second anchor mode — unilateral single-leaf withdrawal vs the last committed root (SMT inclusion, no proof), payout forced to the owner's secp lock, leaf nullified, gated by an operator-silence timeout (`last_epoch` + tx `since`). 24/24 ckb-testtool (incl. 7 force-exit) ([docs/FORCE-EXIT.md](docs/FORCE-EXIT.md)) | **done** |
+| **3** | **Force-exit / escape hatch**: a second anchor mode, unilateral single-leaf withdrawal vs the last committed root (SMT inclusion, no proof), payout forced to the owner's secp lock, leaf nullified, gated by an operator-silence timeout (`last_epoch` + tx `since`). 24/24 ckb-testtool (incl. 7 force-exit) ([docs/FORCE-EXIT.md](docs/FORCE-EXIT.md)) | **done** |
 | **5** | **Atomic-swap egress** for sub-61-CKB (dust): in-pool HTLC (`htlc_lock`/`claim`/`refund`), escrow keyed by all lock terms, the in-pool leg of a hash-locked swap with an L1/Fiber payment ([docs/EGRESS.md](docs/EGRESS.md)). 32 STF tests | **done** (in-pool leg) |
-| **5b** | **On-chain force-refund**: a third anchor mode — the swap *sender* unilaterally reclaims a *timed-out* HTLC escrow against the committed root (htlc_id re-derived, SMT inclusion, payout forced to the sender's secp lock), gated by `since ≥ timeout` **and** operator silence. 9 ckb-testtool tests. Closes the sender's exposure; the receiver-side residual is architectural (single anchor → Phase 6), documented honestly in [docs/EGRESS.md](docs/EGRESS.md) | **done** (contract + tests; Pudge code-cell upgrade optional) |
+| **5b** | **On-chain force-refund**: a third anchor mode, the swap *sender* unilaterally reclaims a *timed-out* HTLC escrow against the committed root (htlc_id re-derived, SMT inclusion, payout forced to the sender's secp lock), gated by `since ≥ timeout` **and** operator silence. 9 ckb-testtool tests. Closes the sender's exposure; the receiver-side residual is architectural (single anchor → Phase 6), documented honestly in [docs/EGRESS.md](docs/EGRESS.md) | **done** (live on Pudge, upgrade tx `0xf393b367…`) |
 | **2b-6** | **Deployed to Pudge**: code cell + genesis anchor live, first checkpoint with the BN254 proof verified on live CKB-VM. Needed the 3-pairing precompute (`e(alpha,beta)` baked) to fit CKB's ~3.50B block cycle limit ([DEPLOY.md](DEPLOY.md)) | **done** |
-| **Seq** | **Sequencer loop** (`crates/sequencer`): the off-chain STF runner — a mempool of signed intents + `seal_batch()` that emits a `CheckpointJob` (SP1 guest input, both anchor-cell byte images, DA blob, deposit/withdrawal cell specs) and advances the in-memory root, so **successive checkpoints chain**. STF-only dep (no SP1), tests in ms. 2 loop tests assert genesis-pinning, anchor-chaining (`seq+1`), value conservation across the chain, and DA reconstruction (final root + a force-exit proof from L1 alone). **Driven live on Pudge: the deployed pool advanced seq 1→2→3, each a BN254 proof verified on-chain** (`crates/sp1-host/src/bin/sequence.rs`, [DEPLOY.md](DEPLOY.md)) | **done** |
-| **SDK** | **Client SDK** (`crates/client`): build + sign `Transfer`/`Withdrawal`/`HTLC` intents and reconstruct your `{balance, nonce}` + an SMT inclusion proof from L1 DA, plus assemble the exact force-exit / force-refund witness bytes — all on the **same** `liquid-cells-stf`, so a client can never diverge from the sequencer or contract. 6 tests: intents accepted by the STF, reconstruction recovers the true leaf, witnesses verify against the committed root | **done** (Rust; subsumes the standalone DA CLI) |
-| **6** | Permissionless sequencing + anchor sharding (throughput) | planned |
+| **Seq** | **Sequencer loop** (`crates/sequencer`): the off-chain STF runner, a mempool of signed intents + `seal_batch()` that emits a `CheckpointJob` (SP1 guest input, both anchor-cell byte images, DA blob, deposit/withdrawal cell specs) and advances the in-memory root, so **successive checkpoints chain**. STF-only dep (no SP1), tests in ms. 2 loop tests assert genesis-pinning, anchor-chaining (`seq+1`), value conservation across the chain, and DA reconstruction (final root + a force-exit proof from L1 alone). **Driven live on Pudge: the deployed pool advanced seq 1→2→3, each a BN254 proof verified on-chain** (`crates/sp1-host/src/bin/sequence.rs`, [DEPLOY.md](DEPLOY.md)) | **done** |
+| **SDK** | **Client SDK** (`crates/client`): build + sign `Transfer`/`Withdrawal`/`HTLC` intents and reconstruct your `{balance, nonce}` + an SMT inclusion proof from L1 DA, plus assemble the exact force-exit / force-refund witness bytes, all on the **same** `liquid-cells-stf`, so a client can never diverge from the sequencer or contract. 6 tests: intents accepted by the STF, reconstruction recovers the true leaf, witnesses verify against the committed root | **done** (Rust; subsumes the standalone DA CLI) |
+| **6a** | **Permissionless sequencing** (foundational): anchor **lock continuity** (`output anchor lock == input anchor lock`) turns the genesis lock into a permanent policy for who may sequence, so an always-success genesis lock yields a permanently permissionless, capture-proof pool. Capture-rejection test added. **Live on Pudge: a second pool with an always-success lock, where cp2 (seq 1 to 2) advanced the root UNSIGNED**, gated only by the proof + lock continuity ([DEPLOY.md](DEPLOY.md)) | **done** (safety + capture-proofness; reward + anti-griefing next) |
+| **6b** | Sequencer reward (incentive), anti-griefing (leader/priority), anchor sharding (throughput) | planned |
 
 Throughput concerns (single-anchor contention, batch cycle budget) are deliberately
-deferred to Phase 6 — with the escape hatch in place they are performance knobs, not
+deferred to Phase 6b, with the escape hatch in place they are performance knobs, not
 trust assumptions.
 
 ---
@@ -214,9 +215,9 @@ trust assumptions.
 **Guaranteed (once Phases 1–4 land):** no operator theft; no balance inflation; no
 permanent censorship; no data withholding; trustless exit at any denomination.
 
-**Out of scope (v1):** privacy — on-chain DA reveals transfer diffs (a future
+**Out of scope (v1):** privacy, on-chain DA reveals transfer diffs (a future
 version can add encrypted DA + amount-hiding proofs); general-purpose smart contracts
-— Liquid Cells is a focused pooled-payment rollup.
+, Liquid Cells is a focused pooled-payment rollup.
 
 ---
 

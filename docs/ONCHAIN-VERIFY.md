@@ -31,7 +31,7 @@ Constants (circuit v6.1.0):
 * `VERIFIER_HASH = 0x4388a21c687fdd5f218d7e3d13190cac4c5355818d3605fd5fb811df468ee696`
 * `VK_ROOT       = 0x002f850ee998974d6cc00e50cd0814b098c05bfade466d28573240d057f25352`
 
-**Public-values digest** — note **SHA-256**, not keccak, for *this* digest:
+**Public-values digest**, note **SHA-256**, not keccak, for *this* digest:
 
 ```
 publicValuesDigest = sha256(publicValues) & ((1 << 253) - 1)     // mask the top 3 bits
@@ -59,7 +59,7 @@ pairing check `e(A,B) == e(alpha,beta) · e(vk_x, gamma) · e(C, delta)` where
 ## 2. Pin the public values to chain facts
 
 After the proof verifies, decode `publicValues` (240 bytes, see `codec::PublicValues`)
-and enforce — this is the part that makes the rollup *mean* something:
+and enforce, this is the part that makes the rollup *mean* something:
 
 | Public value | Pinned to |
 |---|---|

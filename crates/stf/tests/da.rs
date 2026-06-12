@@ -1,8 +1,8 @@
 //! Data-availability tests.
 //!
 //! Two properties: (1) every checkpoint's `da_commitment` equals keccak of the blob the
-//! sequencer publishes, and (2) an independent party can rebuild the *exact* tree — and a
-//! valid force-exit inclusion proof for any leaf — from the published blobs alone, with no
+//! sequencer publishes, and (2) an independent party can rebuild the *exact* tree, and a
+//! valid force-exit inclusion proof for any leaf, from the published blobs alone, with no
 //! cooperation from the sequencer. That second property is what makes the protocol
 //! trustless against data withholding.
 
@@ -39,7 +39,7 @@ fn signed_withdrawal(b: u8, target: Hash, amount: u128, nonce: u64, expiry: u64)
     Withdrawal { from_pubkey, target_lock_hash: target, amount, nonce, expiry, sig }
 }
 
-/// Apply a checkpoint and return the blob the sequencer must publish — asserting it
+/// Apply a checkpoint and return the blob the sequencer must publish, asserting it
 /// matches the proven `da_commitment`.
 fn checkpoint(st: &mut State, batch: &Batch) -> Vec<u8> {
     let pv = apply(st, batch).expect("checkpoint applies");
@@ -95,7 +95,7 @@ fn da_blobs_reconstruct_tree_and_prove_leaf() {
     assert_eq!(rebuilt.root(), final_root, "reconstructed root must equal the on-chain root");
 
     // Carol's balance reconstructed (100M + 50M), and a membership proof that verifies
-    // against the on-chain root — exactly what a force-exit submits.
+    // against the on-chain root, exactly what a force-exit submits.
     let carol = key_for(3);
     let carol_leaf = st.get_leaf(&carol);
     assert_eq!(carol_leaf, Leaf { balance: 150_000_000, nonce: 0 });

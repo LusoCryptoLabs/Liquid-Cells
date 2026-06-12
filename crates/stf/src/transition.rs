@@ -1,8 +1,8 @@
 //! The state-transition function.
 //!
 //! [`prove_transition`] is the heart of the protocol and the *exact* code the SP1
-//! guest proves. It operates on a **partial witness** — only the leaves the batch
-//! touches plus the frontier sibling hashes — so proving cost scales with batch
+//! guest proves. It operates on a **partial witness**, only the leaves the batch
+//! touches plus the frontier sibling hashes, so proving cost scales with batch
 //! size, not pool size. It:
 //!
 //!   1. checks the witness leaves + siblings reconstruct `prev_root`,
@@ -11,20 +11,20 @@
 //!
 //! Its safety contract is two invariants the on-chain verifier relies on:
 //!
-//!   1. **No debit without a signature** — a leaf's balance only decreases via a
+//!   1. **No debit without a signature**, a leaf's balance only decreases via a
 //!      `Transfer`/`Withdrawal` carrying a valid signature from that leaf's owner.
-//!   2. **Value conservation** — `total` only changes by deposits (+), withdrawals
+//!   2. **Value conservation**, `total` only changes by deposits (+), withdrawals
 //!      (−), and the sequencer's `fee_withdrawal` (−); in-pool fees move *within* the
 //!      pool into `fee_acc`, and the `fee_withdrawal` draws back down out of `fee_acc`
 //!      to pay the L1 miner fee. Because the pre-state root is bound, the draw is
 //!      capped at accumulated fee revenue, and every step uses checked arithmetic, the
 //!      relation `Σ balances + fee_acc == total` is preserved transitively from
-//!      genesis without re-summing the whole tree — and user balances are never the
+//!      genesis without re-summing the whole tree, and user balances are never the
 //!      source of an L1 fee.
 //!
 //! The full-tree [`State`] is the sequencer/test view: it builds a witness from the
 //! complete tree, runs the identical [`prove_transition`] logic, and keeps its tree
-//! in sync — asserting (in debug builds) that the full-tree root equals the
+//! in sync, asserting (in debug builds) that the full-tree root equals the
 //! witness-derived `new_root`.
 
 use crate::error::StfError;
@@ -46,7 +46,7 @@ pub struct Witness {
 /// proof size so checkpoints have predictable cost, and lets the on-chain verifier
 /// assume batches are bounded. Basis (SP1 6.2, k256 + keccak precompiles): ~0.62M
 /// SP1 cycles per touched leaf measured by the host driver, so 1024 leaves ≈ 0.64B
-/// cycles — a generous periodic-checkpoint ceiling. The sequencer picks smaller
+/// cycles, a generous periodic-checkpoint ceiling. The sequencer picks smaller
 /// batches to hit its own latency target; this is only the upper bound.
 pub const MAX_LEAVES_PER_BATCH: usize = 1024;
 
@@ -100,7 +100,7 @@ fn fold_commit(acc: Hash, key: &Hash, amount: u128) -> Hash {
 }
 
 /// Pure op logic over a working map pre-seeded with every touched leaf. Mutates
-/// values only — never inserts or removes keys — so the post-state key set (and
+/// values only, never inserts or removes keys, so the post-state key set (and
 /// therefore the witness sibling layout) is identical to the pre-state.
 fn apply_ops(
     work: &mut BTreeMap<Hash, Leaf>,
@@ -371,7 +371,7 @@ pub fn prove_transition(
     transition_inner(prev, witness, batch).map(|(pv, _)| pv)
 }
 
-/// Full in-memory pool state — the sequencer and test view. Holds the complete
+/// Full in-memory pool state, the sequencer and test view. Holds the complete
 /// tree; builds witnesses for the guest and keeps itself in sync.
 #[derive(Clone)]
 pub struct State {

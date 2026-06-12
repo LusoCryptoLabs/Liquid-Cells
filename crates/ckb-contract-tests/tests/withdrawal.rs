@@ -98,7 +98,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let lock = ctx.build_script(&as_op, Bytes::from(b"lock".to_vec())).unwrap();
     let dep_lock = ctx.build_script(&as_op, Bytes::from(b"depositor".to_vec())).unwrap();
 
-    // Withdrawal output lock — the shared deterministic lock (== wd_target helper), so
+    // Withdrawal output lock, the shared deterministic lock (== wd_target helper), so
     // its hash equals the proven target (sanity-checked here).
     let wlock = if cfg.bad_wd_lock { withdraw_lock_with(b"wrong-target") } else { withdraw_lock() };
     if !cfg.bad_wd_lock {

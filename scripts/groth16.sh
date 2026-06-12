@@ -7,7 +7,7 @@
 # ~/.sp1/circuits/groth16/<SP1_CIRCUIT_VERSION>/.
 #
 # Two non-obvious requirements learned the hard way:
-#   * `ulimit -s unlimited` — the gnark constraint solver overflows the default
+#   * `ulimit -s unlimited`, the gnark constraint solver overflows the default
 #     8 MB stack and the process dies silently (exit 253, no output) without it.
 #   * the host must be built with sp1-sdk feature `native-gnark`, otherwise the
 #     default path shells out to Docker (`docker info`), which isn't wired into

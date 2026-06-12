@@ -1,4 +1,4 @@
-# Liquid Cells anchor type script (CKB-VM). Standalone (its own [workspace]) — built
+# Liquid Cells anchor type script (CKB-VM). Standalone (its own [workspace]), built
 # for riscv64imac-unknown-none-elf with ckb-std. Verifies the SP1 Groth16 proof of a
 # transition and pins its public values to chain facts.
 [package]
