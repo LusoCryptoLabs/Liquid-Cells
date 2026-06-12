@@ -10,6 +10,13 @@ edition = "2021"
 name = "liquid-cells-anchor"
 path = "src/main.rs"
 
+# Deposit lock: guards a deposit cell so its CKB can ONLY move into a pool checkpoint (which
+# credits the depositor) or, after a timeout, refund to the depositor's own lock, closing the
+# always-success window where anyone could grab a deposit before the sequencer swept it.
+[[bin]]
+name = "liquid-cells-deposit-lock"
+path = "src/deposit_lock.rs"
+
 [dependencies]
 ckb-std = "0.16"
 # ark-bn254: modern pure-Rust BN254. Measured ~66x faster per pairing than substrate-bn on
