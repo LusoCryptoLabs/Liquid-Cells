@@ -82,11 +82,11 @@ pub(crate) fn fold_cells(self_hash: &[u8; 32]) -> Result<([u8; 32], [u8; 32], i1
 
 /// Pin the public values to the anchor cells. Cheap; runs before the proof verify so
 /// a tampered transaction is rejected without paying for the BN254 pairing.
-pub(crate) fn bind(prev: &[u8], new: &[u8], pv: &[u8]) -> i8 {
+pub(crate) fn bind(prev: &[u8], new: &[u8], pv: &[u8], pool_id: &[u8; 32]) -> i8 {
     if pv.len() != PV_LEN || prev.len() != ANCHOR_LEN || new.len() != ANCHOR_LEN {
         return 30;
     }
-    if pv[PV_POOL_ID..PV_POOL_ID + 32] != POOL_ID {
+    if pv[PV_POOL_ID..PV_POOL_ID + 32] != pool_id[..] {
         return 31;
     }
     if rd_u64(pv, PV_CHAIN_ID) != CHAIN_ID {

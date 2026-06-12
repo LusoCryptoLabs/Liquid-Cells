@@ -60,7 +60,7 @@ use ckb_std::ckb_types::prelude::*;
 use ckb_std::error::SysError;
 use ckb_std::high_level::{
     load_cell_capacity, load_cell_data, load_cell_lock, load_cell_lock_hash, load_cell_type_hash,
-    load_input_since, load_script_hash, load_witness_args,
+    load_input, load_input_since, load_script, load_script_hash, load_witness_args,
 };
 use liquid_cells_groth16::{verify_sp1_groth16, PROOF_LEN};
 use sha3::{Digest, Keccak256};
@@ -179,6 +179,40 @@ fn abs_epoch(since: u64) -> Option<u64> {
     Some(since & 0x00FF_FFFF)
 }
 
+/// The pool's identity, the single source of truth for `pool_id`.
+///   * **empty type-script args** => the baked [`POOL_ID`] (the originally-deployed pool;
+///     backward-compatible, so the live pool keeps working under this upgrade).
+///   * **32-byte args** => a *type-id'd* pool whose identity IS that 32-byte value, made unique
+///     and unforgeable by binding it to a spent UTXO at genesis (see [`anchor_type_id`]). Each
+///     such pool has a distinct anchor type-script hash, which is what lets a deposit lock bind
+///     to one specific pool.
+/// `None` if the args are a malformed length.
+fn pool_id() -> Option<[u8; 32]> {
+    let script = load_script().ok()?;
+    let args = script.args().raw_data();
+    if args.is_empty() {
+        Some(POOL_ID)
+    } else if args.len() == 32 {
+        let mut id = [0u8; 32];
+        id.copy_from_slice(&args);
+        Some(id)
+    } else {
+        None
+    }
+}
+
+/// The type-id a 32-byte-args anchor must carry: `blake2b256("ckb-default-hash", first_input)`.
+/// The tx's first input is a UTXO consumed at genesis, so it can never recur, the pool's
+/// identity is therefore globally unique and unforgeable (the standard CKB type-id binding).
+fn anchor_type_id() -> Option<[u8; 32]> {
+    let first_input = load_input(0, Source::Input).ok()?;
+    let mut h = blake2b_ref::Blake2bBuilder::new(32).personal(b"ckb-default-hash").build();
+    h.update(first_input.as_slice());
+    let mut out = [0u8; 32];
+    h.finalize(&mut out);
+    Some(out)
+}
+
 
 /// Genesis (pool creation): an OUTPUT anchor with **no input anchor**, which must hold the
 /// canonical empty state (empty SMT root, all counters zero). The type script runs when the
@@ -206,6 +240,20 @@ fn genesis() -> i8 {
         || rd_u64(&new, A_LAST_EPOCH) != 0
     {
         return 71;
+    }
+    // Type-id binding: a type-id'd pool (32-byte args) must set its args to blake2b(first input),
+    // pinning its identity to a consumed UTXO so it is unique and unforgeable. A legacy pool
+    // (empty args) skips this, it keeps the baked POOL_ID. Malformed args are rejected.
+    let pid = match pool_id() {
+        Some(p) => p,
+        None => return 72,
+    };
+    let args_present = load_script().map(|s| !s.args().raw_data().is_empty()).unwrap_or(false);
+    if args_present {
+        match anchor_type_id() {
+            Some(tid) if tid == pid => {}
+            _ => return 73,
+        }
     }
     0
 }
@@ -283,8 +331,13 @@ fn checkpoint(prev: &[u8], new: &[u8], wa: &WitnessArgs, wb: &[u8]) -> i8 {
     let proof = &wb[0..PROOF_LEN];
     let pv = &wb[PROOF_LEN..WITNESS_LEN];
 
-    // Cheap pins first, expensive pairing last.
-    let b = cells::bind(prev, new, pv);
+    // The pool this checkpoint must be for (baked POOL_ID for a legacy pool; the type-id for a
+    // type-id'd pool). Cheap pins first, expensive pairing last.
+    let pid = match pool_id() {
+        Some(p) => p,
+        None => return 31,
+    };
+    let b = cells::bind(prev, new, pv, &pid);
     if b != 0 {
         return b;
     }

@@ -167,6 +167,7 @@ pub(crate) fn force_exit(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
 /// agreed parties on the agreed terms, so a force-refund must supply the real terms and
 /// can only pay the real sender.
 fn htlc_id(
+    pool_id: &[u8; 32],
     sender_key: &[u8; 32],
     receiver_key: &[u8],
     amount: u128,
@@ -177,7 +178,7 @@ fn htlc_id(
     let domain = keccak(b"LIQUIDCELLS/v1/htlc-id");
     let mut b = [0u8; 192]; // 32+32+32+32+16+32+8+8
     b[0..32].copy_from_slice(&domain);
-    b[32..64].copy_from_slice(&POOL_ID);
+    b[32..64].copy_from_slice(pool_id);
     b[64..96].copy_from_slice(sender_key);
     b[96..128].copy_from_slice(receiver_key);
     b[128..144].copy_from_slice(&amount.to_be_bytes());
@@ -227,8 +228,14 @@ pub(crate) fn force_refund(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
         return 81; // cannot be paid out as a single capacity
     }
 
+    // The htlc_id binds the pool's identity (baked POOL_ID for a legacy pool, the type-id for a
+    // type-id'd pool), matching how the STF derived it.
+    let pid = match pool_id() {
+        Some(p) => p,
+        None => return 82,
+    };
     let sender_key = keccak(sender_pubkey);
-    let id = htlc_id(&sender_key, receiver_key, amount, hashlock, timeout, lock_nonce);
+    let id = htlc_id(&pid, &sender_key, receiver_key, amount, hashlock, timeout, lock_nonce);
 
     // Inclusion of the escrow leaf {balance = amount, nonce = 0} at `id` vs the committed root.
     let leaf = leaf_hash(amount, 0);

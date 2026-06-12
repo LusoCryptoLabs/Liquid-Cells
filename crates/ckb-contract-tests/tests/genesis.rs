@@ -77,3 +77,73 @@ fn genesis_nonzero_counters_rejected() {
         assert!(ctx.verify_tx(&tx, MAX_CYCLES).is_err(), "non-zero genesis counters must reject");
     }
 }
+
+// ---- type-id'd pools (32-byte anchor args bound to the genesis input) ----
+
+/// The type-id a type-id'd anchor must carry: blake2b256("ckb-default-hash", first input).
+fn type_id_of(first_input: &CellInput) -> [u8; 32] {
+    let mut h = blake2b_ref::Blake2bBuilder::new(32).personal(b"ckb-default-hash").build();
+    h.update(first_input.as_slice());
+    let mut out = [0u8; 32];
+    h.finalize(&mut out);
+    out
+}
+
+/// Build a canonical-empty genesis whose anchor type script carries `make_args(first_input)`.
+fn build_with_args(make_args: impl FnOnce(&CellInput) -> Vec<u8>) -> (Context, TransactionView) {
+    let bin: Bytes = std::fs::read(CONTRACT_BIN).expect("build crates/ckb-contract first").into();
+    let mut ctx = Context::default();
+    let contract_op = ctx.deploy_cell(bin);
+    let as_op = ctx.deploy_cell(ALWAYS_SUCCESS.clone());
+    let lock = ctx.build_script(&as_op, Bytes::from(b"lock".to_vec())).unwrap();
+    let funding = ctx.create_cell(
+        CellOutput::new_builder().capacity(1000u64.pack()).lock(lock.clone()).build(),
+        Bytes::new(),
+    );
+    let first_input = CellInput::new_builder().previous_output(funding).build();
+    let type_script = ctx.build_script(&contract_op, Bytes::from(make_args(&first_input))).unwrap();
+    let tx = TransactionBuilder::default()
+        .input(first_input)
+        .output(
+            CellOutput::new_builder()
+                .capacity(1000u64.pack())
+                .lock(lock)
+                .type_(Some(type_script).pack())
+                .build(),
+        )
+        .output_data(Bytes::from(anchor(&EMPTY_ROOT, 0, 0, 0, 0)).pack())
+        .cell_dep(CellDep::new_builder().out_point(contract_op).build())
+        .cell_dep(CellDep::new_builder().out_point(as_op).build())
+        .build();
+    let tx = ctx.complete_tx(tx);
+    (ctx, tx)
+}
+
+#[test]
+fn genesis_type_id_pool_accepts() {
+    let (ctx, tx) = build_with_args(|inp| type_id_of(inp).to_vec());
+    ctx.verify_tx(&tx, MAX_CYCLES)
+        .expect("a type-id'd genesis (args == blake2b(first input)) must verify");
+}
+
+#[test]
+fn genesis_type_id_mismatch_rejected() {
+    let (ctx, tx) = build_with_args(|inp| {
+        let mut id = type_id_of(inp);
+        id[0] ^= 0xff; // not blake2b(first input)
+        id.to_vec()
+    });
+    assert!(
+        ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
+        "a type-id'd genesis whose args != blake2b(first input) must reject (forged identity)"
+    );
+}
+
+#[test]
+fn genesis_malformed_args_rejected() {
+    let (ctx, tx) = build_with_args(|_| vec![0u8; 16]); // neither empty (legacy) nor 32 bytes
+    assert!(
+        ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
+        "anchor args of a non-32 length must reject"
+    );
+}

@@ -51,6 +51,8 @@ struct Cfg {
     change_lock: bool,    // output anchor lock != input anchor lock (capture attempt)
     reward: bool,         // add a marked sequencer-reward output of exactly fee_withdrawal (valid)
     reward_over: bool,    // add a reward output of fee_withdrawal + 1 (must reject)
+    type_id_args: Option<Vec<u8>>, // anchor type-script args: None/empty = legacy baked POOL_ID;
+                                   // Some(32 bytes) = a type-id'd pool whose pool_id IS those bytes
 }
 
 /// A non-anchor output whose data starts with this marker is a sequencer reward cell (must match
@@ -103,7 +105,8 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let mut ctx = Context::default();
     let contract_op = ctx.deploy_cell(bin);
     let as_op = ctx.deploy_cell(ALWAYS_SUCCESS.clone());
-    let type_script = ctx.build_script(&contract_op, Bytes::new()).unwrap();
+    let ts_args = cfg.type_id_args.clone().unwrap_or_default();
+    let type_script = ctx.build_script(&contract_op, Bytes::from(ts_args)).unwrap();
     // The anchor lock here is always-success (different args ⇒ different hash), i.e. these
     // checkpoints are *permissionless*: no signature gates them, only the type script. The
     // output anchor must keep the SAME lock (continuity); `change_lock` swaps it to model a
@@ -258,5 +261,32 @@ fn reward_exceeds_fee_withdrawal_rejected() {
     assert!(
         ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
         "a reward exceeding fee_withdrawal must reject"
+    );
+}
+
+/// The pool_id baked into the fixture's public values (= the legacy baked POOL_ID).
+fn fixture_pool_id() -> Vec<u8> {
+    std::fs::read(PV_PATH).expect("fixtures/public_values.bin")[0..32].to_vec()
+}
+
+#[test]
+fn checkpoint_for_a_type_id_pool_verifies() {
+    // A type-id'd pool carries its pool_id as 32-byte type-script args; the contract derives
+    // pool_id from the args, not the baked constant. The fixture's pool_id is the baked value, so
+    // set the args to it, the proof must still verify against the args-derived pool_id.
+    let (ctx, tx) = build(Cfg { type_id_args: Some(fixture_pool_id()), ..Default::default() });
+    ctx.verify_tx(&tx, MAX_CYCLES).expect("a checkpoint for a type-id'd pool must verify");
+}
+
+#[test]
+fn checkpoint_with_wrong_pool_args_rejected() {
+    // Anchor args (the claimed pool_id) that don't match the proof's pool_id must reject (code 31),
+    // before the pairing. This is what makes a type-id'd pool bound to exactly its own proofs.
+    let mut wrong = fixture_pool_id();
+    wrong[0] ^= 0xff;
+    let (ctx, tx) = build(Cfg { type_id_args: Some(wrong), ..Default::default() });
+    assert!(
+        ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
+        "a checkpoint whose anchor args mismatch the proof's pool_id must reject"
     );
 }
