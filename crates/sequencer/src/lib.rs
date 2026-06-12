@@ -32,6 +32,9 @@ use liquid_cells_stf::{
     State, StfError, Transfer, Withdrawal,
 };
 
+mod sharded;
+pub use sharded::{shard_pool_id, ShardedSequencer};
+
 /// Anchor cell data length (bytes): `root(32) ‖ seq(8) ‖ total(16) ‖ fee_acc(16) ‖ last_epoch(8)`.
 /// Byte-identical to the on-chain `ANCHOR_LEN` in the anchor type script.
 pub const ANCHOR_LEN: usize = 80;
