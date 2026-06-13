@@ -101,6 +101,45 @@ attacker-chosen. Implemented.
 No inactivity or dust-consolidation fees. Fees are explicit per-transfer/withdrawal
 only and are conserved.
 
+### L3, ECDSA high-S signature malleability · 🟡 known, deferred
+`sig::verify` (`crates/stf/src/sig.rs`) *normalizes* a high-S signature to low-S and then
+verifies it, so both encodings of a signature pass — contradicting its own comment ("only the
+low-S form verifies"). Impact is **transaction-ID (signature-bytes) malleability only**: it
+grants no debit, replay, or value creation, because every state effect is keyed by the signed
+message + the leaf nonce (which blocks replay of a mutated copy), and the signature is never
+committed to any on-chain fact (the DA blob is `key‖balance‖nonce`; public values carry no
+signature). Found by the internal red-team. The fix (reject high-S outright) changes the STF
+and therefore re-bakes the guest vkey, so it is **deferred to the next coordinated contract
+upgrade** rather than hot-fixed; disclosed here and in the hackathon scope.
+
+## Adversarial red-team (internal)
+
+Before opening to the community, an internal red-team built **55 adversarial test cases** that
+run real malicious transactions/batches against the contract in CKB-VM (and the STF in-process)
+across four surfaces: checkpoint accounting/fee/solvency, the force-exit/force-refund escape
+hatches + epoch/`since` handling + anchor-capture, the deposit lock + pool isolation + DA
+binding, and the STF safety invariants + contract public-input binding. **No exploitable break
+was found** — every fund-safety and capture-proofness invariant held. The tests live alongside
+the existing suites (`crates/ckb-contract-tests/tests/redteam_*.rs`, `crates/stf/tests/redteam.rs`)
+as permanent regression coverage. Four findings, all low/informational, none enabling fund loss:
+
+* **L3 above** — high-S signature malleability (txid-only).
+* **Legacy (empty-args) pools share one anchor type hash**, so a deposit can be swept into a
+  *different legacy pool* of the same contract (the depositor is still credited there, recoverable
+  by force-exit — not third-party theft). Eliminated by **type-id'd pools** (distinct hashes;
+  proven by the `sweep_into_a_foreign_pool_rejected` test and demonstrated live on Pudge).
+* **The deposit lock's sweep predicate is deliberately loose** (it unlocks on any input bearing
+  the pool's type hash and does not check the sweep destination); safety is **delegated to the
+  anchor type script's solvency/commitment checks**, which the red-team confirmed backstop it (a
+  diversion-to-attacker tx is rejected). A hard invariant to preserve across future changes.
+* **The force-exit epoch cap relies on CKB consensus** rejecting an absolute-epoch `since` before
+  its epoch — a standard, correct CKB pattern, and the one defense not fully self-contained in the
+  contract.
+
+Scope honesty: this is an internal logic-bug red-team, **not** a substitute for external audit. It
+does **not** cover BN254 field-arithmetic soundness of the verifier or game-theoretic/economic
+attacks — those remain for formal review and the public program.
+
 ---
 
 ## Residual trust (irreducible)
