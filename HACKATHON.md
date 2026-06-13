@@ -6,9 +6,9 @@
 > Nothing here is production-ready or safe to use with real assets. Read this entire document and
 > [SECURITY.md](SECURITY.md) before participating.
 
-**Enrollment is hosted by [Luso Crypto Labs](https://lusocryptolabs.com) on the Liquid Cells
-security-program page on its website** (exact URL published at launch). Participation requires
-enrolling there and agreeing to its terms; this document is the rules and scope, not the
+**Enrollment is hosted by [Luso Crypto Labs](https://lusocryptolabs.com) on the
+[Liquid Cells security-program page](https://lusocryptolabs.com/liquidcellsprotocol).** Participation
+requires enrolling there and agreeing to its terms; this document is the rules and scope, not the
 registration. Dates, the prize pool, and the exact reward figures will be published on that page.
 Until then, treat this as the canonical statement of *what we are asking you to break and how
 findings are judged*.

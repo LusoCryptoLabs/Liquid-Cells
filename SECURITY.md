@@ -8,10 +8,10 @@
 
 **Please report privately — do not open a public issue or PR for a suspected vulnerability.**
 
-- Preferred channel: the **Liquid Cells security-program page on the [Luso Crypto Labs](https://lusocryptolabs.com)
-  website** (disclosure form / contact published there at launch). In the interim, use GitHub's
-  **private vulnerability reporting** ("Report a vulnerability" under the repository's *Security* tab)
-  so the report is not public.
+- Preferred channel: the **[Liquid Cells security-program page](https://lusocryptolabs.com/liquidcellsprotocol)**
+  on the Luso Crypto Labs website (disclosure form / contact published there at launch). In the
+  interim, use GitHub's **private vulnerability reporting** ("Report a vulnerability" under the
+  repository's *Security* tab) so the report is not public.
 - Include: the affected component, a description, and ideally a proof-of-concept (a failing/passing
   test against the `ckb-testtool` or STF harness is ideal — see `crates/ckb-contract-tests/tests/`
   and `crates/stf/tests/`).
