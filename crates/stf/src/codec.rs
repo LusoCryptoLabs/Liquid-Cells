@@ -288,6 +288,7 @@ pub fn decode_input(bytes: &[u8]) -> Result<(PoolState, Witness, Batch), CodecEr
 /// Encode a single [`Batch`] in the canonical layout (same bytes used inside
 /// [`encode_input`]). Exposed so the sequencer's durability journal can persist a
 /// sealed batch and replay it verbatim.
+#[cfg(feature = "journal")]
 pub fn encode_batch(batch: &Batch) -> Vec<u8> {
     let mut o = Vec::new();
     enc_batch(&mut o, batch);
@@ -295,6 +296,7 @@ pub fn encode_batch(batch: &Batch) -> Vec<u8> {
 }
 
 /// Decode a [`Batch`] produced by [`encode_batch`].
+#[cfg(feature = "journal")]
 pub fn decode_batch(bytes: &[u8]) -> Result<Batch, CodecError> {
     let mut r = R::new(bytes);
     let b = dec_batch(&mut r)?;

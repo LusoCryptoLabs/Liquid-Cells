@@ -35,9 +35,12 @@ fi
 
 echo "OK: all three vkey pin sites agree."
 echo
-echo "Pinned toolchain (must match to reproduce the vkey):"
-echo "  rustc          1.96.0"
-echo "  sp1-zkvm/sdk   6.2.3   (crates/sp1-guest, crates/sp1-host)"
+echo "Pinned build inputs (ALL must match to reproduce the vkey byte-for-byte):"
+echo "  succinct rustc   1.94.0   (cargo-prove's toolchain; == the ghcr.io/succinctlabs/sp1:v6.2.4 image)"
+echo "  sp1-zkvm/sdk     6.2.4    (crates/sp1-guest, crates/sp1-host)"
+echo "  guest features   journal OFF (default; the journal codec helpers are gated out of the guest)"
+echo "  build path       \$HOME/liquid-cells   (SP1 embeds the absolute source path in the guest ELF,"
+echo "                   so the rebuild must run from the SAME path the deploy used, with HOME=/root)"
 echo
 echo "Full rebuild check (heavy, needs the SP1 toolchain in the build env):"
 echo "  (cd crates/sp1-guest && cargo prove build) && scripts/groth16.sh 1"

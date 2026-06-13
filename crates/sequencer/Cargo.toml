@@ -11,7 +11,7 @@ repository = { workspace = true }
 # sp1-sdk), so it stays in the lean workspace and its loop logic tests in
 # milliseconds; proving + CKB submission live in a separate driver.
 [dependencies]
-liquid-cells-stf = { path = "../stf" }
+liquid-cells-stf = { path = "../stf", features = ["journal"] }
 
 # The end-to-end demo (`examples/demo.rs`) drives the sequencer with client-built,
 # client-signed intents and then recovers a balance from L1 DA on the client side, so it

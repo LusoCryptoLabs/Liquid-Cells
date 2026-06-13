@@ -9,6 +9,12 @@ description = "Deterministic state-transition function for the Liquid Cells trus
 name = "liquid_cells_stf"
 path = "src/lib.rs"
 
+[features]
+# `journal` adds host/sequencer-only codec helpers (encode_batch/decode_batch) used by the
+# durable write-ahead journal. Gated OFF by default so the SP1 guest never compiles them,
+# keeping the proven guest ELF (and its vkey 0x00213af5…) byte-stable. The sequencer enables it.
+journal = []
+
 [dependencies]
 # Keccak-256: chosen over CKB-native blake2b because SP1 has a keccak precompile,
 # so the same hashing is cheap inside the zkVM and native in the sequencer.
