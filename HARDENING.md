@@ -98,7 +98,12 @@ formality): the buildable path, ranked by leverage. Items marked done were close
 **Launch**
 - [ ] Upgrade-key lockdown (governance multisig + timelock), done last, it is irreversible and blocks
   further iteration, so it is a mainnet step, not a testnet one.
-- [ ] Bug bounty and a capped, gradual rollout that raises limits as confidence builds.
+- [~] Bug bounty / break-it hackathon. An internal adversarial red-team ran first (55 in-VM attack
+  cases, no break found; permanent regression suite + findings in
+  [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md)). The public program — rules, full trust-assumption
+  disclosure, scope, severity rubric — is drafted in [HACKATHON.md](HACKATHON.md) with private
+  disclosure in [SECURITY.md](SECURITY.md), hosted by Luso Crypto Labs; reward figures, dates, and a
+  capped, gradual rollout that raises limits as confidence builds remain to be set at launch.
 
 ## Deposit-lock deploy procedure (done on Pudge)
 

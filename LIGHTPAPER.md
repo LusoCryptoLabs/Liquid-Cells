@@ -7,7 +7,9 @@
 > a public chain, the sequencer has landed a chain of successive checkpoints, and sequencing is
 > **permissionless** (a checkpoint that nobody signed has advanced the root on-chain). It is
 > **testnet-only and not audited**, so it is **not usable with real funds today.** We lead with
-> this on purpose, see *§6 What's proven vs. what isn't*.
+> this on purpose, see *§6 What's proven vs. what isn't*. It has passed an internal adversarial
+> red-team (55 in-VM attack cases, no break) and is now **open to break** — see
+> [HACKATHON.md](HACKATHON.md) and [SECURITY.md](SECURITY.md).
 
 ---
 

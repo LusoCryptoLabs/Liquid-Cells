@@ -40,6 +40,14 @@ itself, the same base as any on-chain transaction.
 > and session-key recovery. See **[HARDENING.md](HARDENING.md)**
 > for the work and the honest, audit-aside roadmap to mainnet.
 
+> **Security program.** Before opening to the community an internal adversarial red-team ran **55
+> in-VM attack cases** across accounting, escape hatches, the deposit lock, and the STF — no
+> exploitable break found; they live as permanent regression tests (`redteam_*.rs`), with findings
+> in **[docs/THREAT-MODEL.md](docs/THREAT-MODEL.md)**. The protocol is now **open to break**: see
+> **[HACKATHON.md](HACKATHON.md)** for the bug-bounty rules, full trust-assumption disclosure
+> (including the single upgrade key), and scope, and **[SECURITY.md](SECURITY.md)** for private
+> disclosure. Testnet-only, unaudited — come try to break it.
+
 > **Honest positioning (prior art).** This is a working *implementation*, not a novel protocol.
 > Nearly every ingredient has prior art, much of it on CKB: sec-bit's **Clover** (a zkRollup on the
 > same CKB cell model), Ethereum's **Intmax2** (a pooled, payment-focused zk-rollup with
@@ -175,12 +183,14 @@ liquid-cells/
     sp1-guest/           # wraps the STF as an SP1 program -> Groth16 proof
     sp1-host/            # cycle/equivalence driver + fixture/proof generator
     ckb-contract/        # anchor type script: Groth16 verify + force-exit + force-refund
-    ckb-contract-tests/  # ckb-testtool integration suite
+    ckb-contract-tests/  # ckb-testtool integration suite (+ redteam_*.rs adversarial cases)
   docs/
     ARCHITECTURE.md      # the full trustless design
     THREAT-MODEL.md      # red-team findings -> mitigations
     EGRESS.md FORCE-EXIT.md DA.md ...
   DEPLOY.md              # every live Pudge hash
+  HACKATHON.md           # break-it hackathon + bug bounty (rules, scope, disclosure)
+  SECURITY.md            # responsible-disclosure policy
   DEVELOPMENT.md         # running dev log
 ```
 
