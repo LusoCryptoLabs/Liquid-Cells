@@ -6,9 +6,11 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 > The **deposit lock** (`crates/ckb-contract/src/deposit_lock.rs`) is **deployed and verified live**
 > on Pudge (codeHash `0x0d610c61…3d3574`, rows below). A deposit cell was created under it, a
 > third-party spend was **rejected on-chain** (`Inputs[0].Lock ValidationFailure`), and a refund to
-> the depositor was accepted. The demo/SDK deposit flow is not yet routed through it (the running
-> demo still creates always-success deposit cells); that wiring is the remaining step
-> ([HARDENING.md](HARDENING.md)).
+> the depositor was accepted. **The deposit-lock sweep is now routed end-to-end through a proven
+> checkpoint:** a deposit cell bound to the type-id'd pool's unique anchor type hash `0xf7dfded8…`
+> was **swept by a Groth16-proven checkpoint that advanced that pool seq 0 → 1** (rows below), so
+> the lock's `to_key` was credited inside the proof and the funds folded into the anchor. This
+> closes the previously-remaining "route the demo deposit flow through the deposit lock" step.
 
 ## Live artifacts
 
@@ -44,6 +46,9 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 | Type-id'd pool, `pool_id` (type-id) | `0x06865b65f867970c6d89f5e82ed530362f00e5051ea7265556646e7835b63295` (= blake2b of the genesis tx's first input) |
 | Type-id'd pool, anchor type-script hash | `0xf7dfded8046462d788e34c252a2f0ba025e4f2e57fbb9454072b15e07762a55f` (**unique to this pool**, vs the legacy pool's `0xf4c1baf2…`) |
 | Type-id'd genesis enforcement | **verified live**: the genesis tx committed, so the on-chain `anchor_type_id() == args` check passed (the args = blake2b(first input)) |
+| Type-id'd pool, deposit cell (deposit-lock-bound) | `0x91b0bcdf0359b1b5667b79e2b915b70979902e85984168c17b5f4727afda23f1:0` (200 CKB, `data = to_key`, deposit-lock `args` bind it to this pool's type hash `0xf7dfded8…`) |
+| **Type-id'd pool checkpoint (seq 0 → 1)** | `0x332e49ffdbd0d731e66630c88f6374fe1cdccbc65b7ba7134c9e1a023ee66280` (**BN254 Groth16 proof verified on-chain** against the baked vkey `0x00213af5…`; consumes the genesis anchor + the deposit cell, **sweeping it via the deposit-lock sweep path**) |
+| Anchor after type-id'd checkpoint 1 (current) | `0x332e49ffdbd0d731e66630c88f6374fe1cdccbc65b7ba7134c9e1a023ee66280:0` (root `0x00b5dbaf…`, seq 1, total 19,999,900,000, capacity 449.999 CKB, miner fee 100,000 drawn from the proven `fee_withdrawal`) |
 
 ## What's verified on-chain
 
