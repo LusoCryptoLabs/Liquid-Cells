@@ -44,17 +44,22 @@ formality): the buildable path, ranked by leverage. Items marked done were close
 **Correctness (internal, partially substitutes for audit confidence)**
 - [x] Differential-test the verifier vs an independent implementation.
 - [x] Fuzz the STF against an independent shadow ledger.
-- [ ] A clean-room or formal re-derivation of the Groth16 verify equation, and a reproducible-build
-  attestation that the deployed code cell is exactly this source (the `verify-vkey.sh` rebuild path,
-  run in CI on a pinned toolchain).
+- [~] Reproducible-build attestation that the deployed code cell is exactly this source: the
+  `verify-vkey.sh` full-rebuild path has now been **run and reproduces the baked vkey `0x00213af5…`
+  exactly** (which also caught and fixed a real drift — post-Phase-5 journal helpers had leaked into
+  the proven guest ELF; now feature-gated out). Remaining: wire this rebuild into CI on the pinned
+  toolchain so it cannot silently drift again, plus a clean-room/formal re-derivation of the Groth16
+  verify equation.
 
 **Protocol fixes (on-chain)**
 - [x] Deposit lock that removes the third-party theft window (sweep-or-refund).
 - [x] Deploy the deposit lock live (Pudge codeHash `0x0d610c61…3d3574`) and verify it on-chain: a
   deposit cell was created under it, a third-party spend was rejected (`Inputs[0].Lock
   ValidationFailure`), and a refund to the depositor was accepted (see [DEPLOY.md](DEPLOY.md)).
-- [ ] Route the demo/SDK deposit flow through it (the running demo still creates always-success
-  deposit cells; the sweep path needs no sequencer change, only the deposit-creation script).
+- [x] Route a deposit through it end-to-end: a deposit cell created under the deposit lock was
+  **swept by a proven checkpoint** of the type-id'd pool (live on Pudge, tx `0x91b0bcdf…` →
+  `0x332e49ff…`; see the type-id'd-pool row below and [DEPLOY.md](DEPLOY.md)). Folding this into the
+  `crates/demo-ui` happy path (today still an always-success lock) is the remaining ergonomics step.
 - [x] Type-id the anchor so each pool has a unique type hash (contract capability, backward
   compatible): empty args = the legacy baked `POOL_ID`; 32-byte args = a type-id'd pool whose
   identity is enforced at genesis as `blake2b(first input)`. 50 contract tests green.
@@ -67,11 +72,13 @@ formality): the buildable path, ranked by leverage. Items marked done were close
   `sweep_into_a_foreign_pool_rejected` in `crates/ckb-contract-tests/tests/deposit_lock.rs`, 7
   deposit-lock tests). This makes "binding to a type-id'd anchor closes the cross-pool sweep
   caveat" a tested fact rather than prose.
-- [ ] Advance the type-id'd pool with a proved checkpoint and route the deposit lock to its unique
-  type hash (needs the prover configured with `pool_id = type-id` and a ~7-min proof). The contract
-  side is done and now test-covered; what remains is off-chain: point the demo's deposit-cell
-  creation (`crates/demo-ui`, today an always-success lock) at the deposit lock and add its code dep
-  on the sweep input in the operator's checkpoint builder.
+- [x] Advance the type-id'd pool with a proved checkpoint and route the deposit lock to its unique
+  type hash. Done **live on Pudge**: a 200 CKB deposit cell created under the deposit lock bound to
+  the type-id'd pool's unique anchor type hash `0xf7dfded8…` (tx `0x91b0bcdf…:0`), then swept by a
+  checkpoint that advanced that pool **seq 0 → 1** (tx `0x332e49ff…`) whose BN254 Groth16 proof —
+  produced with the sequencer configured for `pool_id = type-id` — **verifies on-chain** against the
+  baked vkey `0x00213af5…`. The deposit's `to_key` is credited inside the proof and the funds fold
+  into the new anchor (root `0x00b5dbaf…`, seq 1). See [DEPLOY.md](DEPLOY.md).
 - [ ] Receiver-side force-claim for HTLC egress: the one documented architectural residual
   (`force_refund` closes the sender side only). See [docs/EGRESS.md](docs/EGRESS.md).
 
@@ -125,9 +132,14 @@ larger batches amortize the fixed proof cost better, so the fee model and the ba
 
 The guest verifying key `0x00213af5…c1e8` binds the on-chain verifier to exactly this STF. It is pinned
 in three places (contract `VKEY_HASH`, `fixtures/vkey.txt`, `prove_one.rs EXPECTED_VKEY`);
-`scripts/verify-vkey.sh` asserts they agree and prints the full-rebuild check. Toolchain pins that must
-match to reproduce the vkey: **rustc 1.96.0**, **sp1-zkvm / sp1-sdk 6.2.3**. Any STF change re-bakes the
-vkey and requires an in-place contract upgrade (the anchor preserves its code hash across upgrades).
+`scripts/verify-vkey.sh` asserts they agree and prints the full-rebuild check. Build inputs that must
+match to reproduce the vkey byte-for-byte: **succinct rustc 1.94.0** (cargo-prove's toolchain, == the
+`ghcr.io/succinctlabs/sp1:v6.2.4` image), **sp1-zkvm / sp1-sdk 6.2.4** (the committed lock), the guest's
+**`journal` feature off** (default — the journal-only codec helpers are gated out so they never enter
+the proven ELF), and the **absolute build path** (`$HOME/liquid-cells`, since SP1 embeds the source path
+in the ELF). The full rebuild has been run and **reproduces `0x00213af5…` exactly**. Any STF change
+re-bakes the vkey and requires an in-place contract upgrade (the anchor preserves its code hash across
+upgrades).
 
 ## Status
 

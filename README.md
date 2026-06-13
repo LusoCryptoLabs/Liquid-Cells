@@ -35,7 +35,9 @@ itself, the same base as any on-chain transaction.
 > verifier (vs the independent substrate-bn implementation, over a fuzzed corpus), an STF fuzzer
 > with an independent shadow ledger, a crash-tolerant sequencer replay journal, a deposit lock that
 > closes the always-success theft window (**deployed and verified live on Pudge**: a third-party
-> spend was rejected on-chain, a refund accepted), and session-key recovery. See **[HARDENING.md](HARDENING.md)**
+> spend was rejected on-chain, a refund accepted, and a deposit bound to a type-id'd pool's unique
+> anchor hash **swept end-to-end by a Groth16-proven checkpoint that advanced that pool seq 0 → 1**),
+> and session-key recovery. See **[HARDENING.md](HARDENING.md)**
 > for the work and the honest, audit-aside roadmap to mainnet.
 
 > **Honest positioning (prior art).** This is a working *implementation*, not a novel protocol.
