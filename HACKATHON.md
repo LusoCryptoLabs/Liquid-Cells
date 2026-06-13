@@ -6,10 +6,12 @@
 > Nothing here is production-ready or safe to use with real assets. Read this entire document and
 > [SECURITY.md](SECURITY.md) before participating.
 
-**Enrollment platform: to be announced.** Participation requires enrolling on a platform that will be
-announced separately; this document is the rules and scope, not the registration. Dates, the prize
-pool, and the exact reward figures will be published with the platform. Until then, treat this as the
-canonical statement of *what we are asking you to break and how findings are judged*.
+**Enrollment is hosted by [Luso Crypto Labs](https://lusocryptolabs.com) on the Liquid Cells
+security-program page on its website** (exact URL published at launch). Participation requires
+enrolling there and agreeing to its terms; this document is the rules and scope, not the
+registration. Dates, the prize pool, and the exact reward figures will be published on that page.
+Until then, treat this as the canonical statement of *what we are asking you to break and how
+findings are judged*.
 
 ---
 
@@ -91,7 +93,7 @@ the reporter.
 
 - **Testnet only.** All testing on Pudge. Never target another participant's cells, real assets, or
   shared infrastructure (RPC/explorers). DoS of public infra is out of scope and prohibited.
-- **Enroll** on the TBA platform and agree to its terms; rewards require enrollment.
+- **Enroll** on the Luso Crypto Labs program page and agree to its terms; rewards require enrollment.
 - **Report privately** per [SECURITY.md](SECURITY.md). Do not disclose publicly before coordinated
   disclosure. Public disclosure of an unfixed in-scope bug forfeits the reward.
 - **Original work**, good-faith research only. No leaking of others' submissions.
@@ -130,6 +132,6 @@ cross-pool sweep of a **type-id'd** pool) **is** in scope and rewardable.
 2. Clone the repo; build and run the existing + red-team test suites (`crates/ckb-contract-tests`,
    `crates/stf`) to learn the harness.
 3. Try to break an invariant in Section 3. Reproduce it as a test or a live Pudge transaction.
-4. **Enroll on the (TBA) platform** and submit privately per [SECURITY.md](SECURITY.md).
+4. **Enroll on the Luso Crypto Labs program page** and submit privately per [SECURITY.md](SECURITY.md).
 
 Honest, in good faith, fully disclosed. Come break it.
