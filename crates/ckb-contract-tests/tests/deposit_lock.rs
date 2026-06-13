@@ -6,6 +6,13 @@
 //! stand-in whose script hash is bound as `pool_type_hash`, so these tests exercise the lock's
 //! own logic (the anchor type script's deposit-crediting is covered by `deposit.rs`). Requires
 //! the contract built: `cargo build --release` in crates/ckb-contract.
+//!
+//! Cross-pool isolation: the sweep path matches the deposit against ONE specific
+//! `pool_type_hash`, so a deposit bound to pool A cannot be swept into a different pool B.
+//! Two type-id'd anchors have distinct type-script hashes by construction (their type-id args
+//! differ), so binding a deposit to a type-id'd anchor isolates it to that exact pool. A second
+//! always-success stand-in with different args models pool B (a distinct hash), exercising that
+//! the lock refuses a foreign-pool checkpoint.
 
 use ckb_testtool::builtin::ALWAYS_SUCCESS;
 use ckb_testtool::ckb_types::core::TransactionView;
@@ -25,6 +32,9 @@ const DEP_CAP: u64 = 100_00000000; // 100 CKB
 enum Spend {
     /// Spent alongside an input carrying the pool anchor type script (a checkpoint).
     SweepWithPoolInput,
+    /// Spent alongside a checkpoint of a DIFFERENT pool (a distinct anchor type hash). Models a
+    /// type-id'd pool B trying to sweep a deposit bound to pool A: the lock must refuse.
+    SweepWithForeignPool,
     /// Spent without any pool input. `since` epoch, and where the (single) output's capacity goes.
     NoPool { since_epoch: u64, refund_to_depositor: bool, refund_cap: u64 },
 }
@@ -39,6 +49,11 @@ fn build(spend: Spend) -> (Context, TransactionView) {
     // Precompute every script up front (avoids overlapping &mut ctx borrows in the builders).
     let depositor_lock = ctx.build_script(&as_op, Bytes::from(b"depositor".to_vec())).unwrap();
     let pool_type = ctx.build_script(&as_op, Bytes::from(b"pool-anchor".to_vec())).unwrap();
+    // A different pool's anchor type script: same code, different args => a distinct type hash,
+    // exactly as two type-id'd anchors differ. A deposit bound to `pool_type` must not be
+    // sweepable into this one.
+    let foreign_pool_type =
+        ctx.build_script(&as_op, Bytes::from(b"foreign-pool-anchor".to_vec())).unwrap();
     let attacker_lock = ctx.build_script(&as_op, Bytes::from(b"attacker".to_vec())).unwrap();
     let pool_lock = ctx.build_script(&as_op, Bytes::from(b"pool-lock".to_vec())).unwrap();
     let sink_lock = ctx.build_script(&as_op, Bytes::from(b"sink".to_vec())).unwrap();
@@ -89,6 +104,30 @@ fn build(spend: Spend) -> (Context, TransactionView) {
                 .witness(WitnessArgs::default().as_bytes().pack())
                 .witness(WitnessArgs::default().as_bytes().pack());
         }
+        Spend::SweepWithForeignPool => {
+            // input[0] = a checkpoint of a DIFFERENT pool (foreign_pool_type, a distinct hash).
+            // The deposit is bound to `pool_type`, so the sweep path must not match.
+            let foreign_cell = ctx.create_cell(
+                CellOutput::new_builder()
+                    .capacity(50_00000000u64.pack())
+                    .lock(pool_lock)
+                    .type_(Some(foreign_pool_type).pack())
+                    .build(),
+                Bytes::new(),
+            );
+            b = b
+                .input(CellInput::new_builder().previous_output(foreign_cell).build())
+                .input(CellInput::new_builder().previous_output(deposit_out).build())
+                .output(
+                    CellOutput::new_builder()
+                        .capacity((DEP_CAP + 50_00000000).pack())
+                        .lock(sink_lock)
+                        .build(),
+                )
+                .output_data(Bytes::new().pack())
+                .witness(WitnessArgs::default().as_bytes().pack())
+                .witness(WitnessArgs::default().as_bytes().pack());
+        }
         Spend::NoPool { since_epoch, refund_to_depositor, refund_cap } => {
             let out_lock = if refund_to_depositor { depositor_lock } else { attacker_lock };
             b = b
@@ -112,6 +151,19 @@ fn build(spend: Spend) -> (Context, TransactionView) {
 fn sweep_into_a_pool_checkpoint_verifies() {
     let (ctx, tx) = build(Spend::SweepWithPoolInput);
     ctx.verify_tx(&tx, MAX_CYCLES).expect("a deposit consumed by a pool checkpoint must unlock");
+}
+
+#[test]
+fn sweep_into_a_foreign_pool_rejected() {
+    // Cross-pool isolation: a deposit bound to pool A's anchor type hash must not be sweepable by
+    // a checkpoint of a different pool B (a distinct type hash, as every type-id'd pool has). This
+    // is what binding a deposit to a type-id'd anchor buys: the sweep credit can only ever land in
+    // the one pool the depositor chose.
+    let (ctx, tx) = build(Spend::SweepWithForeignPool);
+    assert!(
+        ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
+        "a deposit bound to one pool must not be swept into a different pool"
+    );
 }
 
 #[test]

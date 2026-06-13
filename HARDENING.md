@@ -62,8 +62,16 @@ formality): the buildable path, ranked by leverage. Items marked done were close
   genesis'd on Pudge (tx `0x805e6252…`, pool_id `0x06865b65…`, unique anchor type hash
   `0xf7dfded8…`). The genesis type-id enforcement is verified live (the tx committed, so the
   on-chain `anchor_type_id() == args` check passed). See [DEPLOY.md](DEPLOY.md).
+- [x] Prove the cross-pool guarantee at the contract level: a deposit bound to one pool's type
+  hash is refused by a *different* pool's checkpoint (`SweepWithForeignPool` /
+  `sweep_into_a_foreign_pool_rejected` in `crates/ckb-contract-tests/tests/deposit_lock.rs`, 7
+  deposit-lock tests). This makes "binding to a type-id'd anchor closes the cross-pool sweep
+  caveat" a tested fact rather than prose.
 - [ ] Advance the type-id'd pool with a proved checkpoint and route the deposit lock to its unique
-  type hash (needs the prover configured with `pool_id = type-id` and a ~7-min proof).
+  type hash (needs the prover configured with `pool_id = type-id` and a ~7-min proof). The contract
+  side is done and now test-covered; what remains is off-chain: point the demo's deposit-cell
+  creation (`crates/demo-ui`, today an always-success lock) at the deposit lock and add its code dep
+  on the sweep input in the operator's checkpoint builder.
 - [ ] Receiver-side force-claim for HTLC egress: the one documented architectural residual
   (`force_refund` closes the sender side only). See [docs/EGRESS.md](docs/EGRESS.md).
 

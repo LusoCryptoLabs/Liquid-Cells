@@ -15,7 +15,7 @@ itself, the same base as any on-chain transaction.
 
 > Status: **Live on Pudge testnet, pre-alpha.** The deterministic STF, its SP1 proof
 > wrapped to Groth16, and the on-chain anchor type script are implemented and tested
-> end-to-end (36 STF + 46 contract integration tests): proof verification on CKB-VM bound to real
+> end-to-end (36 STF + 51 contract integration tests): proof verification on CKB-VM bound to real
 > deposit/withdrawal cells, value conservation, a proven L1 fee model, **data availability**,
 > a **force-exit escape hatch**, **in-pool HTLCs** for atomic-swap dust egress, and an
 > on-chain **force-refund** hatch that lets a swap's sender unilaterally reclaim a timed-out

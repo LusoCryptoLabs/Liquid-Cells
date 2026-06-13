@@ -8,6 +8,34 @@ decided, what is next.
 
 ---
 
+## 2026-06-13, deposit lock: cross-pool isolation now test-proven
+
+The deposit lock's sweep path matches a deposit against ONE `pool_type_hash`, and the source has
+long claimed that binding a deposit to a *type-id'd* anchor closes the cross-pool sweep caveat
+(`crates/ckb-contract/src/deposit_lock.rs`). That was prose, not a test: the suite covered the
+matching-pool sweep, refund, and third-party-theft cases, but never the negative that a deposit
+bound to pool A is refused by a *different* pool B's checkpoint.
+
+**What landed.** A `SweepWithForeignPool` case in `crates/ckb-contract-tests/tests/deposit_lock.rs`:
+a second always-success stand-in with different args (a distinct type hash, exactly as two
+type-id'd anchors differ) stands in for pool B; a deposit bound to pool A's hash is spent alongside
+B's checkpoint and the lock rejects it. The arm is identical to the passing `SweepWithPoolInput`
+except for the input's type hash, so the rejection is attributable solely to the cross-pool
+mismatch. `sweep_into_a_foreign_pool_rejected` asserts the failure. Contract integration suite now
+51 (was 50), 7 deposit-lock (was 6); full STF/sequencer/client/demo-ui suites unchanged and green.
+
+**Environment note.** This session ran in a fresh cloud container: Rust + the RISC-V target build
+the contract and run the full ckb-testtool suite, but SP1 (`cargo-prove`) is not installed and the
+live submit driver (`lc-demo-checkpoint.mjs`) lives outside the repo on the operator machine. So no
+proof could be generated and no Pudge tx was sent from here; this change is contract-test-only.
+
+**Open (operator machine, unchanged scope).** The HARDENING line-65 item still stands: wire the
+demo's deposit-cell creation (`crates/demo-ui/src/index.html` + `main.rs:511`, today an
+always-success lock) to the sweep-or-refund deposit lock bound to the pool's type hash, update the
+operator's checkpoint builder to add the deposit-lock code dep on the sweep input, and prove one
+checkpoint on the type-id'd pool. The contract capability and now its cross-pool guarantee are in
+place and tested; what remains is off-chain wiring + a live proved checkpoint.
+
 ## 2026-06-12, Phase 6b: sequencer reward + anti-griefing + sharding
 
 The three pieces that make permissionless operation self-sustaining, efficient, and scalable.
