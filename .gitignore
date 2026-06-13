@@ -22,3 +22,6 @@ elf/
 fixtures/demo/cp*/
 fixtures/demo/state.json
 fixtures/demo/*.log
+
+# Claude Code local state (agent worktrees, session data) — not project code
+.claude/
