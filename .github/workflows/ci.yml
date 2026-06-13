@@ -1,0 +1,55 @@
+name: CI
+
+# Cheap-tier CI: proves the three vkey pin sites agree, and runs the full test +
+# adversarial red-team suites (STF / sequencer + the anchor contract in CKB-VM) on
+# every push and PR. Deliberately does NOT do the heavy guest-ELF rebuild (which needs
+# the sideloaded succinct toolchain + a pinned build path); that is a pre-mainnet add.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vkey-pins:
+    name: vkey pin agreement
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert contract VKEY_HASH == fixtures/vkey.txt == prove_one EXPECTED_VKEY
+        run: bash scripts/verify-vkey.sh
+
+  stf-sequencer-tests:
+    name: STF + sequencer tests (incl. red-team)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test stf + sequencer (journal feature on via sequencer)
+        run: cargo test -p liquid-cells-stf -p liquid-cells-sequencer
+
+  contract-tests:
+    name: Anchor contract + red-team suite (CKB-VM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: riscv64imac-unknown-none-elf
+      - uses: Swatinem/rust-cache@v2
+      - name: Install riscv build deps
+        run: sudo apt-get update && sudo apt-get install -y clang lld
+      - name: Build the anchor contract (riscv64imac-unknown-none-elf)
+        working-directory: crates/ckb-contract
+        run: cargo build --release
+      - name: Run the contract + redteam_*.rs suites through CKB-VM
+        working-directory: crates/ckb-contract-tests
+        run: cargo test
