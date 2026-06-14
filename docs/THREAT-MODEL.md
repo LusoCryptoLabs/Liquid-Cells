@@ -125,7 +125,7 @@ message + the leaf nonce (which blocks replay of a mutated copy), and the signat
 committed to any on-chain fact (the DA blob is `key‖balance‖nonce`; public values carry no
 signature). Found by the internal red-team. The fix (reject high-S outright) changes the STF
 and therefore re-bakes the guest vkey, so it is **deferred to the next coordinated contract
-upgrade** rather than hot-fixed; disclosed here and in the hackathon scope.
+upgrade** rather than hot-fixed; disclosed here.
 
 ## Adversarial red-team (internal)
 

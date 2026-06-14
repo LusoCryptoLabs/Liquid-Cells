@@ -129,8 +129,7 @@ nonce 1) — from L1 data alone, no sequencer. Regression test in `crates/client
 **Why:** the entire "trustless" claim is "any user can rebuild their leaf from L1 alone and exit
 without the operator." `stf::reconstruct()` (`crates/stf/src/da.rs`) and the force-exit witness
 builder exist, but only as library code called from tests — `crates/client/src/bin/` is empty. No
-real user can exercise the hatch today. This turns a paper guarantee into a runnable tool (and a
-hackathon-credibility artifact).
+real user can exercise the hatch today. This turns a paper guarantee into a runnable tool.
 
 **Deliverable:** a binary, e.g. `crates/client/src/bin/lc-exit.rs`, usage roughly
 `lc-exit --rpc <url> --pool-type-hash <0x..> --my-key <secret-or-pubkey>`.

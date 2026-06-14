@@ -102,12 +102,11 @@ formality): the buildable path, ranked by leverage. Items marked done were close
   `crates/ckb-contract/src/upgrade_lock.rs` (announce → `delay`-epoch user-exit window → execute, 6
   tests; [docs/UPGRADE-TIMELOCK.md](docs/UPGRADE-TIMELOCK.md)). Remaining: a governance multisig as the
   gov lock, and the live migration (redeploy the code cell under it) — both deliberately mainnet-last.
-- [~] Bug bounty / break-it hackathon. An internal adversarial red-team ran first (55 in-VM attack
-  cases, no break found; permanent regression suite + findings in
-  [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md)). The public program — rules, full trust-assumption
-  disclosure, scope, severity rubric — is drafted in [HACKATHON.md](HACKATHON.md) with private
-  disclosure in [SECURITY.md](SECURITY.md), hosted by Luso Crypto Labs; reward figures, dates, and a
-  capped, gradual rollout that raises limits as confidence builds remain to be set at launch.
+- [~] Adversarial review + coordinated disclosure. An internal adversarial red-team ran (56 cases,
+  no break found; permanent regression suite + findings in
+  [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md)). Suspected vulnerabilities go through private,
+  coordinated disclosure ([SECURITY.md](SECURITY.md)). An external audit is the next gate before any
+  real-value use. (A public adversarial-testing program is not currently planned.)
 
 ## Deposit-lock deploy procedure (done on Pudge)
 

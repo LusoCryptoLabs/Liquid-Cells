@@ -38,12 +38,10 @@ sooner. Credit is given unless you prefer to remain anonymous.
 - Anything requiring compromise of a user's keys, social engineering, or off-protocol systems.
 - Known issues already documented in [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) and
   [HARDENING.md](HARDENING.md) (e.g. ECDSA high-S txid malleability, legacy empty-args pool
-  non-isolation) — these will not be eligible for a bounty.
+  non-isolation) — these are out of scope.
 
 ## Safe harbor
 
 Testing must use **testnet only**, must not target other people's cells or funds, and must not
 degrade shared infrastructure. Good-faith research conducted within this scope and the safe-harbor
-terms above will not be pursued. When a public hackathon / bug-bounty program opens, its rules
-(eligibility, severity rubric, rewards, and the enrollment platform) take precedence; see
-[HACKATHON.md](HACKATHON.md).
+terms above will not be pursued.

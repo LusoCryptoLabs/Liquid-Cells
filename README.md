@@ -40,13 +40,12 @@ itself, the same base as any on-chain transaction.
 > and session-key recovery. See **[HARDENING.md](HARDENING.md)**
 > for the work and the honest, audit-aside roadmap to mainnet.
 
-> **Security program.** Before opening to the community an internal adversarial red-team ran **56
+> **Security.** An internal adversarial red-team ran **56
 > adversarial cases** (in CKB-VM + the STF in-process) across accounting, escape hatches, the deposit lock, and the STF — no
 > exploitable break found; they live as permanent regression tests (`redteam_*.rs`), with findings
-> in **[docs/THREAT-MODEL.md](docs/THREAT-MODEL.md)**. The protocol is now **open to break**: see
-> **[HACKATHON.md](HACKATHON.md)** for the bug-bounty rules, full trust-assumption disclosure
-> (including the single upgrade key), and scope, and **[SECURITY.md](SECURITY.md)** for private
-> disclosure. Testnet-only, unaudited — come try to break it.
+> in **[docs/THREAT-MODEL.md](docs/THREAT-MODEL.md)**. Suspected vulnerabilities go through **private,
+> coordinated disclosure** — see **[SECURITY.md](SECURITY.md)**. Testnet-only and unaudited; an
+> external audit is the next step before any real-value use.
 
 > **Honest positioning (prior art).** This is a working *implementation*, not a novel protocol.
 > Nearly every ingredient has prior art, much of it on CKB: sec-bit's **Clover** (a zkRollup on the
@@ -195,7 +194,6 @@ liquid-cells/
     FEES.md              # per-intent fee floor: live sequencer policy + staged in-proof version
     EGRESS.md FORCE-EXIT.md DA.md ...
   DEPLOY.md              # every live Pudge hash
-  HACKATHON.md           # break-it hackathon + bug bounty (rules, scope, disclosure)
   SECURITY.md            # responsible-disclosure policy
   ROADMAP.md             # cost/time/scale improvement plan + foundation-critical next work
   DEVELOPMENT.md         # running dev log
