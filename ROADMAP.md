@@ -48,8 +48,10 @@ already done. **Detailed scope below.**
 - ✅ **Deposit confirmation-depth gate (M4)** — **done**: `PendingDeposits` (`crates/sequencer/src/pending.rs`)
   gates a deposit until it is `depth` blocks deep and prunes reorg-orphaned deposits before they seal;
   chain-agnostic (operator feeds heights), no contract change. Closed the docs-vs-code gap.
-- **DA snapshotting** — bound reconstruction to O(snapshot+tail), not O(all history), so exit stays
-  cheap as the pool ages.
+- ✅ **DA snapshotting** — **done** (advisory, no contract/vkey change): `Sequencer::snapshot_blob`
+  dumps the full state as one DA blob; client `reconstruct_from_snapshot(snapshot, trusted_root, tail)`
+  restores in O(snapshot+tail), rejecting any snapshot that doesn't reconstruct to the on-chain root
+  (full-history replay stays the source of truth). Keeps force-exit recovery cheap as the pool ages.
 - **Timelocked upgrade (user exit-window on upgrade)** — cap the single-key blast radius *now*,
   regardless of who holds it, ahead of the eventual governance multisig.
 

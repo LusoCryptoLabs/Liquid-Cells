@@ -104,6 +104,22 @@ pub fn reconstruct_tree(blobs: &[Vec<u8>]) -> Option<Smt> {
     reconstruct(blobs)
 }
 
+/// Restore the tree from a full-state **snapshot** blob plus the DA blobs of the checkpoints *after*
+/// it (`tail`, oldest-first) — the O(snapshot+tail) recovery path. `snapshot_root` is the on-chain
+/// anchor root at the snapshot's seq (your trusted reference); the snapshot is rejected (`None`) if
+/// it does not reconstruct to exactly that root, so a malicious snapshot that omits or forges a leaf
+/// cannot be used. Folding the tail then advances to the current state. Equivalent to a full-history
+/// `reconstruct`, but bounded by the tail length, not all checkpoints since genesis.
+pub fn reconstruct_from_snapshot(snapshot: &[u8], snapshot_root: &Hash, tail: &[Vec<u8>]) -> Option<Smt> {
+    if reconstruct(&[snapshot.to_vec()])?.root() != *snapshot_root {
+        return None;
+    }
+    let mut blobs = Vec::with_capacity(1 + tail.len());
+    blobs.push(snapshot.to_vec());
+    blobs.extend_from_slice(tail);
+    reconstruct(&blobs)
+}
+
 /// Build a claim for a pending HTLC by revealing its preimage. Unsigned, knowledge of the
 /// preimage is the authority, and the receiver is fixed by the escrow's `htlc_id`. Anyone can
 /// build it, so it is a free function, not an [`Account`] method.

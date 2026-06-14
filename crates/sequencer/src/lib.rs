@@ -219,6 +219,24 @@ impl Sequencer {
     pub fn fee_acc(&self) -> u128 {
         self.state.pool.fee_acc
     }
+    /// A full-state **DA snapshot** at the current seq: every non-empty leaf encoded in the DA blob
+    /// format. A client can restore from this single blob + the checkpoints *after* it, instead of
+    /// replaying the whole DA history (so force-exit reconstruction stays O(snapshot + tail) as the
+    /// pool ages). It carries no new trust: a client checks `reconstruct([snapshot]).root()` equals
+    /// the on-chain anchor root at this seq (`self.root()`), and full-history replay remains the
+    /// source of truth — a snapshot that omits/forges a leaf simply fails that root check.
+    pub fn snapshot_blob(&self) -> Vec<u8> {
+        let mut leaves: Vec<(Hash, liquid_cells_stf::Leaf)> = self
+            .state
+            .leaves
+            .iter()
+            .filter(|(_, l)| !l.is_empty())
+            .map(|(k, l)| (*k, *l))
+            .collect();
+        leaves.sort_by(|a, b| a.0.cmp(&b.0));
+        liquid_cells_stf::encode_da_blob(&leaves)
+    }
+
     pub fn last_epoch(&self) -> u64 {
         self.last_epoch
     }
