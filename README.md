@@ -26,7 +26,7 @@ itself, the same base as any on-chain transaction.
 > The on-chain verifier uses **ark-bn254**: a plain 4-pairing Groth16 check measured at **~80M
 > cycles (~2.3% of CKB's ~3.50B block limit)**, with the same SP1 proofs verifying and the
 > contract suite green. (It previously used `substrate-bn` and needed a 3-pairing `e(alpha,beta)`
-> precompute just to fit at ~3.47B = 99.3%; the port to `ark-bn254` cut that ~65x and removed the
+> precompute just to fit at ~3.47B = 99.3%; the port to `ark-bn254` cut that ~43x and removed the
 > hack, see [docs/PRIOR-ART.md](docs/PRIOR-ART.md).) What remains to be a usable system (not more
 > cryptography): a client SDK, the L1/Fiber swap leg, throughput (Phase 6), and, before any real
 > value, an external audit. Testnet only, unaudited.

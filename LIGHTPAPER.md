@@ -61,10 +61,10 @@ chain.** The complete trust-minimization design is built, tested, and deployed:
 - The deterministic state machine, its **SP1 zero-knowledge proof** wrapped to Groth16, and the
   **on-chain verifier** all exist and pass end-to-end. The CKB anchor type script verifies a
   real BN254 pairing proof **inside CKB-VM on the live Pudge testnet**, not in a simulator.
-  The on-chain verifier uses **ark-bn254** (a plain 4-pairing Groth16 check) at **~53M cycles,
-  ~1.5% of CKB's ~3.50B block limit**, with the same proofs verifying and all 40 contract tests
+  The on-chain verifier uses **ark-bn254** (a plain 4-pairing Groth16 check) at **~80M cycles,
+  ~2.3% of CKB's ~3.50B block limit**, with the same proofs verifying and all 40 contract tests
   green. (An earlier `substrate-bn` verifier needed a 3-pairing `e(alpha,beta)` precompute just to
-  fit at ~3.47B; the ark port cut that ~65x.) We make **no strong novelty claim**, on-chain Groth16
+  fit at ~3.47B; the ark port cut that ~43x.) We make **no strong novelty claim**, on-chain Groth16
   on CKB is well-precedented (sec-bit's ckb-zkp), an SP1-verifier-for-ckb-vm effort is active, and
   sec-bit's Clover is a zkRollup on the same cell model. See
   [docs/PRIOR-ART.md](docs/PRIOR-ART.md) for the honest side-by-side positioning.
