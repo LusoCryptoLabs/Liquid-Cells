@@ -523,6 +523,7 @@ version = "0.0.0"
 dependencies = [
  "blake2b-ref",
  "hex",
+ "liquid-cells-sequencer",
  "liquid-cells-stf",
  "native-tls",
  "serde_json",

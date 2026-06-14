@@ -175,6 +175,28 @@ impl Account {
         Transfer { from_pubkey: self.pubkey, to_key, amount, fee, nonce, expiry, sig }
     }
 
+    /// Split a single gross tip into two signed transfers — `platform_bps`/10000 of it to
+    /// `platform_key`, the remainder to `author_key` — for a creator-tipping platform that takes a
+    /// cut (the scryve flow). Conservation is exact: the platform cut is `floor(gross·bps/10000)`
+    /// and the author gets `gross − cut`, so `author + platform == gross`. The two transfers carry
+    /// consecutive nonces and are sealed in the same checkpoint; submit both. (For a protocol fee
+    /// drawn into `fee_acc`, pass a non-zero per-transfer `fee` via [`transfer`] instead.)
+    pub fn split_tip(
+        &mut self,
+        author_key: Hash,
+        platform_key: Hash,
+        gross: u128,
+        platform_bps: u16,
+        expiry: u64,
+    ) -> [Transfer; 2] {
+        let platform_cut = gross / 10_000 * platform_bps as u128
+            + (gross % 10_000) * platform_bps as u128 / 10_000;
+        let author_amount = gross - platform_cut;
+        let to_author = self.transfer(author_key, author_amount, 0, expiry);
+        let to_platform = self.transfer(platform_key, platform_cut, 0, expiry);
+        [to_author, to_platform]
+    }
+
     /// Build and sign a withdrawal of `amount` to the on-chain `target_lock_hash`, valid through
     /// `expiry`. Uses the current nonce, then advances it.
     pub fn withdraw(&mut self, target_lock_hash: Hash, amount: u128, expiry: u64) -> Withdrawal {

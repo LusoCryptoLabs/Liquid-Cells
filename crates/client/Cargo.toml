@@ -34,3 +34,4 @@ required-features = ["cli"]
 
 [dev-dependencies]
 hex = "0.4"
+liquid-cells-sequencer = { path = "../sequencer" }
