@@ -17,6 +17,10 @@ path = "src/main.rs"
 name = "liquid-cells-deposit-lock"
 path = "src/deposit_lock.rs"
 
+[[bin]]
+name = "liquid-cells-upgrade-lock"
+path = "src/upgrade_lock.rs"
+
 [dependencies]
 ckb-std = "0.16"
 # The SP1 Groth16 (BN254) verifier lives in its own no_std crate so the deployed contract and the

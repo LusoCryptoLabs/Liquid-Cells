@@ -52,8 +52,11 @@ already done. **Detailed scope below.**
   dumps the full state as one DA blob; client `reconstruct_from_snapshot(snapshot, trusted_root, tail)`
   restores in O(snapshot+tail), rejecting any snapshot that doesn't reconstruct to the on-chain root
   (full-history replay stays the source of truth). Keeps force-exit recovery cheap as the pool ages.
-- **Timelocked upgrade (user exit-window on upgrade)** — cap the single-key blast radius *now*,
-  regardless of who holds it, ahead of the eventual governance multisig.
+- ✅ **Timelocked upgrade lock** — **built + tested** (`crates/ckb-contract/src/upgrade_lock.rs`, 6
+  ckb-testtool cases): an upgrade needs a governance-locked **announcement** committing to the new
+  code's data hash, matured a fixed `delay` (relative-epoch since, un-backdatable) — a guaranteed
+  user force-exit window, *no instant malicious upgrade*. See [docs/UPGRADE-TIMELOCK.md](docs/UPGRADE-TIMELOCK.md).
+  Adopting it is an operator-authorized redeploy of the code cell's lock (kept out of scope here).
 
 ## Tier C — coordinated "v2" upgrade bundle (each re-bakes the vkey → ship together, audit once)
 - **SMT depth-256 → shallow/extension-node tree** — biggest single cost win, ~30–50% total proving

@@ -96,8 +96,11 @@ formality): the buildable path, ranked by leverage. Items marked done were close
   HTLC leg exists; the L1/Fiber leg and LPs do not).
 
 **Launch**
-- [ ] Upgrade-key lockdown (governance multisig + timelock), done last, it is irreversible and blocks
-  further iteration, so it is a mainnet step, not a testnet one.
+- [~] Upgrade-key lockdown (governance multisig + timelock), done last, it is irreversible and blocks
+  further iteration, so it is a mainnet step, not a testnet one. The **timelock half is now built**:
+  `crates/ckb-contract/src/upgrade_lock.rs` (announce → `delay`-epoch user-exit window → execute, 6
+  tests; [docs/UPGRADE-TIMELOCK.md](docs/UPGRADE-TIMELOCK.md)). Remaining: a governance multisig as the
+  gov lock, and the live migration (redeploy the code cell under it) — both deliberately mainnet-last.
 - [~] Bug bounty / break-it hackathon. An internal adversarial red-team ran first (55 in-VM attack
   cases, no break found; permanent regression suite + findings in
   [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md)). The public program — rules, full trust-assumption
