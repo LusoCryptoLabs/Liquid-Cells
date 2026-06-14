@@ -27,13 +27,11 @@ contract upgrade is paid per coordinated release, so STF-changing items are bund
 ---
 
 ## Tier A — cheap wins now (S effort, no vkey re-bake)
-- **Strip `.eh_frame`** from the anchor + deposit-lock binaries → ~13.6K CKB freed. *preserved* (re-run the verifier differential test on the candidate binary before deploy).
+- **Strip `.eh_frame`** (~11 KB / ~11K CKB off the code cell). *Investigated:* `-C force-unwind-tables=no` is a no-op (LLVM emits the CFI regardless) and post-link `objcopy --remove-section` only drops the 72-byte header (the bytes sit in a `PT_LOAD` segment). The real method is a **linker-script `/DISCARD/` of `.eh_frame`** at link time; deferred to the next code-cell redeploy (re-run the verifier differential test on the candidate binary). *preserved.*
 - **Adaptive cadence + break-even batch policy** in the sequencer seal loop. *preserved.*
 - **Instant soft-confirmation receipts** (sequencer signs "accepted" immediately; finality at
   checkpoint cadence) → sub-second perceived latency. *preserved — must be framed liveness-not-finality.*
-- **Sort mempool intents by per-account nonce before sealing.** Today intents seal in raw insertion
-  order; the STF aborts the whole batch on a nonce gap, so one mis-ordered intent poisons a whole
-  checkpoint (a liveness/grief footgun). *preserved (robustness).*
+- **Mempool ordering footgun.** *Investigated:* a naive "sort by nonce" is **unsafe** — cross-account funding dependencies mean reordering can move a sender's later-nonce transfer ahead of the transfer that funds it, breaking a valid batch. The existing atomic `seal_batch` already prevents state corruption (a bad batch leaves state+mempool intact to drop the offending intent and retry). A safe fix is a *resilient seal* that pre-validates and drops/defers only the offending intent — more involved than a sort; left as a deliberate, documented choice. *preserved.*
 - **Hybrid fee schedule `max(MIN_FEE_PER_LEAF, p%·amount)` + platform-sponsored fees** in the SDK →
   makes sub-cent tips viable. *preserved (client/policy only).*
 - ~~Fix the stale DEPLOY.md 293K/3.47B figures~~ — **done.**
