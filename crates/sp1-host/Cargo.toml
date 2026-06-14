@@ -22,6 +22,12 @@ path = "src/bin/sequence.rs"
 name = "prove_one"
 path = "src/bin/prove_one.rs"
 
+# Proving-cost benchmark: measure cycles (and, in `groth16` mode, prove wall-time + peak
+# RSS) across batch sizes, so an operator can size CPU/RAM for their checkpoint cadence.
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"
+
 [dependencies]
 # native-gnark => local Groth16 wrapping via the gnark Go FFI (no Docker required).
 sp1-sdk = { version = "6.2.3", features = ["blocking", "native-gnark"] }
