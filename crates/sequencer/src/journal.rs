@@ -19,10 +19,13 @@
 //! * A seal is applied first (it can fail with [`StfError`], in which case nothing is
 //!   journaled) and the `Seal` marker is written on success. A crash after the apply
 //!   but before the marker leaves the recovered state one checkpoint behind the
-//!   in-memory one; that gap is reconciled against L1 on startup, because the *consensus*
-//!   source of truth for a committed checkpoint is its on-chain anchor, not this local
-//!   log. The journal's job is to preserve the unsealed mempool and avoid re-deriving
-//!   committed checkpoints from L1 DA, not to be the ledger of record.
+//!   in-memory one. [`DurableSequencer::recover`] replays this **local** log to restore the
+//!   unsealed mempool and the last locally-sealed state; it does *not* itself talk to L1.
+//!   Reconciling against the chain — the crash-gap above, or a deposit/checkpoint reorg — is the
+//!   operator's job and uses the *consensus* source of truth (the on-chain anchor + L1 DA) via
+//!   [`Sequencer::resume`], since this local log is a mempool-durability aid, **not** the ledger
+//!   of record. (Deposit-reorg specifically is gated before it can seal by
+//!   [`crate::PendingDeposits`].)
 //!
 //! A torn trailing frame (process killed mid-write) is detected and ignored on read.
 

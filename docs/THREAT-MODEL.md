@@ -71,9 +71,14 @@ Fees are explicit integer shannons (no implicit percentages in v1), and `fee_acc
 inside the conservation invariant (`Σ balances + fee_acc == total`), so a fee bug
 cannot mint value, it fails the conservation check. Tested.
 
-### M4, Deposit reorg → phantom balance · 🟡 scheduled
-Deposits will only be folded into a batch after a conservative confirmation depth.
-Enforced by the sequencer + checkpoint logic in Phase 2.
+### M4, Deposit reorg → phantom balance · ✅ addressed
+Deposits are folded into a batch only after a conservative confirmation depth.
+`PendingDeposits` (`crates/sequencer/src/pending.rs`) gates a deposit until it is `depth` blocks
+deep before it may be sealed, and `prune_above` drops deposits orphaned by a reorg before they ever
+seal — so a short reorg that removes a deposit (and any checkpoint sweeping it) cannot leave the
+sequencer crediting a deposit absent from the canonical chain. Chain-agnostic (the operator's L1
+watcher supplies heights + tip; no RPC in the crate); a reorg deeper than `depth` (far beyond CKB's
+practical finality) falls back to the heavier resume-from-L1-DA path (`Sequencer::resume`).
 
 ### M5, Challenge window needs `since` + dispute lock · ✅ simplified away
 No challenge window for validity. The escape-hatch timeout uses epoch-based `since`;

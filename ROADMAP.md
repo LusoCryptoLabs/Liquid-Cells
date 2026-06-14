@@ -47,7 +47,9 @@ already done. **Detailed scope below.**
 - ✅ **Anchor minimum-capacity floor / tail-drain** — **investigated; not an exploitable bug**, now
   documented + tested (B2 below). The implicit invariant (genesis forces `total=0`; every op
   preserves `slack = capacity − total`; so `capacity ≥ slack ≥ occupied` always) prevents stranding.
-- **Deposit confirmation-depth gate (M4)** — the threat model says this is done; it is not built.
+- ✅ **Deposit confirmation-depth gate (M4)** — **done**: `PendingDeposits` (`crates/sequencer/src/pending.rs`)
+  gates a deposit until it is `depth` blocks deep and prunes reorg-orphaned deposits before they seal;
+  chain-agnostic (operator feeds heights), no contract change. Closed the docs-vs-code gap.
 - **DA snapshotting** — bound reconstruction to O(snapshot+tail), not O(all history), so exit stays
   cheap as the pool ages.
 - **Timelocked upgrade (user exit-window on upgrade)** — cap the single-key blast radius *now*,

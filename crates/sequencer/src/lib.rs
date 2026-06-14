@@ -38,6 +38,8 @@ pub use sharded::{shard_pool_id, ShardedSequencer};
 pub mod coordinator;
 
 pub mod journal;
+pub mod pending;
+pub use pending::{DepositId, PendingDeposits};
 pub use journal::{
     DurableSequencer, FileJournal, IntentRecord, Journal, JournalRecord, MemJournal, SealError,
 };
