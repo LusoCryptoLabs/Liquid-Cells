@@ -191,6 +191,7 @@ liquid-cells/
   DEPLOY.md              # every live Pudge hash
   HACKATHON.md           # break-it hackathon + bug bounty (rules, scope, disclosure)
   SECURITY.md            # responsible-disclosure policy
+  ROADMAP.md             # cost/time/scale improvement plan + foundation-critical next work
   DEVELOPMENT.md         # running dev log
 ```
 

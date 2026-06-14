@@ -150,7 +150,10 @@ A second pool was created with an **always-success anchor lock**, so the anchor 
 - Deployed with `offckb deploy --type-id` (upgradable; the upgrade kept the same `codeHash` by
   consuming the old code cell and recreating it). The anchor type script takes empty args;
   `pool_id`/`chain_id`/vkey are baked.
-- The code cell locks ~293K CKB (the BN254-verifier binary, now with force-refund + lock
-  continuity; 1 data byte = 1 CKB), the unavoidable cost of a large zk-verifier on CKB's
-  capacity model.
+- The code cell locks **~117K CKB** (the ~117 KB ark-bn254 verifier binary, with force-refund +
+  lock continuity; 1 data byte = 1 CKB) — down from ~293K before the ark-bn254 verifier shrink
+  (binary 293 KB → ~112 KB, verify 3.47B → ~80M cycles; see the ark-bn254 upgrade row above). This
+  capacity is **locked (recoverable when the cell is consumed), shared by every pool via one
+  `cell_dep`, and paid once** — genesis-ing a new pool adds no binary capacity, only its 80-byte
+  anchor + lock.
 - Deployer: a fresh, dedicated testnet key (address `ckt1qzda0cr…wyjs05`).
