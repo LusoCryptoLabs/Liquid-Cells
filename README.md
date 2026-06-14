@@ -1,6 +1,6 @@
 # Liquid Cells
 
-**A fully trustless, pooled multi-recipient payment rollup for Nervos CKB.**
+**An operator-trustless, pooled micro-payment rollup for Nervos CKB.**
 
 > New here? The **[lightpaper](LIGHTPAPER.md)** is the 5-minute overview (problem, trust
 > model, status, roadmap). This README is the developer entry point.

@@ -1,6 +1,6 @@
 # Liquid Cells, Lightpaper
 
-**A fully trustless, pooled micro-payment rollup for Nervos CKB.**
+**An operator-trustless, pooled micro-payment rollup for Nervos CKB.**
 
 > **Status (read first):** the protocol's trust design is **complete, tested, and live on the
 > CKB Pudge testnet**: the anchor type script verifies real SP1 Groth16 proofs inside CKB-VM on
