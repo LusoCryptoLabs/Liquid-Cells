@@ -31,7 +31,8 @@ fn fan_tips_author_with_platform_split_reconstructable_from_l1() {
     // 2. Fan tips a gross amount; 10% (1000 bps) to the platform, the rest to the author.
     const GROSS: u128 = 5_000_000_000; // 50 CKB tip
     const BPS: u16 = 1000;
-    let [to_author, to_platform] = fan.split_tip(author.key(), platform.key(), GROSS, BPS, 1_000_000);
+    // split_payment is the generic fee-split; here the cut recipient is the platform.
+    let [to_author, to_platform] = fan.split_payment(author.key(), platform.key(), GROSS, BPS, 1_000_000);
     // conservation at the SDK level:
     assert_eq!(to_author.amount + to_platform.amount, GROSS);
     assert_eq!(to_platform.amount, GROSS * BPS as u128 / 10_000);

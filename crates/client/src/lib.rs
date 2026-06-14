@@ -191,12 +191,36 @@ impl Account {
         Transfer { from_pubkey: self.pubkey, to_key, amount, fee, nonce, expiry, sig }
     }
 
-    /// Split a single gross tip into two signed transfers — `platform_bps`/10000 of it to
-    /// `platform_key`, the remainder to `author_key` — for a creator-tipping platform that takes a
-    /// cut (the scryve flow). Conservation is exact: the platform cut is `floor(gross·bps/10000)`
-    /// and the author gets `gross − cut`, so `author + platform == gross`. The two transfers carry
-    /// consecutive nonces and are sealed in the same checkpoint; submit both. (For a protocol fee
-    /// drawn into `fee_acc`, pass a non-zero per-transfer `fee` via [`transfer`] instead.)
+    /// Split one gross payment into two signed transfers — `cut_bps`/10000 of it to
+    /// `cut_recipient_key`, the remainder to `recipient_key` — a generic "pay X, route a basis-point
+    /// cut to Y" recipe. Conservation is exact: the cut is `floor(gross·bps/10000)` and the main
+    /// recipient gets `gross − cut`, so `recipient + cut == gross`. The two transfers carry
+    /// consecutive nonces and are meant to be sealed in the same checkpoint; submit both.
+    ///
+    /// This is pure client-side composition (two ordinary [`transfer`]s) — the protocol has no
+    /// notion of "platform", "author", or a cut. It serves any fee-split use case: creator tipping
+    /// (author + platform), marketplace (seller + marketplace), affiliate/referral, treasury rake,
+    /// etc. (For a protocol fee that accrues to the pool's `fee_acc` instead of a recipient, pass a
+    /// non-zero per-transfer `fee` via [`transfer`].)
+    pub fn split_payment(
+        &mut self,
+        recipient_key: Hash,
+        cut_recipient_key: Hash,
+        gross: u128,
+        cut_bps: u16,
+        expiry: u64,
+    ) -> [Transfer; 2] {
+        let cut = gross / 10_000 * cut_bps as u128 + (gross % 10_000) * cut_bps as u128 / 10_000;
+        let recipient_amount = gross - cut;
+        let to_recipient = self.transfer(recipient_key, recipient_amount, 0, expiry);
+        let to_cut = self.transfer(cut_recipient_key, cut, 0, expiry);
+        [to_recipient, to_cut]
+    }
+
+    /// Deprecated tipping-flavored alias for [`split_payment`]. `author_key`→`recipient_key`,
+    /// `platform_key`→`cut_recipient_key`, `platform_bps`→`cut_bps`. Kept for the tipping
+    /// integration; new code should use the generic [`split_payment`].
+    #[deprecated(note = "use `split_payment` — the mechanism is a generic fee-split, not tipping-specific")]
     pub fn split_tip(
         &mut self,
         author_key: Hash,
@@ -205,12 +229,7 @@ impl Account {
         platform_bps: u16,
         expiry: u64,
     ) -> [Transfer; 2] {
-        let platform_cut = gross / 10_000 * platform_bps as u128
-            + (gross % 10_000) * platform_bps as u128 / 10_000;
-        let author_amount = gross - platform_cut;
-        let to_author = self.transfer(author_key, author_amount, 0, expiry);
-        let to_platform = self.transfer(platform_key, platform_cut, 0, expiry);
-        [to_author, to_platform]
+        self.split_payment(author_key, platform_key, gross, platform_bps, expiry)
     }
 
     /// Build and sign a withdrawal of `amount` to the on-chain `target_lock_hash`, valid through

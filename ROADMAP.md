@@ -80,6 +80,13 @@ already done. **Detailed scope below.**
   enforces the identical floor operationally today — see [docs/FEES.md](docs/FEES.md). *preserved.*
 - **`ecrecover` instead of `verify`** — modest cycle save, and drops the 33-byte pubkey from the
   witness. *preserved (equivalent authority check).*
+- **(candidate, evaluate — not committed) atomic multi-output transfer** — one signed intent →
+  N recipients with conservation (`Transfer { from, outputs: [(to,amt)…], fee }`). The one *general*
+  primitive the generality assessment flagged as broadly unlocking (payroll, fee-split, marketplace
+  fan-out, DAO payouts) in a single atomic op. Today these compose from multiple independent
+  transfers + `seal_resilient`, which covers most needs, so this is **deferred, optional** — add only
+  if real demand shows the per-leg atomicity matters, and only here (it re-bakes the vkey). Resist
+  building it speculatively; the five-op core stays minimal until a use case forces it.
 - **DA-blob varint compression** (balance 16B→~8B, nonce) — ~30–40% off the per-checkpoint footprint.
   *preserved (still reconstructable from L1; do **not** drop keys).*
 - **High-S rejection** (close THREAT-MODEL L3) — one line, currently stuck behind exactly this re-bake.

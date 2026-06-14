@@ -187,7 +187,8 @@ liquid-cells/
   docs/
     ARCHITECTURE.md      # the full trustless design
     THREAT-MODEL.md      # red-team findings -> mitigations
-    INTEGRATION-TIPPING.md # worked tipping-backend integration (deposit/split-tip/exit)
+    INTEGRATION-GENERIC.md # START HERE to reuse: the 5 primitives + recipe cookbook + invariants
+    INTEGRATION-TIPPING.md # one worked instance of the generic guide (deposit/split-payment/exit)
     NON-CUSTODY.md       # non-custody + censorship-resistance (for integrators/LPs/reviewers)
     UPGRADE-TIMELOCK.md  # timelocked code-cell upgrades (announce -> delay -> execute)
     FEES.md              # per-intent fee floor: live sequencer policy + staged in-proof version
@@ -214,7 +215,15 @@ cd /root/liquid-cells
 
 cargo test            # build the STF and run the property tests
 cargo build --release # optimized native build
+
+# the generic "hello world": full off-chain lifecycle (deposit -> transfer -> checkpoint ->
+# reconstruct from DA -> force-exit) in ~60 lines, no L1 or prover needed:
+cargo run -p liquid-cells-client --example payment_pool
 ```
+
+**Reusing it for your own app?** Start with **[docs/INTEGRATION-GENERIC.md](docs/INTEGRATION-GENERIC.md)**
+— the five primitives, a recipe cookbook (payments / payroll / escrow / fee-split / swap), and the
+hard invariants (you *reuse* the fixed STF, you don't fork it).
 
 SP1 (`cargo-prove`, toolchain) is installed under `/root/.sp1`; the keccak SMT and
 secp256k1 choices are deliberate so the same STF proves cheaply in the zkVM.
