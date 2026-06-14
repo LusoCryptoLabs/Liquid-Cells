@@ -22,9 +22,7 @@ evidence for the hand-written crypto, durability, a real deposit lock, and key r
 | Key recovery | **Session-key export/import** in the demo so losing browser storage no longer means losing access, with an honest note on why deterministic derivation is not possible under JoyID. | n/a | `crates/demo-ui/src/index.html` |
 | Reproducibility | **vkey consistency check** asserting the guest vkey is identical across the contract, the fixture, and the prover assertion, plus the documented full-rebuild procedure. | n/a | `scripts/verify-vkey.sh` |
 
-Full suite after this pass (20 new tests, all green): **36 STF** (incl. 4 fuzz), **13 sequencer**
-(incl. 5 journal), **46 contract integration** (incl. 6 deposit-lock), **6 client**, and the
-**5-test differential verifier** crate.
+Suite (all green): **49 STF**, **23 sequencer**, **100 contract integration**, **10 client**, and the **5-test differential verifier** crate — including, added since this pass, the **55-case adversarial red-team**, the resilient-seal, full-drain, deposit-confirmation-gate, tipping-integration, DA-snapshot, and timelocked-upgrade-lock suites.
 
 ### Why the differential verifier test matters most
 
@@ -47,9 +45,9 @@ formality): the buildable path, ranked by leverage. Items marked done were close
 - [~] Reproducible-build attestation that the deployed code cell is exactly this source: the
   `verify-vkey.sh` full-rebuild path has now been **run and reproduces the baked vkey `0x00213af5…`
   exactly** (which also caught and fixed a real drift — post-Phase-5 journal helpers had leaked into
-  the proven guest ELF; now feature-gated out). Remaining: wire this rebuild into CI on the pinned
-  toolchain so it cannot silently drift again, plus a clean-room/formal re-derivation of the Groth16
-  verify equation.
+  the proven guest ELF; now feature-gated out). The vkey **pin-agreement check now runs in CI** (`.github/workflows/ci.yml`); remaining: the heavier
+  full guest-ELF rebuild in CI (needs the sideloaded succinct toolchain) and a clean-room/formal
+  re-derivation of the Groth16 verify equation.
 
 **Protocol fixes (on-chain)**
 - [x] Deposit lock that removes the third-party theft window (sweep-or-refund).
@@ -87,7 +85,10 @@ formality): the buildable path, ranked by leverage. Items marked done were close
   monitoring/alerting, and the sequencer's own CKB node with a reliable RPC (the intermittent Pudge
   `waitTransaction` hangs seen during deploys would be incidents at scale).
 - [ ] Fast, redundant proving: GPU or the SP1 prover network, ~7 min CPU becomes ~1 min, with failover.
-- [ ] A DA indexer so users reconstruct balances and build exit proofs without trusting the operator.
+- [x] A DA reconstruction tool so users rebuild balances + force-exit proofs **from L1 alone**, no
+  operator: `lc-exit` (`crates/client/src/bin/lc-exit.rs`), verified live ([DEPLOY.md](DEPLOY.md)),
+  with advisory snapshotting for O(snapshot+tail) recovery. (An always-on indexer *service* is the
+  remaining scale nicety.)
 
 **Economics and egress**
 - [ ] A fee model that closes: per-checkpoint proving cost amortized over the batch must be covered by
