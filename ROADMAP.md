@@ -44,8 +44,9 @@ These are the "what we're not seeing" items: cheap-to-medium, and the docs curre
 already done. **Detailed scope below.**
 - ✅ **DA-reconstruction + force-exit-witness CLI** (`lc-exit`) — **done**: reconstructs your leaf
   from L1 alone and emits the force-exit witness, verified live against the type-id'd pool (B1 below).
-- 🚩 **Anchor minimum-capacity floor / tail-drain** in force-exit + checkpoint withdrawals — so a
-  draining pool can't strand the last exiters (next).
+- ✅ **Anchor minimum-capacity floor / tail-drain** — **investigated; not an exploitable bug**, now
+  documented + tested (B2 below). The implicit invariant (genesis forces `total=0`; every op
+  preserves `slack = capacity − total`; so `capacity ≥ slack ≥ occupied` always) prevents stranding.
 - **Deposit confirmation-depth gate (M4)** — the threat model says this is done; it is not built.
 - **DA snapshotting** — bound reconstruction to O(snapshot+tail), not O(all history), so exit stays
   cheap as the pool ages.
@@ -129,7 +130,21 @@ reconstruct, confirm the root matches on-chain, and emit a valid force-exit witn
 non-trivial part; everything downstream already exists. Keep full-diff DA as the source of truth (do
 not depend on any snapshot until B4 lands).
 
-### B2. Anchor minimum-capacity floor / tail-drain  `[M]`  *closes a real escape-hatch edge*
+### B2. Anchor minimum-capacity floor / tail-drain  ✅ **RESOLVED (not a bug)**  *invariant documented + tested*
+
+**Finding:** on close analysis the stranding concern does **not** materialize. `force_exit` enforces
+`out_cap = in_cap − balance` with no explicit floor, but the anchor type script's GENESIS branch
+forces `total == 0`, so a real pool starts with `slack = genesis_capacity`, which already clears
+CKB's occupied-capacity rule (or the genesis cell could not exist). Every mode preserves `slack`
+exactly (force-exit and checkpoints change capacity and total by the same amount), so
+`anchor_capacity = total + slack ≥ slack ≥ occupied` at all times — draining `total` to 0 leaves a
+valid anchor holding the genesis slack. Confirmed **live** (the type-id'd pool's slack held constant
+at 250 CKB across genesis → seq 1) and by a **full-drain test**
+(`crates/ckb-contract-tests/tests/redteam_drain.rs`). The invariant is now stated in `escape.rs` so
+it is not re-flagged. The genuine sub-≈61-CKB limit is the *payout* cell, not the anchor — the
+documented dust-egress case (THREAT-MODEL C1, addressed by the HTLC/Fiber egress). *No contract
+change or redeploy needed.* Original scope below for reference.
+
 
 **Why:** `force_exit` (`crates/ckb-contract/src/escape.rs`) enforces `out_cap == in_cap − balance`,
 and the checkpoint path enforces the analogous capacity relation — but **nothing requires the output

@@ -136,6 +136,12 @@ as permanent regression coverage. Four findings, all low/informational, none ena
   its epoch — a standard, correct CKB pattern, and the one defense not fully self-contained in the
   contract.
 
+A further follow-up considered whether a draining pool could strand the last exiter by pushing the
+anchor below its occupied capacity. It cannot: GENESIS forces `total == 0`, every mode preserves
+`slack = capacity − total`, so `capacity ≥ slack ≥ occupied` always and a full drain leaves a valid
+anchor. Documented in `escape.rs` and proven by `crates/ckb-contract-tests/tests/redteam_drain.rs`.
+The genuine sub-≈61-CKB limit is the force-exit *payout* cell — the **C1** dust-egress case above.
+
 Scope honesty: this is an internal logic-bug red-team, **not** a substitute for external audit. It
 does **not** cover BN254 field-arithmetic soundness of the verifier or game-theoretic/economic
 attacks — those remain for formal review and the public program.

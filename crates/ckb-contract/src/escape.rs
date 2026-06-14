@@ -122,6 +122,16 @@ pub(crate) fn force_exit(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
     }
 
     // Solvency: the anchor's real capacity drops by exactly the exited balance.
+    //
+    // No anchor-floor check is needed, and the last exiter is never stranded: define
+    // `slack = anchor_capacity − pool_total`. GENESIS forces `total == 0`, so a pool starts with
+    // `slack = genesis_capacity`, which already clears CKB's occupied-capacity rule (or the genesis
+    // cell could not exist). This line keeps `slack` invariant (`out_cap = in_cap − balance` while
+    // `new_total = total − balance`); checkpoints/withdrawals likewise change capacity and total by
+    // the same amount. So `anchor_capacity = total + slack ≥ slack ≥ ANCHOR_OCCUPIED` always, and
+    // draining `total` to 0 leaves a valid anchor holding the genesis slack (proven:
+    // `crates/ckb-contract-tests/tests/redteam_drain.rs`). The separate sub-≈61-CKB limit is the
+    // *payout* cell, not the anchor — that is the documented dust-egress case (THREAT-MODEL C1).
     let in_cap = match load_cell_capacity(0, Source::GroupInput) {
         Ok(c) => c,
         Err(_) => return 65,
