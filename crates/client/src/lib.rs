@@ -191,6 +191,25 @@ impl Account {
         Transfer { from_pubkey: self.pubkey, to_key, amount, fee, nonce, expiry, sig }
     }
 
+    /// Build N signed transfers from this account in one call — a batch payment / fan-out
+    /// (payroll, treasury disbursement, multi-recipient split). The transfers carry **consecutive
+    /// nonces** and are meant to be sealed in **one checkpoint**; submit them all.
+    ///
+    /// This is the SDK answer to "atomic multi-output transfer" without a protocol change: because
+    /// every leg shares this payer and chains nonces, in a single checkpoint they settle
+    /// **together** — either the payer can fund all of them (all land) or an underfunded leg and
+    /// every later leg **defer together** under [`Sequencer::seal_resilient`]. That is de-facto
+    /// per-payer atomicity over the existing `Transfer` primitive (no vkey-baked STF change). `fee`
+    /// is charged per output (pass 0 for none); total debit is `Σ amount + N·fee`.
+    pub fn batch_transfer(
+        &mut self,
+        outputs: &[(Hash, u128)],
+        fee: u128,
+        expiry: u64,
+    ) -> Vec<Transfer> {
+        outputs.iter().map(|(to, amount)| self.transfer(*to, *amount, fee, expiry)).collect()
+    }
+
     /// Split one gross payment into two signed transfers — `cut_bps`/10000 of it to
     /// `cut_recipient_key`, the remainder to `recipient_key` — a generic "pay X, route a basis-point
     /// cut to Y" recipe. Conservation is exact: the cut is `floor(gross·bps/10000)` and the main

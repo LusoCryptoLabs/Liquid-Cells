@@ -80,13 +80,16 @@ already done. **Detailed scope below.**
   enforces the identical floor operationally today — see [docs/FEES.md](docs/FEES.md). *preserved.*
 - **`ecrecover` instead of `verify`** — modest cycle save, and drops the 33-byte pubkey from the
   witness. *preserved (equivalent authority check).*
-- **(candidate, evaluate — not committed) atomic multi-output transfer** — one signed intent →
-  N recipients with conservation (`Transfer { from, outputs: [(to,amt)…], fee }`). The one *general*
-  primitive the generality assessment flagged as broadly unlocking (payroll, fee-split, marketplace
-  fan-out, DAO payouts) in a single atomic op. Today these compose from multiple independent
-  transfers + `seal_resilient`, which covers most needs, so this is **deferred, optional** — add only
-  if real demand shows the per-leg atomicity matters, and only here (it re-bakes the vkey). Resist
-  building it speculatively; the five-op core stays minimal until a use case forces it.
+- ~~**atomic multi-output transfer**~~ — **dropped (cost/benefit assessed): covered by the SDK, not
+  worth a vkey re-bake.** A two-agent cost/benefit pass found the benefit is already delivered
+  *without* a protocol change: `Account::batch_transfer` issues N signed transfers that share the
+  payer and chain nonces, so in one checkpoint they settle together — all land, or an underfunded leg
+  and its successors **defer together** under `seal_resilient` (proven in `crates/client/tests/batch.rs`).
+  No enumerated use case (payroll, fee-split, fan-out, DAO payout) actually breaks on partial
+  settlement, and a gated in-proof version would be a *new STF path with no live mirror to keep it
+  honest* (unlike `min_fee`, which mirrors `FeePolicy`) — i.e. exactly the "becoming gated" rot to
+  avoid. **Re-open only if a concrete user needs strict mid-batch-underfunded atomicity** that the SDK
+  path can't give. The five-op core stays minimal.
 - **DA-blob varint compression** (balance 16B→~8B, nonce) — ~30–40% off the per-checkpoint footprint.
   *preserved (still reconstructable from L1; do **not** drop keys).*
 - **High-S rejection** (close THREAT-MODEL L3) — one line, currently stuck behind exactly this re-bake.

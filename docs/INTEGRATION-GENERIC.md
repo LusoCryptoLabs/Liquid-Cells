@@ -50,7 +50,7 @@ There is **no app-specific role** anywhere in the proven STF or the on-chain con
 | **P2P payment pool** | deposit → transfer → withdrawal (the base loop) |
 | **Micropayments** | many small `Transfer`s batched per checkpoint |
 | **Fee split** (tipping, marketplace, affiliate, treasury rake) | `Account::split_payment(recipient, cut_recipient, gross, cut_bps, expiry)` → two transfers, exact conservation |
-| **Payroll / batch disbursement** | N `Transfer`s from a treasury key in one batch; `seal_resilient` drops any bad leg |
+| **Payroll / batch disbursement / fan-out** | `Account::batch_transfer(&[(to, amt)…], fee, expiry)` → N transfers from one payer, sealed in one checkpoint; `seal_resilient` drops any bad leg |
 | **Marketplace / conditional escrow** | `HtlcLock` to the seller; release by preimage, refund on timeout |
 | **Swap / dust egress** (sub-61-CKB) | in-pool `HtlcLock` leg + an external L1/Fiber leg on the same hashlock; `force_refund` is the sender's escape |
 | **Prepaid / gift balances** | deposit straight to the recipient's key; they sign later to spend |
@@ -71,8 +71,10 @@ There is **no app-specific role** anywhere in the proven STF or the on-chain con
 
 ## What is deliberately NOT in the protocol (keep it simple)
 
-Streaming/rate primitives, in-pool scripting beyond HTLC, multi-asset/UDT balances, and receiver-side
-on-chain HTLC force-claim are intentionally **out** — each would add proven-STF surface (a vkey
-re-bake) for a narrow payoff. HTLC + an arbitrary withdrawal `target_lock_hash` already covers
-trustless conditional egress. The design goal is a small, general, reusable core — resist pushing your
-app's specifics into it.
+Streaming/rate primitives, in-pool scripting beyond HTLC, multi-asset/UDT balances, an **atomic
+multi-output transfer**, and receiver-side on-chain HTLC force-claim are intentionally **out** — each
+would add proven-STF surface (a vkey re-bake) for a narrow payoff. For multi-recipient atomicity in
+particular, `batch_transfer` + `seal_resilient` already give de-facto per-payer settle-together
+behaviour with zero protocol cost (see `crates/client/tests/batch.rs`). HTLC + an arbitrary withdrawal
+`target_lock_hash` already covers trustless conditional egress. The design goal is a small, general,
+reusable core — resist pushing your app's specifics into it.
