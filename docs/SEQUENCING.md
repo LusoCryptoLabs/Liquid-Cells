@@ -74,15 +74,29 @@ What remains to lean *fully* on permissionless in production is infra, not new p
 4. **Censorship.** In *every* model, a user's ultimate backstop is **force-exit** — unilateral exit
    against the last committed root, no sequencer cooperation required.
 
-## Recommended posture
+## This is the operator's choice, not a protocol mandate
 
-- **For real value, near-term:** run **federated (multisig anchor lock)** + the
-  [timelocked upgrade lock](UPGRADE-TIMELOCK.md). This removes the single-key dependence for *both*
-  sequencing and upgrades using only pieces already built, while keeping operations simple.
-- **As the decentralization goal:** operationalize **permissionless** sequencing — the contract,
-  reward, deposit lock, and leader schedule are done; the remaining work is the mempool-gossip layer
-  and the prover fleet.
+Everything above is a **deploy-time configuration menu** for whoever runs a pool — **not** a to-do in
+this codebase and **not** something the protocol imposes. The protocol is neutral: it enforces
+*whatever lock you put on the anchor* (via lock continuity) and proves *whatever STF the vkey is bound
+to*. Picking a sequencing model and an upgrade policy is the operator's call at pool creation (and at
+upgrade time), and **none of these choices touch the proven STF or the vkey** — they are just which
+lock scripts you select.
 
-The takeaway: **"single operator" is the current default deployment, not a property of the design.**
-The protocol already supports federated and permissionless sequencing as first-class, capture-proof
-modes — one of which has advanced a real checkpoint, unsigned, on testnet.
+| If you are running… | Anchor lock (your choice) | Upgrade policy (your choice) | Repo work needed |
+|---|---|---|---|
+| a hobby / demo pool | single secp lock | plain key (or none) | none — simplest |
+| a pool holding real value | **multisig** (federation) | the [timelock upgrade lock](UPGRADE-TIMELOCK.md), ideally with a multisig gov lock | none new — multisig is a stock CKB lock; the timelock lock is already built, you just deploy the code cell with it |
+| a public / decentralized pool | **always-success** (permissionless) | timelock + multisig | none on the contract; operational infra (mempool gossip, prover fleet) is the remaining work |
+
+Notes:
+- **Federated multisig** is *pure configuration* — CKB ships multisig lock scripts; "going federated"
+  is putting one in the anchor's lock slot at genesis. Zero protocol work.
+- **The timelock upgrade lock** is built and tested in-repo; *adopting* it is opt-in (deploy the
+  anchor code cell with that lock, keeping the same type-id). An operator who doesn't want it omits it.
+- **Permissionless** is a first-class mode of the same contract (lock continuity + reward + deposit
+  lock + leader schedule are done); leaning fully on it is operational infra, not new protocol.
+
+The takeaway: **"single operator" is just the simplest default a deployer can pick, not a property of
+the design.** The same contract already supports federated and permissionless sequencing as
+first-class, capture-proof modes — one of which has advanced a real checkpoint, unsigned, on testnet.
