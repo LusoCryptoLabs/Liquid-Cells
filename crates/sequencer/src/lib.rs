@@ -40,6 +40,8 @@ pub mod coordinator;
 pub mod journal;
 pub mod pending;
 pub use pending::{DepositId, PendingDeposits};
+pub mod resilient;
+pub use resilient::{Dropped, DroppedOp};
 pub use journal::{
     DurableSequencer, FileJournal, IntentRecord, Journal, JournalRecord, MemJournal, SealError,
 };
@@ -135,6 +137,19 @@ impl Mempool {
             htlc_refunds: self.htlc_refunds,
             withdrawals: self.withdrawals,
             fee_withdrawal,
+        }
+    }
+
+    /// Rebuild a mempool from an (already-validated) batch — the inverse of [`into_batch`], used by
+    /// resilient sealing to install the accepted sub-batch before the authoritative seal.
+    fn from_batch(b: Batch) -> Self {
+        Mempool {
+            deposits: b.deposits,
+            transfers: b.transfers,
+            htlc_locks: b.htlc_locks,
+            htlc_claims: b.htlc_claims,
+            htlc_refunds: b.htlc_refunds,
+            withdrawals: b.withdrawals,
         }
     }
 }
@@ -268,6 +283,28 @@ impl Sequencer {
             fee_withdrawal,
             current_epoch,
         })
+    }
+
+    /// Like [`seal_batch`], but instead of failing the whole checkpoint on one invalid *signed*
+    /// intent, drop the offending intents (transitively deferring their dependents, never
+    /// reordering) and seal the rest — closing the liveness/censorship footgun where one bad intent
+    /// stalls a whole checkpoint. Deposits are never dropped (they are bound to consumed L1 cells).
+    /// Returns the [`CheckpointJob`] plus the dropped intents (so the caller can surface rejections
+    /// and re-submit any that later become valid). A genuinely batch-wide failure (a deposit
+    /// overflow, or `fee_withdrawal` exceeding the *accepted* batch's fee revenue) still returns
+    /// `Err`. The accepted sub-batch is sealed by [`seal_batch`], which re-applies atomically — so
+    /// the atomic seal remains the authority and this can only ever drop intents the STF rejects.
+    pub fn seal_resilient(
+        &mut self,
+        current_epoch: u64,
+        fee_withdrawal: u128,
+    ) -> Result<(CheckpointJob, Vec<Dropped>), StfError> {
+        let batch = self.mempool.clone().into_batch(current_epoch, fee_withdrawal);
+        let (accepted, dropped) =
+            crate::resilient::validate_batch(&self.state.pool, &batch, |k| self.state.get_leaf(k))?;
+        self.mempool = Mempool::from_batch(accepted);
+        let job = self.seal_batch(current_epoch, fee_withdrawal)?;
+        Ok((job, dropped))
     }
 }
 
