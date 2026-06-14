@@ -188,6 +188,7 @@ liquid-cells/
     ARCHITECTURE.md      # the full trustless design
     THREAT-MODEL.md      # red-team findings -> mitigations
     INTEGRATION-TIPPING.md # worked tipping-backend integration (deposit/split-tip/exit)
+    NON-CUSTODY.md       # non-custody + censorship-resistance (for integrators/LPs/reviewers)
     EGRESS.md FORCE-EXIT.md DA.md ...
   DEPLOY.md              # every live Pudge hash
   HACKATHON.md           # break-it hackathon + bug bounty (rules, scope, disclosure)
