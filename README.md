@@ -190,6 +190,7 @@ liquid-cells/
     INTEGRATION-TIPPING.md # worked tipping-backend integration (deposit/split-tip/exit)
     NON-CUSTODY.md       # non-custody + censorship-resistance (for integrators/LPs/reviewers)
     UPGRADE-TIMELOCK.md  # timelocked code-cell upgrades (announce -> delay -> execute)
+    FEES.md              # per-intent fee floor: live sequencer policy + staged in-proof version
     EGRESS.md FORCE-EXIT.md DA.md ...
   DEPLOY.md              # every live Pudge hash
   HACKATHON.md           # break-it hackathon + bug bounty (rules, scope, disclosure)

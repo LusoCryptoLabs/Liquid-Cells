@@ -17,6 +17,7 @@
 //! feeds the accepted sub-batch to `seal_batch`, which re-validates atomically. A parity test pins
 //! `validate_batch` to `apply_ops`.
 
+use crate::FeePolicy;
 use liquid_cells_stf::{
     htlc_id, htlc_lock_msg, keccak, key_of_pubkey, sig, touched_keys, transfer_msg, withdraw_msg,
     Batch, Hash, Leaf, PoolState, StfError,
@@ -44,10 +45,18 @@ pub enum DroppedOp {
 /// (the sequencer's full tree). Returns the accepted sub-batch + the dropped intents, or a fatal
 /// `StfError` for a batch-wide failure that is not a single intent's fault (a deposit overflow).
 ///
+/// `policy` adds the operator's fee-admission floor: a transfer or HTLC-lock paying below
+/// `policy.min_fee_per_intent` is dropped (as `InsufficientFees`) exactly where the staged
+/// `liquid_cells_stf` `min_fee` check sits, so this mirrors `apply_ops` compiled either without the
+/// floor (`policy` disabled — the deployed guest) or with `MIN_FEE_PER_LEAF = min_fee_per_intent`.
+/// Dropping an underpayer is always safe: the policy is stricter than the STF, and `seal_batch`
+/// re-validates the survivors atomically.
+///
 /// MUST mirror `liquid_cells_stf::transition::apply_ops` — pinned by the parity test below.
 pub fn validate_batch(
     prev: &PoolState,
     batch: &Batch,
+    policy: FeePolicy,
     leaf: impl Fn(&Hash) -> Leaf,
 ) -> Result<(Batch, Vec<Dropped>), StfError> {
     let mut work: BTreeMap<Hash, Leaf> =
@@ -83,6 +92,9 @@ pub fn validate_batch(
             if t.expiry < epoch {
                 return Err(StfError::Expired);
             }
+            if !policy.admits(t.fee) {
+                return Err(StfError::InsufficientFees);
+            }
             let msg = transfer_msg(prev.chain_id, &prev.pool_id, &from_key, &t.to_key, t.amount, t.fee, t.nonce, t.expiry);
             if !sig::verify(&t.from_pubkey, &msg, &t.sig) {
                 return Err(StfError::BadSignature);
@@ -117,6 +129,9 @@ pub fn validate_batch(
             }
             if l.timeout <= epoch {
                 return Err(StfError::Expired);
+            }
+            if !policy.admits(l.fee) {
+                return Err(StfError::InsufficientFees);
             }
             let msg = htlc_lock_msg(prev.chain_id, &prev.pool_id, &sender_key, &l.receiver_key, l.amount, l.fee, &l.hashlock, l.timeout, l.nonce);
             if !sig::verify(&l.sender_pubkey, &msg, &l.sig) {

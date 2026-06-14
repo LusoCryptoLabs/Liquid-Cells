@@ -57,13 +57,27 @@ already done. **Detailed scope below.**
   code's data hash, matured a fixed `delay` (relative-epoch since, un-backdatable) — a guaranteed
   user force-exit window, *no instant malicious upgrade*. See [docs/UPGRADE-TIMELOCK.md](docs/UPGRADE-TIMELOCK.md).
   Adopting it is an operator-authorized redeploy of the code cell's lock (kept out of scope here).
+- ✅ **Fee-admission policy (anti-griefing, Layer 1)** — **done** (no contract/vkey change):
+  `liquid_cells_sequencer::FeePolicy` lets the sequencer reject (strict `seal_batch`) or drop
+  (resilient `seal_resilient`) transfers/HTLC-locks paying below a per-intent floor, closing the
+  zero-fee-flood griefing gap operationally. Off by default. The *provable* Layer 2 is the staged
+  Tier C `min_fee` feature; the two pin to the same constant. See [docs/FEES.md](docs/FEES.md).
+- ⛔ **Receiver-side HTLC force-claim** — **decided: not pure code, not built.** A receiver's
+  trustless on-chain claim must fire *before* the short HTLC `timeout`, but the operator-silence gate
+  that lets any escape-hatch op consume the anchor cannot open that fast — so it is **not expressible
+  under a single anchor** and is resolved only by Phase 6 permissionless sequencing, not by code we
+  could write now (documented at `crates/ckb-contract/src/escape.rs` `force_refund` and
+  [docs/EGRESS.md](docs/EGRESS.md)). The sender-side `force_refund` remains the implemented escape.
 
 ## Tier C — coordinated "v2" upgrade bundle (each re-bakes the vkey → ship together, audit once)
 - **SMT depth-256 → shallow/extension-node tree** — biggest single cost win, ~30–50% total proving
   cycles (and a smaller witness). *preserved (differential-test the new tree like the verifier port).*
-- **Contract-enforced minimum-fee-per-touched-leaf** (`fee_delta ≥ n_billable · MIN_FEE_PER_LEAF`,
-  with `n_billable` a new proven public value) — makes the economics *provably* close + a native
-  spam floor. *preserved.*
+- **In-proof minimum fee per intent** — *staged and tested in-tree* behind the `min_fee` feature
+  (`liquid_cells_stf::MIN_FEE_PER_LEAF`, enforced in `apply_ops` for every transfer/HTLC-lock; OFF in
+  the deployed guest so the vkey is untouched, asserted by `verify-vkey.sh`; `cargo test -p
+  liquid-cells-stf --features min_fee`). Flip it on in this bundle to make the spam-floor economics
+  *provably* close. The matching **live** sequencer admission policy (`FeePolicy`, Layer 1) already
+  enforces the identical floor operationally today — see [docs/FEES.md](docs/FEES.md). *preserved.*
 - **`ecrecover` instead of `verify`** — modest cycle save, and drops the 33-byte pubkey from the
   witness. *preserved (equivalent authority check).*
 - **DA-blob varint compression** (balance 16B→~8B, nonce) — ~30–40% off the per-checkpoint footprint.

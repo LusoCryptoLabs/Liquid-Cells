@@ -42,6 +42,8 @@ pub mod pending;
 pub use pending::{DepositId, PendingDeposits};
 pub mod resilient;
 pub use resilient::{Dropped, DroppedOp};
+pub mod feepolicy;
+pub use feepolicy::FeePolicy;
 pub use journal::{
     DurableSequencer, FileJournal, IntentRecord, Journal, JournalRecord, MemJournal, SealError,
 };
@@ -161,19 +163,43 @@ pub struct Sequencer {
     state: State,
     mempool: Mempool,
     last_epoch: u64,
+    fee_policy: FeePolicy,
 }
 
 impl Sequencer {
     /// A fresh sequencer over an empty pool. Its first checkpoint's `prev_anchor` equals the
     /// canonical genesis anchor (empty root, all counters zero).
     pub fn genesis(pool_id: Hash, chain_id: u64) -> Self {
-        Self { state: State::genesis(pool_id, chain_id), mempool: Mempool::default(), last_epoch: 0 }
+        Self {
+            state: State::genesis(pool_id, chain_id),
+            mempool: Mempool::default(),
+            last_epoch: 0,
+            fee_policy: FeePolicy::disabled(),
+        }
     }
 
     /// Resume a sequencer from an already-advanced state (e.g. rebuilt from L1 DA) and the
     /// epoch its latest checkpoint recorded.
     pub fn resume(state: State, last_epoch: u64) -> Self {
-        Self { state, mempool: Mempool::default(), last_epoch }
+        Self { state, mempool: Mempool::default(), last_epoch, fee_policy: FeePolicy::disabled() }
+    }
+
+    /// Install a fee-admission [`FeePolicy`] (builder form). Off by default; once set, the strict
+    /// [`seal_batch`] rejects an underpaying batch (`InsufficientFees`) and the resilient
+    /// [`seal_resilient`] *drops* underpaying intents. Policy, not proof — see [`FeePolicy`].
+    pub fn with_fee_policy(mut self, policy: FeePolicy) -> Self {
+        self.fee_policy = policy;
+        self
+    }
+
+    /// Set/replace the fee-admission policy on a running sequencer.
+    pub fn set_fee_policy(&mut self, policy: FeePolicy) {
+        self.fee_policy = policy;
+    }
+
+    /// The active fee-admission policy.
+    pub fn fee_policy(&self) -> FeePolicy {
+        self.fee_policy
     }
 
     // --- mempool: clients submit already-signed intents (the sequencer can't forge them) ---
@@ -265,6 +291,11 @@ impl Sequencer {
     ) -> Result<CheckpointJob, StfError> {
         let batch = self.mempool.clone().into_batch(current_epoch, fee_withdrawal);
 
+        // Fee-admission floor (policy, off by default). Strict here: an underpaying intent rejects
+        // the whole batch and leaves the mempool intact, so the operator can drop it and retry (or
+        // use `seal_resilient` to drop just the underpayers).
+        self.fee_policy.check(&batch)?;
+
         // Snapshot the pre-state: this is exactly what the guest proves against.
         let prev_pool = self.state.pool;
         let prev_anchor = encode_anchor(&prev_pool, self.last_epoch);
@@ -318,8 +349,15 @@ impl Sequencer {
         fee_withdrawal: u128,
     ) -> Result<(CheckpointJob, Vec<Dropped>), StfError> {
         let batch = self.mempool.clone().into_batch(current_epoch, fee_withdrawal);
-        let (accepted, dropped) =
-            crate::resilient::validate_batch(&self.state.pool, &batch, |k| self.state.get_leaf(k))?;
+        // One pass: validate_batch drops STF-invalid intents AND (per the fee policy) underpaying
+        // ones, all in the original-batch index space. The authoritative `seal_batch` then
+        // re-validates the survivors atomically.
+        let (accepted, dropped) = crate::resilient::validate_batch(
+            &self.state.pool,
+            &batch,
+            self.fee_policy,
+            |k| self.state.get_leaf(k),
+        )?;
         self.mempool = Mempool::from_batch(accepted);
         let job = self.seal_batch(current_epoch, fee_withdrawal)?;
         Ok((job, dropped))

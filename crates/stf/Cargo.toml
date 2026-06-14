@@ -14,6 +14,14 @@ path = "src/lib.rs"
 # durable write-ahead journal. Gated OFF by default so the SP1 guest never compiles them,
 # keeping the proven guest ELF (and its vkey 0x00213af5…) byte-stable. The sequencer enables it.
 journal = []
+# `min_fee` turns the protocol per-intent fee floor (MIN_FEE_PER_LEAF) into a *proven* in-STF
+# invariant. Gated OFF by default for the SAME reason as `journal`: enabling it changes the
+# guest ELF and therefore re-bakes the vkey, so it must be OFF in the deployed guest and is
+# staged here for a coordinated post-audit upgrade. The sequencer enforces the same floor as
+# admission policy today (see `liquid_cells_sequencer::FeePolicy`), so the economics already
+# hold operationally; flipping this on makes them unforgeable. Verify-vkey asserts it is OFF.
+# Validated in isolation by `tests/min_fee.rs` (the rest of the suite assumes the floor is off).
+min_fee = []
 
 [dependencies]
 # Keccak-256: chosen over CKB-native blake2b because SP1 has a keccak precompile,

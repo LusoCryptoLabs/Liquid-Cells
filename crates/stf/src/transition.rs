@@ -50,6 +50,20 @@ pub struct Witness {
 /// batches to hit its own latency target; this is only the upper bound.
 pub const MAX_LEAVES_PER_BATCH: usize = 1024;
 
+/// Protocol minimum fee a signed *fee-paying* intent (a transfer or an HTLC-lock) must pay.
+/// Enforced **in-proof** only when the `min_fee` feature is compiled in — which is OFF in the
+/// deployed SP1 guest, so this constant is absent from the proven ELF and the guest vkey
+/// (0x00213af5…) is unchanged. It is staged here for the post-audit upgrade bundle: each such
+/// intent already debits `amount + fee` from the payer, so the floor simply guarantees every
+/// intent that costs the operator a leaf's worth of DA + cycles contributes at least this much
+/// fee revenue — closing the zero-fee griefing gap *provably*. Until the upgrade flips it on,
+/// the running sequencer enforces the identical floor as admission policy
+/// ([`liquid_cells_sequencer::FeePolicy`]), so the economics hold operationally now. The value
+/// is a placeholder unit (1 shannon-equivalent); the production figure is an audit-time choice
+/// calibrated to the marginal per-leaf checkpoint cost.
+#[cfg(feature = "min_fee")]
+pub const MIN_FEE_PER_LEAF: u128 = 1;
+
 /// Keys a batch reads/writes, sorted and deduplicated. Derivable from the batch (and the
 /// `pool_id`, which HTLC ids are bound to), so the guest can independently check the
 /// witness covers exactly these.
@@ -133,6 +147,12 @@ fn apply_ops(
         if t.expiry < batch.current_epoch {
             return Err(StfError::Expired);
         }
+        // (staged, `min_fee` off in the deployed guest) every fee-paying intent must clear the
+        // protocol floor, so a checkpoint's fee revenue always covers its per-leaf cost.
+        #[cfg(feature = "min_fee")]
+        if t.fee < MIN_FEE_PER_LEAF {
+            return Err(StfError::FeeBelowMinimum);
+        }
         let msg = transfer_msg(
             prev.chain_id, &prev.pool_id, &from_key, &t.to_key, t.amount, t.fee, t.nonce, t.expiry,
         );
@@ -167,6 +187,10 @@ fn apply_ops(
         }
         if l.timeout <= batch.current_epoch {
             return Err(StfError::Expired); // an HTLC must have a future claim deadline
+        }
+        #[cfg(feature = "min_fee")]
+        if l.fee < MIN_FEE_PER_LEAF {
+            return Err(StfError::FeeBelowMinimum);
         }
         let msg = htlc_lock_msg(
             prev.chain_id, &prev.pool_id, &sender_key, &l.receiver_key, l.amount, l.fee,

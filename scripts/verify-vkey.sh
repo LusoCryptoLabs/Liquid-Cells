@@ -35,10 +35,28 @@ fi
 
 echo "OK: all three vkey pin sites agree."
 echo
+
+# The guest ELF (hence the vkey) must compile the STF with NO vkey-affecting features. `journal`
+# (codec helpers) and `min_fee` (the in-proof fee floor) both change the guest if enabled, so the
+# guest's stf dependency must pull default features only. Catch an accidental feature leak cheaply.
+GUEST_STF_LINE="$(grep -E 'liquid-cells-stf' crates/sp1-guest/Cargo.toml || true)"
+echo "guest stf dep      : $GUEST_STF_LINE"
+if echo "$GUEST_STF_LINE" | grep -qE 'journal|min_fee'; then
+  echo "FAIL: crates/sp1-guest enables a vkey-affecting stf feature (journal/min_fee). The deployed"
+  echo "      vkey is for the feature-OFF guest; enabling one re-bakes it. Remove it or re-deploy."
+  exit 1
+fi
+# And the STF must not turn either on by default.
+if grep -E '^(journal|min_fee)\s*=' crates/stf/Cargo.toml | grep -qvE '=\s*\[\s*\]'; then
+  echo "FAIL: a vkey-affecting stf feature (journal/min_fee) has non-empty defaults in crates/stf."
+  exit 1
+fi
+echo "OK: guest compiles the STF with journal + min_fee OFF (vkey-neutral)."
+echo
 echo "Pinned build inputs (ALL must match to reproduce the vkey byte-for-byte):"
 echo "  succinct rustc   1.94.0   (cargo-prove's toolchain; == the ghcr.io/succinctlabs/sp1:v6.2.4 image)"
 echo "  sp1-zkvm/sdk     6.2.4    (crates/sp1-guest, crates/sp1-host)"
-echo "  guest features   journal OFF (default; the journal codec helpers are gated out of the guest)"
+echo "  guest features   journal + min_fee OFF (default; both are gated out of the guest ELF)"
 echo "  build path       \$HOME/liquid-cells   (SP1 embeds the absolute source path in the guest ELF,"
 echo "                   so the rebuild must run from the SAME path the deploy used, with HOME=/root)"
 echo

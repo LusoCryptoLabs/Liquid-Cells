@@ -29,4 +29,6 @@ pub use error::StfError;
 pub use hash::{keccak, Hash};
 pub use smt::{root_from_witness, verify_proof, Smt};
 pub use transition::{apply, prove_transition, touched_keys, State, Witness};
+#[cfg(feature = "min_fee")]
+pub use transition::MIN_FEE_PER_LEAF;
 pub use types::*;

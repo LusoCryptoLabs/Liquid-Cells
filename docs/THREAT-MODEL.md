@@ -106,6 +106,16 @@ attacker-chosen. Implemented.
 No inactivity or dust-consolidation fees. Fees are explicit per-transfer/withdrawal
 only and are conserved.
 
+### L2b, Zero-fee checkpoint griefing / operator sustainability · 🟡 mitigated (policy now, proof staged)
+The proven STF charges whatever `fee` an intent carries with **no minimum**, so a flood of valid,
+funded, *zero-fee* transfers/HTLC-locks each cost the operator a touched leaf's DA + cycles while
+adding nothing to `fee_acc`. This is a **sustainability / griefing** gap, **not a fund-safety** one
+(`fee_withdrawal` stays capped at fee revenue, so no balance is ever skimmed). Mitigated in two
+layers: a **live** sequencer admission floor (`liquid_cells_sequencer::FeePolicy`, rejects/drops
+underpayers — policy, off by default), and a **staged provable** floor (`liquid_cells_stf`
+`min_fee` feature, `MIN_FEE_PER_LEAF`) that is OFF in the deployed guest (it re-bakes the vkey) and
+bundled for the next coordinated upgrade. Both pin to the same constant. See [FEES.md](FEES.md).
+
 ### L3, ECDSA high-S signature malleability · 🟡 known, deferred
 `sig::verify` (`crates/stf/src/sig.rs`) *normalizes* a high-S signature to low-S and then
 verifies it, so both encodings of a signature pass — contradicting its own comment ("only the

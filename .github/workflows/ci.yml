@@ -35,6 +35,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Test stf + sequencer + client (journal feature on via sequencer)
         run: cargo test -p liquid-cells-stf -p liquid-cells-sequencer -p liquid-cells-client
+      - name: Test the staged in-proof min-fee floor (vkey-affecting; OFF in the deployed guest)
+        run: cargo test -p liquid-cells-stf --features min_fee --test min_fee
       - name: Build the lc-exit DA-reconstruction CLI (feature-gated, RPC)
         run: cargo build -p liquid-cells-client --features cli
 

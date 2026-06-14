@@ -38,4 +38,9 @@ pub enum StfError {
     HtlcExpired,
     /// A refund arrived at/before the HTLC timeout (only claim is valid then).
     HtlcNotExpired,
+    /// (`min_fee` feature only) A signed fee-paying intent (transfer / HTLC-lock) paid below
+    /// the protocol per-intent fee floor [`crate::MIN_FEE_PER_LEAF`]. Gated with the feature so
+    /// the deployed guest's enum (and vkey) is unchanged while the floor is staged for upgrade.
+    #[cfg(feature = "min_fee")]
+    FeeBelowMinimum,
 }
