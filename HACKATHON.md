@@ -23,7 +23,7 @@ transition is a zk proof verified on-chain and users can exit unilaterally. **Yo
 that claim** — make the live contract accept something it shouldn't, or make a guaranteed user action
 (like a unilateral exit) fail.
 
-We have already run an internal adversarial red-team (55 test cases, no break found — see
+We have already run an internal adversarial red-team (56 test cases, no break found — see
 [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md)). This program is the external, adversarial follow-up.
 
 ## 2. Trust assumptions (disclosed in full)
@@ -40,6 +40,12 @@ What you should **not** assume — i.e. the protocol's *current* trust caveats, 
   multisig + timelock, deliberately sequenced *last*, after audit), you are trusting the operator not
   to upgrade the contract maliciously. This is the single largest trust assumption and it is **not**
   what this hackathon is about — it is a known, disclosed property, not a bug.
+- **A single operator sequences the live pool.** Safety does **not** depend on it (the operator
+  cannot steal/mint/forge — every fact is re-checked on-chain), but *liveness* does, with force-exit
+  as the backstop. The single operator is the current *deployment default*, not a protocol
+  requirement: the same contract supports federated (multisig lock) and permissionless sequencing
+  (one permissionless pool already advanced a checkpoint **unsigned** on Pudge). See
+  [docs/SEQUENCING.md](docs/SEQUENCING.md).
 - **Unaudited.** No external audit has been performed.
 - **Known issues** (Section 7) are documented and **not** eligible for rewards.
 
@@ -49,6 +55,9 @@ What is *proven on-chain* (and therefore the interesting thing to try to break):
   the diff.
 - Unilateral exit: force-exit / force-refund against the last committed root, no operator cooperation.
 - Deposit safety: a sweep-or-refund lock closes the always-success theft window.
+- No-steal / no-mint: every balance change is a signed STF transition and value is conserved
+  (`Σ balances + fee_acc == total`); the L1 fee draw is capped at proven fee revenue, so a fee can
+  **never** be skimmed from a user balance.
 
 ## 3. What we want broken (targets)
 
@@ -121,10 +130,24 @@ Disclosed up front so nobody wastes effort or claims them:
 3. **The deposit lock's sweep predicate is intentionally loose** — it unlocks on any input bearing the
    pool type hash and relies on the anchor type script's solvency/commitment checks to enforce
    destination safety (confirmed to backstop it). Documented coupling, not a bug.
-4. **Single upgrade key** (Section 2) — a disclosed trust property, not a vulnerability.
+4. **Single upgrade key** (Section 2) — a disclosed trust property, not a vulnerability. The
+   **timelocked upgrade lock** that removes the "instant" malicious upgrade is **built and tested**
+   (`crates/ckb-contract/src/upgrade_lock.rs`) but **not yet deployed** on the live pool; adopting it
+   is an operator-side migration ([docs/UPGRADE-TIMELOCK.md](docs/UPGRADE-TIMELOCK.md)). "It isn't
+   deployed yet" is disclosed, not a finding.
+5. **Receiver-side HTLC force-claim is not implemented** — only the *sender's* `force_refund` escape
+   exists. A receiver's trustless on-chain claim must fire before the short HTLC timeout, which the
+   operator-silence gate can't open that fast, so it is **architecturally not expressible under a
+   single anchor** (resolved only by Phase 6 permissionless sequencing), not a bug.
+   ([docs/EGRESS.md](docs/EGRESS.md), THREAT-MODEL.)
+6. **Zero-fee checkpoint griefing** — a sustainability concern, **not** a fund-safety one
+   (`fee_withdrawal` is capped at proven fee revenue, so no balance is ever skimmed). Already
+   **mitigated**: the sequencer enforces a per-intent fee floor (`FeePolicy`, live) and the in-proof
+   floor (`min_fee`) is staged for the next upgrade ([docs/FEES.md](docs/FEES.md), THREAT-MODEL L2b).
 
-Finding a *new* way around any mitigation in 2–3 (e.g. an actual third-party theft, or a real
-cross-pool sweep of a **type-id'd** pool) **is** in scope and rewardable.
+Finding a *new* way around any mitigation in 2–3 or 6 (e.g. an actual third-party theft, a real
+cross-pool sweep of a **type-id'd** pool, or skimming a *user balance* via fees) **is** in scope and
+rewardable.
 
 ## 8. How to participate
 

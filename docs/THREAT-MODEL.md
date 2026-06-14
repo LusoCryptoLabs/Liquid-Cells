@@ -129,7 +129,7 @@ upgrade** rather than hot-fixed; disclosed here and in the hackathon scope.
 
 ## Adversarial red-team (internal)
 
-Before opening to the community, an internal red-team built **55 adversarial test cases** that
+Before opening to the community, an internal red-team built **56 adversarial test cases** that
 run real malicious transactions/batches against the contract in CKB-VM (and the STF in-process)
 across four surfaces: checkpoint accounting/fee/solvency, the force-exit/force-refund escape
 hatches + epoch/`since` handling + anchor-capture, the deposit lock + pool isolation + DA
