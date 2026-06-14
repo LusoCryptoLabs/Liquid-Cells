@@ -27,14 +27,16 @@ jobs:
         run: bash scripts/verify-vkey.sh
 
   stf-sequencer-tests:
-    name: STF + sequencer tests (incl. red-team)
+    name: STF + sequencer + client tests (incl. red-team + DA reconstruction)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Test stf + sequencer (journal feature on via sequencer)
-        run: cargo test -p liquid-cells-stf -p liquid-cells-sequencer
+      - name: Test stf + sequencer + client (journal feature on via sequencer)
+        run: cargo test -p liquid-cells-stf -p liquid-cells-sequencer -p liquid-cells-client
+      - name: Build the lc-exit DA-reconstruction CLI (feature-gated, RPC)
+        run: cargo build -p liquid-cells-client --features cli
 
   contract-tests:
     name: Anchor contract + red-team suite (CKB-VM)

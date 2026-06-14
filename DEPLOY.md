@@ -52,6 +52,13 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 
 ## What's verified on-chain
 
+- **The escape hatch is demonstrably usable from L1 alone.** `lc-exit`
+  (`crates/client/src/bin/lc-exit.rs`, `cargo build -p liquid-cells-client --features cli`) scrapes
+  the type-id'd pool's checkpoint chain from a public RPC, folds the published DA blobs through the
+  canonical `liquid_cells_stf::reconstruct`, and **reproduced the live anchor root `0x00b5dbaf…`
+  (seq 1)** — recovering the depositor's leaf (199.989 CKB, nonce 1) and emitting the 8249-byte
+  force-exit witness, with **no sequencer cooperation**. This turns "any user can exit without the
+  operator" from a contract property into a runnable tool (regression test: `crates/client/tests/`).
 - **The anchor type script deploys and executes on Pudge CKB-VM.** Creating the genesis
   anchor ran the contract's **genesis branch** (an output anchor with no input anchor) on the
   live chain; it validated the canonical empty state and accepted.

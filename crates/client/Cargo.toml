@@ -11,6 +11,26 @@ repository = { workspace = true }
 # disagree with the sequencer or the on-chain contract, the same "one STF, no divergence"
 # discipline the whole protocol rests on. STF-only + blake2b (for the CKB secp lock args a
 # force-exit pays to); no chain RPC here, so it stays in the lean workspace and tests fast.
+[features]
+# `cli` builds the `lc-exit` binary: a standalone DA-reconstruction + force-exit-witness tool that
+# scrapes the checkpoint chain from a CKB RPC and rebuilds your leaf from L1 alone. Off by default so
+# the SDK stays RPC-free and tests fast (the lib keeps no chain dependency).
+cli = ["dep:ureq", "dep:native-tls", "dep:serde_json", "dep:hex"]
+
 [dependencies]
 liquid-cells-stf = { path = "../stf" }
 blake2b-ref = "0.3"
+# native-tls (OpenSSL) honors the system CA store, so the CLI traverses TLS-intercepting egress
+# proxies that rustls' bundled roots reject; rustls is explicitly NOT used here.
+ureq = { version = "2", default-features = false, features = ["native-tls"], optional = true }
+native-tls = { version = "0.2", optional = true }
+serde_json = { version = "1", optional = true }
+hex = { version = "0.4", optional = true }
+
+[[bin]]
+name = "lc-exit"
+path = "src/bin/lc-exit.rs"
+required-features = ["cli"]
+
+[dev-dependencies]
+hex = "0.4"

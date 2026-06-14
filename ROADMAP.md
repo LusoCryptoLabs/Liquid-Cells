@@ -42,9 +42,10 @@ contract upgrade is paid per coordinated release, so STF-changing items are bund
 ## Tier B — foundation-protecting (do before any real value)
 These are the "what we're not seeing" items: cheap-to-medium, and the docs currently imply some are
 already done. **Detailed scope below.**
-- 🚩 **DA-reconstruction + force-exit-witness CLI** — make the escape hatch *usable*, not library-only.
+- ✅ **DA-reconstruction + force-exit-witness CLI** (`lc-exit`) — **done**: reconstructs your leaf
+  from L1 alone and emits the force-exit witness, verified live against the type-id'd pool (B1 below).
 - 🚩 **Anchor minimum-capacity floor / tail-drain** in force-exit + checkpoint withdrawals — so a
-  draining pool can't strand the last exiters.
+  draining pool can't strand the last exiters (next).
 - **Deposit confirmation-depth gate (M4)** — the threat model says this is done; it is not built.
 - **DA snapshotting** — bound reconstruction to O(snapshot+tail), not O(all history), so exit stays
   cheap as the pool ages.
@@ -84,7 +85,16 @@ already done. **Detailed scope below.**
 
 ## Next real work — detailed scope
 
-### B1. DA-reconstruction + force-exit-witness CLI  `[S–M]`  *strengthens the DA + exit pillars*
+### B1. DA-reconstruction + force-exit-witness CLI  `[S–M]`  ✅ **DONE**  *strengthens the DA + exit pillars*
+
+**Shipped:** `crates/client/src/bin/lc-exit.rs` (build `cargo build -p liquid-cells-client --features cli`).
+It scrapes the pool's checkpoint chain from a CKB RPC via the indexer, folds the DA blobs through
+`liquid_cells_stf::reconstruct`, checks the rebuilt root equals the live anchor, and emits the 8249-byte
+force-exit witness. **Verified live** against the type-id'd pool (anchor `0x332e49ff…:0`, seq 1): the
+reconstructed root matched the on-chain `0x00b5dbaf…` and recovered the depositor's leaf (199.989 CKB,
+nonce 1) — from L1 data alone, no sequencer. Regression test in `crates/client/tests/reconstruct.rs`
+(fixture `fixtures/typeid/`), CLI build wired into CI. *Original scope below for reference.*
+
 
 **Why:** the entire "trustless" claim is "any user can rebuild their leaf from L1 alone and exit
 without the operator." `stf::reconstruct()` (`crates/stf/src/da.rs`) and the force-exit witness
