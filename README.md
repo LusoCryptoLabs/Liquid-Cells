@@ -191,6 +191,7 @@ liquid-cells/
     INTEGRATION-TIPPING.md # one worked instance of the generic guide (deposit/split-payment/exit)
     NON-CUSTODY.md       # non-custody + censorship-resistance (for integrators/LPs/reviewers)
     UPGRADE-TIMELOCK.md  # timelocked code-cell upgrades (announce -> delay -> execute)
+    SEQUENCING.md        # operator model is a knob: single / federated / permissionless (live evidence + gaps)
     FEES.md              # per-intent fee floor: live sequencer policy + staged in-proof version
     EGRESS.md FORCE-EXIT.md DA.md ...
   DEPLOY.md              # every live Pudge hash
