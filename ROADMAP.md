@@ -28,9 +28,18 @@ contract upgrade is paid per coordinated release, so STF-changing items are bund
 
 ## Tier A: cheap wins now (S effort, no vkey re-bake)
 - **Strip `.eh_frame`** (~11 KB / ~11K CKB off the code cell). *Investigated:* `-C force-unwind-tables=no` is a no-op (LLVM emits the CFI regardless) and post-link `objcopy --remove-section` only drops the 72-byte header (the bytes sit in a `PT_LOAD` segment). The real method is a **linker-script `/DISCARD/` of `.eh_frame`** at link time; deferred to the next code-cell redeploy (re-run the verifier differential test on the candidate binary). *preserved.*
-- **Adaptive cadence + break-even batch policy** in the sequencer seal loop. *preserved.*
-- **Instant soft-confirmation receipts** (sequencer signs "accepted" immediately; finality at
-  checkpoint cadence) → sub-second perceived latency. *preserved, must be framed liveness-not-finality.*
+- ✅ **Adaptive cadence + break-even batch policy**, **done** (`crates/sequencer/src/cadence.rs`):
+  `CadencePolicy { max_batch, min_fee_revenue, max_interval_epochs }` + `Sequencer::should_seal`
+  returns a `SealTrigger` (BatchFull > BreakEven > Interval). The break-even trigger compares the
+  drawable fee revenue (undrawn `fee_acc` + the mempool's fees, via `pending_fee_revenue` /
+  `available_fee_revenue`) against the per-checkpoint cost floor, so a checkpoint seals once it pays
+  for itself, with a `max_interval` liveness backstop. Pure policy, a driver polls it; no protocol
+  change. 9 tests. *preserved.*
+- ✅ **Instant soft-confirmation receipts**, **done** (`crates/sequencer/src/receipt.rs`): on accept,
+  the sequencer signs a `Receipt` over (pool, the intent's signed digest, committed seq, epoch);
+  `Sequencer::issue_receipt` binds it to the live pool + seq. Sub-second perceived confirmation,
+  **explicitly liveness-not-finality** (the real guarantee is force-exit), and non-repudiable so a
+  dishonoured receipt is attributable evidence. 4 tests. *preserved (must be framed liveness-not-finality).*
 - ✅ **Mempool ordering / poison-intent footgun**, **done** via `Sequencer::seal_resilient` (`crates/sequencer/src/resilient.rs`): mirrors `apply_ops`, drops only invalid *signed* intents and **transitively defers** their dependents (never reorders, never strands), with the atomic `seal_batch` kept as the authority and a **parity test** pinning byte-identical output when all-valid. Closes a real liveness/censorship gap (one bad intent no longer stalls a whole checkpoint, and `ShardedSequencer` no longer amplifies it K×). A naive "sort by nonce" would have been *unsafe* (cross-account funding deps). Follow-up: journal the drops in `DurableSequencer`. *preserved (strengthens liveness).*
 - **Hybrid fee schedule `max(MIN_FEE_PER_LEAF, p%·amount)` + platform-sponsored fees** in the SDK →
   makes sub-cent tips viable. *preserved (client/policy only).*

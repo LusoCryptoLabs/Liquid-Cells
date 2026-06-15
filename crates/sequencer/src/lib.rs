@@ -37,6 +37,12 @@ pub use sharded::{shard_pool_id, ShardedSequencer};
 
 pub mod coordinator;
 
+pub mod cadence;
+pub use cadence::{CadencePolicy, SealTrigger};
+
+pub mod receipt;
+pub use receipt::Receipt;
+
 pub mod journal;
 pub mod pending;
 pub use pending::{DepositId, PendingDeposits};
@@ -140,6 +146,15 @@ impl Mempool {
             withdrawals: self.withdrawals,
             fee_withdrawal,
         }
+    }
+
+    /// In-pool fee revenue this mempool would contribute to `fee_acc` when sealed: the sum of
+    /// every fee-paying intent's `fee` (transfers and HTLC-locks). Saturating, so adversarial
+    /// fees can never panic the cadence check.
+    fn fee_revenue(&self) -> u128 {
+        let t = self.transfers.iter().fold(0u128, |a, x| a.saturating_add(x.fee));
+        let h = self.htlc_locks.iter().fold(0u128, |a, x| a.saturating_add(x.fee));
+        t.saturating_add(h)
     }
 
     /// Rebuild a mempool from an (already-validated) batch, the inverse of [`into_batch`], used by
@@ -274,6 +289,52 @@ impl Sequencer {
     /// force-exit consumes.
     pub fn anchor(&self) -> [u8; ANCHOR_LEN] {
         encode_anchor(&self.state.pool, self.last_epoch)
+    }
+
+    // --- adaptive seal cadence (policy, not protocol; see [`crate::cadence`]) ---
+
+    /// In-pool fee revenue the pending mempool would contribute when sealed (Σ of transfer and
+    /// HTLC-lock fees). Saturating.
+    pub fn pending_fee_revenue(&self) -> u128 {
+        self.mempool.fee_revenue()
+    }
+
+    /// Total fee revenue drawable at the next checkpoint: undrawn `fee_acc` plus what the pending
+    /// mempool would add. This is the figure the break-even cadence trigger compares against.
+    pub fn available_fee_revenue(&self) -> u128 {
+        self.fee_acc().saturating_add(self.pending_fee_revenue())
+    }
+
+    /// Whether the [`CadencePolicy`] says to seal now, and why, evaluated in priority order
+    /// BatchFull > BreakEven > Interval. `None` while the mempool is empty (an empty checkpoint
+    /// is never worth a proof) or no threshold is met. Pure policy: a driver polls this with its
+    /// own epoch clock and calls [`seal_batch`](Self::seal_batch) /
+    /// [`seal_resilient`](Self::seal_resilient) when it returns `Some`.
+    pub fn should_seal(&self, now_epoch: u64, policy: &CadencePolicy) -> Option<SealTrigger> {
+        if self.pending() == 0 {
+            return None;
+        }
+        if policy.max_batch > 0 && self.pending() >= policy.max_batch {
+            return Some(SealTrigger::BatchFull);
+        }
+        if policy.min_fee_revenue > 0 && self.available_fee_revenue() >= policy.min_fee_revenue {
+            return Some(SealTrigger::BreakEven);
+        }
+        if policy.max_interval_epochs > 0
+            && now_epoch.saturating_sub(self.last_epoch) >= policy.max_interval_epochs
+        {
+            return Some(SealTrigger::Interval);
+        }
+        None
+    }
+
+    /// Issue a soft-confirmation [`Receipt`] for a just-accepted intent, binding the intent's
+    /// signed digest to THIS sequencer's pool, committed seq, and identity. **Liveness, not
+    /// finality** (the real guarantee is force-exit; see [`crate::receipt`]). `secret` is the
+    /// sequencer's signing key, held by the driver, not stored here. `intent_msg` is the same
+    /// digest the client signed (`transfer_msg` / `withdraw_msg` / `htlc_lock_msg`).
+    pub fn issue_receipt(&self, secret: &[u8; 32], intent_msg: Hash, accepted_epoch: u64) -> Receipt {
+        receipt::issue(secret, self.state.pool.pool_id, intent_msg, self.state.pool.seq, accepted_epoch)
     }
 
     /// Seal the mempool into one checkpoint. Builds the SP1 guest input and the anchor bytes
