@@ -3,8 +3,10 @@
 //! is involved. One end-to-end test (under `htlc_sha256`) settles the pool legs through the real STF.
 
 use liquid_cells_client::swap::{
-    decide, swap_hashlock, Action, CounterpartyLeg, LegState, MockLeg, Role, SwapTerms,
+    decide, swap_hashlock, Action, CounterpartyLeg, DriverStep, LegState, MakerDriver, MockLeg, Role,
+    SwapTerms,
 };
+use liquid_cells_client::Account;
 use liquid_cells_stf::{keccak, Hash};
 
 const SECRET: &[u8] = b"dust-egress-secret";
@@ -157,10 +159,83 @@ fn validate_enforces_ordering_and_amounts() {
     assert!(t.validate().is_err());
 }
 
+#[test]
+fn maker_driver_refunds_when_the_lp_never_engages() {
+    let mut acct = Account::new(pool_id(), 0x434b_42, [7u8; 32]);
+    let mut cp = MockLeg::new();
+    let mut maker = MakerDriver::new(terms(), SECRET.to_vec(), 1_000);
+    let pool = pool_locked(&terms());
+    // LP hasn't locked and the pool is far from timeout: nothing to do.
+    assert_eq!(maker.poll(&mut acct, &mut cp, &pool, 0), DriverStep::Idle);
+    // At/after pool_timeout with no counterparty lock, reclaim the dust.
+    assert!(matches!(
+        maker.poll(&mut acct, &mut cp, &pool, terms().pool_timeout),
+        DriverStep::SubmitRefund(_)
+    ));
+}
+
+#[cfg(feature = "htlc_sha256")]
+#[test]
+fn drivers_run_a_full_swap_autonomously() {
+    use liquid_cells_client::swap::TakerDriver;
+    use liquid_cells_stf::{apply, Batch, Deposit, State};
+    const CHAIN: u64 = 0x434b_42;
+
+    let mut maker_acct = Account::new(pool_id(), CHAIN, [7u8; 32]);
+    let taker_key = Account::new(pool_id(), CHAIN, [9u8; 32]).key();
+    let mut st = State::genesis(pool_id(), CHAIN);
+    apply(&mut st, &Batch {
+        current_epoch: 0,
+        deposits: vec![Deposit { to_key: maker_acct.key(), amount: 10_000_000 }],
+        ..Default::default()
+    }).unwrap();
+
+    let t = SwapTerms::propose(&maker_acct, taker_key, 5_000_000, 4_900_000, SECRET, 50, 10);
+    t.validate().unwrap();
+
+    let mut cp = MockLeg::new(); // the shared counterparty HTLC both sides observe
+    let mut maker = MakerDriver::new(t, SECRET.to_vec(), 1_000);
+    let mut taker = TakerDriver::new(t);
+    let mut pool = LegState::Empty;
+    let (mut maker_done, mut taker_done) = (false, false);
+
+    // The operator's checkpoint loop: poll each side, seal whatever pool intents come back.
+    for epoch in 1..30u64 {
+        match maker.poll(&mut maker_acct, &mut cp, &pool, epoch) {
+            DriverStep::SubmitLock(l) => {
+                apply(&mut st, &Batch { current_epoch: epoch, htlc_locks: vec![l], ..Default::default() }).unwrap();
+                pool = LegState::Locked { hashlock: t.hashlock, amount: t.dust, timeout: t.pool_timeout };
+            }
+            DriverStep::SubmitRefund(r) => {
+                apply(&mut st, &Batch { current_epoch: epoch, htlc_refunds: vec![r], ..Default::default() }).unwrap();
+                pool = LegState::Refunded;
+            }
+            DriverStep::Settled => maker_done = true,
+            DriverStep::Aborted(m) => panic!("maker aborted: {m}"),
+            _ => {}
+        }
+        match taker.poll(&mut cp, &pool, epoch) {
+            DriverStep::SubmitClaim(c) => {
+                apply(&mut st, &Batch { current_epoch: epoch, htlc_claims: vec![c], ..Default::default() }).unwrap();
+                pool = LegState::Claimed { preimage: SECRET.to_vec() };
+            }
+            DriverStep::Settled => taker_done = true,
+            DriverStep::Aborted(m) => panic!("taker aborted: {m}"),
+            _ => {}
+        }
+        if maker_done && taker_done {
+            break;
+        }
+    }
+
+    assert!(maker_done && taker_done, "both sides reached Settled");
+    assert_eq!(st.get_leaf(&taker_key).balance, 5_000_000, "the LP received the in-pool dust on-chain");
+    assert!(matches!(cp.state(), LegState::Claimed { .. }), "the maker claimed the counterparty payment");
+}
+
 #[cfg(feature = "htlc_sha256")]
 #[test]
 fn pool_legs_settle_through_the_real_stf() {
-    use liquid_cells_client::Account;
     use liquid_cells_stf::{apply, Batch, Deposit, State};
 
     const CHAIN: u64 = 0x434b_42;

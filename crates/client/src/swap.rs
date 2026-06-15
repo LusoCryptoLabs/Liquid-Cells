@@ -326,3 +326,111 @@ fn decide_taker(terms: &SwapTerms, pool: &LegState, cp: &LegState, now: u64) -> 
         }
     }
 }
+
+// --- runnable drivers -------------------------------------------------------
+// `decide` is the brain; the drivers make it runnable. Each driver performs the *counterparty-leg*
+// actions itself (via the [`CounterpartyLeg`] trait it is handed) and returns any *pool-leg* intent
+// for the caller to seal into a checkpoint, so the same loop backs a test (mock leg + in-process
+// STF) and a real LP service (an `fnn`-backed leg + the live sequencer), with no logic change.
+
+/// What a driver's `poll` asks the caller to do this tick.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DriverStep {
+    /// Seal this pool `htlc_lock` into the next checkpoint (maker).
+    SubmitLock(HtlcLock),
+    /// Seal this pool `htlc_claim` (taker).
+    SubmitClaim(HtlcClaim),
+    /// Seal this pool `htlc_refund` (maker).
+    SubmitRefund(HtlcRefund),
+    /// The driver acted on the counterparty leg, or there is nothing to do this tick.
+    Idle,
+    /// Settled from this role's perspective.
+    Settled,
+    /// A safety check failed; the driver will not proceed.
+    Aborted(&'static str),
+}
+
+/// Runnable maker (dust-holder) side. Wraps [`decide`]: claims the counterparty leg once the LP's
+/// lock is sound, and returns the pool lock/refund intents for the caller to seal (signed by the
+/// LC `account`).
+pub struct MakerDriver {
+    terms: SwapTerms,
+    secret: Vec<u8>,
+    pool_fee: u128,
+    lock_submitted: bool,
+}
+
+impl MakerDriver {
+    pub fn new(terms: SwapTerms, secret: Vec<u8>, pool_fee: u128) -> Self {
+        Self { terms, secret, pool_fee, lock_submitted: false }
+    }
+
+    pub fn terms(&self) -> &SwapTerms {
+        &self.terms
+    }
+
+    /// Advance the maker given the observed `pool` leg and the clock `now`. `account` signs the pool
+    /// lock/refund (its nonce must match `terms.lock_nonce` at lock time); `cp` is the shared
+    /// counterparty leg the maker claims (revealing the secret) when the LP's lock checks out.
+    pub fn poll(
+        &mut self,
+        account: &mut Account,
+        cp: &mut impl CounterpartyLeg,
+        pool: &LegState,
+        now: u64,
+    ) -> DriverStep {
+        match decide(Role::Maker, &self.terms, pool, &cp.state(), now) {
+            // Lock the pool exactly once; re-polling before it seals must not re-sign (which would
+            // advance the local nonce off-chain).
+            Action::LockPool if self.lock_submitted => DriverStep::Idle,
+            Action::LockPool => {
+                self.lock_submitted = true;
+                DriverStep::SubmitLock(self.terms.maker_lock(account, self.pool_fee))
+            }
+            Action::ClaimCounterparty => {
+                cp.claim(&self.secret);
+                DriverStep::Idle
+            }
+            Action::RefundPool => DriverStep::SubmitRefund(self.terms.maker_refund()),
+            Action::Done => DriverStep::Settled,
+            Action::Abort(m) => DriverStep::Aborted(m),
+            _ => DriverStep::Idle,
+        }
+    }
+}
+
+/// Runnable taker (LP) side. Locks/refunds the counterparty leg via the trait, and returns the pool
+/// claim for the caller to seal once the secret is revealed.
+pub struct TakerDriver {
+    terms: SwapTerms,
+}
+
+impl TakerDriver {
+    pub fn new(terms: SwapTerms) -> Self {
+        Self { terms }
+    }
+
+    pub fn terms(&self) -> &SwapTerms {
+        &self.terms
+    }
+
+    /// Advance the taker given the observed `pool` leg and the clock `now`. `cp` is the shared
+    /// counterparty leg the taker locks (and refunds on timeout); the pool claim is returned for the
+    /// caller to seal. The pool claim/refund are unsigned, so re-polling before they seal is safe.
+    pub fn poll(&mut self, cp: &mut impl CounterpartyLeg, pool: &LegState, now: u64) -> DriverStep {
+        match decide(Role::Taker, &self.terms, pool, &cp.state(), now) {
+            Action::LockCounterparty => {
+                cp.lock(self.terms.hashlock, self.terms.fiber_amount, self.terms.fiber_timeout);
+                DriverStep::Idle
+            }
+            Action::ClaimPool { preimage } => DriverStep::SubmitClaim(self.terms.taker_claim(preimage)),
+            Action::RefundCounterparty => {
+                cp.refund();
+                DriverStep::Idle
+            }
+            Action::Done => DriverStep::Settled,
+            Action::Abort(m) => DriverStep::Aborted(m),
+            _ => DriverStep::Idle,
+        }
+    }
+}
