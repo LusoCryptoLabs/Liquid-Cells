@@ -236,14 +236,18 @@ impl Account {
     }
 
     /// **Fee sponsorship**: a transfer of exactly `fee` to `beneficiary_key`, with this (sponsor)
-    /// account paying no protocol fee of its own. Submit it **ordered before** the beneficiary's
-    /// payment in the same checkpoint, so the beneficiary can afford a fee larger than their
-    /// (sub-cent) payment: the platform absorbs the per-leaf floor and the user's marginal cost is
-    /// just the tip, the thing that makes micro-tips viable. Pure composition over [`transfer`], no
-    /// protocol notion of a sponsor. (A platform that wants to charge its own fee can use
-    /// [`transfer`](Self::transfer) with a non-zero fee instead.)
+    /// account paying the minimum protocol fee ([`liquid_cells_stf::MIN_FEE_PER_LEAF`]) on its own
+    /// leg. Submit it **ordered before** the beneficiary's payment in the same checkpoint, so the
+    /// beneficiary can afford a fee larger than their (sub-cent) payment: the platform absorbs the
+    /// per-leaf floor and the user's marginal cost is just the tip, the thing that makes micro-tips
+    /// viable. Pure composition over [`transfer`], no protocol notion of a sponsor.
+    ///
+    /// The sponsor leg pays the floor (not zero) so the transfer is valid under the staged `min_fee`
+    /// fee floor (a zero-fee sponsor leg would be rejected once `min_fee` is on); the floor is a
+    /// negligible cost the platform already absorbs. (A platform that wants to charge its own fee can
+    /// use [`transfer`](Self::transfer) with a larger fee instead.)
     pub fn sponsor_fee(&mut self, beneficiary_key: Hash, fee: u128, expiry: u64) -> Transfer {
-        self.transfer(beneficiary_key, fee, 0, expiry)
+        self.transfer(beneficiary_key, fee, liquid_cells_stf::MIN_FEE_PER_LEAF, expiry)
     }
 
     /// Build N signed transfers from this account in one call, a batch payment / fan-out

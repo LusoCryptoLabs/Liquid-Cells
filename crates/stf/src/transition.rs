@@ -64,7 +64,9 @@ pub const MAX_LEAVES_PER_BATCH: usize = 1024;
 /// ([`liquid_cells_sequencer::FeePolicy`]), so the economics hold operationally now. The value
 /// is a placeholder unit (1 shannon-equivalent); the production figure is an audit-time choice
 /// calibrated to the marginal per-leaf checkpoint cost.
-#[cfg(feature = "min_fee")]
+// The const is ALWAYS defined (single source of truth, e.g. for the client's `sponsor_fee`), but it
+// is only ENFORCED under `min_fee` (the gated checks below). When `min_fee` is off the const is
+// unused in the guest and dead-code-eliminated, so the vkey is unchanged.
 pub const MIN_FEE_PER_LEAF: u128 = 1;
 
 /// Keys a batch reads/writes, sorted and deduplicated. Derivable from the batch (and the

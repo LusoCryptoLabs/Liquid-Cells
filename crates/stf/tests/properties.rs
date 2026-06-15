@@ -88,7 +88,7 @@ fn happy_path_transfer_moves_balance_and_advances_root() {
 #[test]
 fn no_debit_without_valid_signature() {
     let mut st = funded_state(&[(1, 100_000_000)]);
-    let mut t = signed_transfer(1, key_for(2), 10_000_000, 0, 0, 100);
+    let mut t = signed_transfer(1, key_for(2), 10_000_000, 1, 0, 100);
     t.sig[0] ^= 0xff; // corrupt the signature
     let batch = Batch { current_epoch: 1, transfers: vec![t], ..Default::default() };
     assert_eq!(apply(&mut st, &batch), Err(StfError::BadSignature));
@@ -97,7 +97,7 @@ fn no_debit_without_valid_signature() {
 #[test]
 fn tampering_amount_after_signing_is_rejected() {
     let mut st = funded_state(&[(1, 100_000_000)]);
-    let mut t = signed_transfer(1, key_for(2), 10_000_000, 0, 0, 100);
+    let mut t = signed_transfer(1, key_for(2), 10_000_000, 1, 0, 100);
     t.amount = 90_000_000; // signature no longer covers this amount
     let batch = Batch { current_epoch: 1, transfers: vec![t], ..Default::default() };
     assert_eq!(apply(&mut st, &batch), Err(StfError::BadSignature));
@@ -106,7 +106,7 @@ fn tampering_amount_after_signing_is_rejected() {
 #[test]
 fn replay_is_rejected_by_nonce() {
     let mut st = funded_state(&[(1, 100_000_000)]);
-    let t = signed_transfer(1, key_for(2), 10_000_000, 0, 0, 100);
+    let t = signed_transfer(1, key_for(2), 10_000_000, 1, 0, 100);
     let b1 = Batch { current_epoch: 1, transfers: vec![t.clone()], ..Default::default() };
     apply(&mut st, &b1).expect("first applies");
     // Replaying the identical (nonce 0) intent must fail; the leaf is now at nonce 1.
@@ -117,7 +117,7 @@ fn replay_is_rejected_by_nonce() {
 #[test]
 fn insufficient_balance_is_rejected() {
     let mut st = funded_state(&[(1, 1_000)]);
-    let t = signed_transfer(1, key_for(2), 10_000_000, 0, 0, 100);
+    let t = signed_transfer(1, key_for(2), 10_000_000, 1, 0, 100);
     let batch = Batch { current_epoch: 1, transfers: vec![t], ..Default::default() };
     assert_eq!(apply(&mut st, &batch), Err(StfError::InsufficientBalance));
 }
@@ -219,7 +219,7 @@ fn conservation_holds_across_a_mixed_batch() {
 fn smt_proof_membership_and_nonmembership() {
     let mut st = funded_state(&[(1, 100_000_000)]);
     // Move once so Alice has a non-trivial leaf and a sibling exists.
-    let t = signed_transfer(1, key_for(2), 1_000_000, 0, 0, 100);
+    let t = signed_transfer(1, key_for(2), 1_000_000, 1, 0, 100);
     apply(&mut st, &Batch { current_epoch: 1, transfers: vec![t], ..Default::default() }).unwrap();
 
     let root = st.pool.root;

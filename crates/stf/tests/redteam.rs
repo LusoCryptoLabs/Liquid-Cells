@@ -116,16 +116,16 @@ fn attack_cross_pool_replay() {
     let from_key = key_of_pubkey(&from_pubkey);
     let to_key = key_for(2);
     let other_pool = keccak(b"some-other-pool");
-    let msg = transfer_msg(CHAIN_ID, &other_pool, &from_key, &to_key, 10, 0, 0, 100);
+    let msg = transfer_msg(CHAIN_ID, &other_pool, &from_key, &to_key, 10, 1, 0, 100);
     let (_pk, sig) = sig::sign(&sk, &msg);
-    let t = Transfer { from_pubkey, to_key, amount: 10, fee: 0, nonce: 0, expiry: 100, sig };
+    let t = Transfer { from_pubkey, to_key, amount: 10, fee: 1, nonce: 0, expiry: 100, sig };
     let r = apply(&mut st, &Batch { current_epoch: 1, transfers: vec![t], ..Default::default() });
     assert_eq!(r, Err(StfError::BadSignature), "cross-pool replay must be rejected");
 
     // Same, cross-chain.
-    let msg2 = transfer_msg(CHAIN_ID + 1, &pool_id(), &from_key, &to_key, 10, 0, 0, 100);
+    let msg2 = transfer_msg(CHAIN_ID + 1, &pool_id(), &from_key, &to_key, 10, 1, 0, 100);
     let (_pk, sig2) = sig::sign(&sk, &msg2);
-    let t2 = Transfer { from_pubkey, to_key, amount: 10, fee: 0, nonce: 0, expiry: 100, sig: sig2 };
+    let t2 = Transfer { from_pubkey, to_key, amount: 10, fee: 1, nonce: 0, expiry: 100, sig: sig2 };
     let r2 = apply(&mut st, &Batch { current_epoch: 1, transfers: vec![t2], ..Default::default() });
     assert_eq!(r2, Err(StfError::BadSignature), "cross-chain replay must be rejected");
 }
@@ -138,7 +138,7 @@ fn attack_cross_pool_replay() {
 #[test]
 fn attack_intra_batch_double_spend() {
     let mut st = funded_state(&[(1, 100_000_000)]);
-    let t = signed_transfer(1, key_for(2), 10_000_000, 0, 0, 100);
+    let t = signed_transfer(1, key_for(2), 10_000_000, 1, 0, 100);
     let batch = Batch { current_epoch: 1, transfers: vec![t.clone(), t], ..Default::default() };
     assert_eq!(apply(&mut st, &batch), Err(StfError::BadNonce));
     assert!(conserved(&st));
@@ -152,7 +152,7 @@ fn attack_intra_batch_double_spend() {
 fn attack_htlc_claim_then_refund_double_credit() {
     let mut st = funded_state(&[(1, 100_000_000)]);
     let bob = key_for(2);
-    let (amount, fee) = (5_000_000u128, 0u128);
+    let (amount, fee) = (5_000_000u128, 1u128);
     let pre = b"redteam-preimage";
     let hl = htlc_hash(pre);
     let sk = secret(1);
@@ -191,9 +191,9 @@ fn attack_htlc_claim_and_refund_same_batch() {
     let hl = htlc_hash(pre);
     let sk = secret(1);
     let sender_key = key_for(1);
-    let msg = htlc_lock_msg(CHAIN_ID, &pool_id(), &sender_key, &bob, amount, 0, &hl, 50, 0);
+    let msg = htlc_lock_msg(CHAIN_ID, &pool_id(), &sender_key, &bob, amount, 1, &hl, 50, 0);
     let (_pk, sig) = sig::sign(&sk, &msg);
-    let lock = HtlcLock { sender_pubkey: sig::pubkey(&sk), receiver_key: bob, amount, fee: 0, hashlock: hl, timeout: 50, nonce: 0, sig };
+    let lock = HtlcLock { sender_pubkey: sig::pubkey(&sk), receiver_key: bob, amount, fee: 1, hashlock: hl, timeout: 50, nonce: 0, sig };
     apply(&mut st, &Batch { current_epoch: 1, htlc_locks: vec![lock], ..Default::default() }).unwrap();
 
     let href = HtlcRef { sender_key, receiver_key: bob, amount, hashlock: hl, timeout: 50, lock_nonce: 0 };
@@ -317,15 +317,15 @@ fn attack_keyset_stability_all_ops() {
     let hl = htlc_hash(pre);
     let sk1 = secret(1);
     let k1 = key_for(1);
-    let lk_msg = htlc_lock_msg(CHAIN_ID, &pool_id(), &k1, &carol, 1_000_000, 0, &hl, 50, 0);
+    let lk_msg = htlc_lock_msg(CHAIN_ID, &pool_id(), &k1, &carol, 1_000_000, 1, &hl, 50, 0);
     let (_p, lk_sig) = sig::sign(&sk1, &lk_msg);
-    let lock_to_claim = HtlcLock { sender_pubkey: sig::pubkey(&sk1), receiver_key: carol, amount: 1_000_000, fee: 0, hashlock: hl, timeout: 50, nonce: 0, sig: lk_sig };
+    let lock_to_claim = HtlcLock { sender_pubkey: sig::pubkey(&sk1), receiver_key: carol, amount: 1_000_000, fee: 1, hashlock: hl, timeout: 50, nonce: 0, sig: lk_sig };
     apply(&mut st, &Batch { current_epoch: 1, htlc_locks: vec![lock_to_claim], ..Default::default() }).unwrap();
 
     // A lock that will be refunded (short timeout).
-    let lk2_msg = htlc_lock_msg(CHAIN_ID, &pool_id(), &k1, &bob, 2_000_000, 0, &hl, 5, 1);
+    let lk2_msg = htlc_lock_msg(CHAIN_ID, &pool_id(), &k1, &bob, 2_000_000, 1, &hl, 5, 1);
     let (_p, lk2_sig) = sig::sign(&sk1, &lk2_msg);
-    let lock_to_refund = HtlcLock { sender_pubkey: sig::pubkey(&sk1), receiver_key: bob, amount: 2_000_000, fee: 0, hashlock: hl, timeout: 5, nonce: 1, sig: lk2_sig };
+    let lock_to_refund = HtlcLock { sender_pubkey: sig::pubkey(&sk1), receiver_key: bob, amount: 2_000_000, fee: 1, hashlock: hl, timeout: 5, nonce: 1, sig: lk2_sig };
     apply(&mut st, &Batch { current_epoch: 2, htlc_locks: vec![lock_to_refund], ..Default::default() }).unwrap();
 
     // Now a mixed batch at epoch 6: claim the first (timeout 50, still open),

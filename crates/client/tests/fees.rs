@@ -74,7 +74,11 @@ fn sub_cent_tip_succeeds_with_fee_sponsorship() {
 
     assert_eq!(st.get_leaf(&alice.key()).balance, 0, "alice's marginal cost is just the 1-unit tip");
     assert_eq!(st.get_leaf(&creator.key()).balance, 1, "creator received the tip");
-    assert_eq!(st.get_leaf(&platform.key()).balance, 995, "platform absorbed the 5-unit fee");
-    assert_eq!(st.pool.fee_acc, 5, "the sponsored fee accrued to the pool");
+    assert_eq!(
+        st.get_leaf(&platform.key()).balance,
+        994,
+        "platform absorbed the 5-unit sponsored fee plus the 1-unit floor on its own sponsor leg"
+    );
+    assert_eq!(st.pool.fee_acc, 6, "both fees accrued to the pool (5 tip fee + 1 sponsor-leg floor)");
     assert_eq!(st.pool.total, 1001, "value conserved (deposits 1 + 1000, no exits)");
 }

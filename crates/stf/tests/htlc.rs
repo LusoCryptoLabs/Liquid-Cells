@@ -174,9 +174,9 @@ fn htlc_lock_removes_funds_from_spendable_balance() {
     // not after escrow) must fail.
     let sk = secret(1);
     let from_key = key_for(1);
-    let msg = transfer_msg(CHAIN_ID, &pool_id(), &from_key, &key_for(2), 70_000_000, 0, 1, 100);
+    let msg = transfer_msg(CHAIN_ID, &pool_id(), &from_key, &key_for(2), 70_000_000, 1, 1, 100);
     let (_pk, sig) = sig::sign(&sk, &msg);
-    let t = Transfer { from_pubkey: sig::pubkey(&sk), to_key: key_for(2), amount: 70_000_000, fee: 0, nonce: 1, expiry: 100, sig };
+    let t = Transfer { from_pubkey: sig::pubkey(&sk), to_key: key_for(2), amount: 70_000_000, fee: 1, nonce: 1, expiry: 100, sig };
     assert_eq!(
         apply(&mut st, &Batch { current_epoch: 2, transfers: vec![t], ..Default::default() }),
         Err(StfError::InsufficientBalance)

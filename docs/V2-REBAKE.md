@@ -47,26 +47,37 @@ collide.
 cargo test -p liquid-cells-stf --features "compact_smt reject_high_s da_varint htlc_sha256 htlc_keyspace min_fee"
 ```
 
-fails ~11 tests. `MIN_FEE_PER_LEAF = 1` rejects **fee == 0** intents, and many fixtures (and one real
-API) build zero-fee intents. This is not a feature-interaction bug; `min_fee` simply was never run
-against the full suite. So **activating `min_fee` is a coordinated task, not a flag flip** (below).
+`MIN_FEE_PER_LEAF = 1` rejects **fee == 0** intents, and `min_fee` was never run against the full
+suite. The implication runs deeper than fixtures: **every leaf must pay the floor**, so any API or
+test that builds a zero-fee intent breaks. So **activating `min_fee` is a coordinated task, not a
+flag flip**.
 
-## `min_fee` activation checklist (do before flipping it on)
+### Done (the STF, the vkey-bearing core, is min_fee-clean and the bundle composes green)
 
-1. **Finalize the floor.** `MIN_FEE_PER_LEAF` (crates/stf/src/transition.rs) is a placeholder `1`.
-   Set it to cover the real per-leaf proving + DA + L1 cost.
-2. **Sponsored fees.** `Account::sponsor_fee` (crates/client/src/lib.rs) builds a `transfer(.., fee=0)`
-   on the sponsor's leg, which `min_fee` rejects. Rework it so the sponsor's transfer pays >= the
-   floor (the sponsor absorbs one floor on top of the sponsored amount), or document that sponsorship
-   requires a non-zero sponsor-leg fee under `min_fee`.
-3. **Test fixtures.** Raise the zero-fee intents these tests build to >= the floor (the value is
-   incidental to each: adversarial tests still fail on their intended error, accounting tests are
-   unaffected because the fee is the payer's). One already done: `tests/da.rs` (fee 0 -> 1).
-   Remaining: `htlc_lock_removes_funds_from_spendable_balance`, `insufficient_balance_is_rejected`,
-   `no_debit_without_valid_signature`, `replay_is_rejected_by_nonce`,
-   `smt_proof_membership_and_nonmembership`, `tampering_amount_after_signing_is_rejected`,
-   `attack_intra_batch_double_spend`, `attack_cross_pool_replay`, `attack_keyset_stability_all_ops`,
-   `attack_htlc_claim_and_refund_same_batch`, `attack_htlc_claim_then_refund_double_credit`.
+- The STF passes the FULL bundle (all six features) together: `cargo test -p liquid-cells-stf
+  --features "compact_smt reject_high_s da_varint htlc_sha256 htlc_keyspace min_fee"` is GREEN. The
+  zero-fee fixtures across `tests/da.rs`, `properties.rs`, `htlc.rs`, `redteam.rs` were raised to a
+  non-zero fee (the value is incidental to each: adversarial tests still fail on their intended
+  error, conservation/witness-consistency tests are unaffected since the fee is the payer's).
+- `Account::sponsor_fee` reworked to pay `MIN_FEE_PER_LEAF` on its sponsor leg (the const is now
+  always-defined, single source of truth), so a sponsored micro-tip is valid under `min_fee`. The
+  const ungating is vkey-neutral (an unused const is dead-code-eliminated from the guest).
+
+### Remaining (do at activation, with the final floor)
+
+1. **Finalize the floor.** `MIN_FEE_PER_LEAF` is a placeholder `1`. Set it to cover the real per-leaf
+   proving + DA + L1 cost. NOTE: a larger floor re-breaks any fixture using a fee below it, so do the
+   fixture pass (below) AFTER fixing the value.
+2. **The other zero-fee client APIs** must pay the floor like `sponsor_fee`, or document a non-zero
+   fee requirement: `Account::split_payment` (both legs fee 0) and `Account::batch_transfer` (per-leg
+   fee defaults 0). This is an API/economics decision (the legs absorbing a floor changes the exact
+   `cut + recipient == gross` relation), so it is deliberately deferred, not rushed at the placeholder
+   floor.
+3. **Off-chain fixtures.** The sequencer and client run the same STF, so once they forward `min_fee`
+   (a one-line feature each) their fee-0 test fixtures need the same raise the STF suite got (the STF
+   pass is the template). Failing sets recorded at the time: sequencer `all_valid_batch...`,
+   `disabled_policy_is_a_no_op`, `plain_seal_batch...`, `poison_intent...`, `sealing_after_recovery...`;
+   client `split_payment` / `batch_transfer` / `snapshot` / `fan_tips` (which also need item 2).
 
 ## Re-bake execution steps
 
