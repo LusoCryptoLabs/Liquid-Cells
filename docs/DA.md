@@ -53,9 +53,11 @@ over the blob, negligible beside the ~3.6B-cycle BN254 pairing.
 
 ## Scope / open
 
-* The DA commitment + binding + independent reconstruction are done. A polished
-  standalone CLI wrapper around `reconstruct` (read a node's checkpoint txs → emit a
-  user's leaf + proof) is a thin follow-up over the library primitive.
+* The DA commitment + binding + independent reconstruction are done, and the standalone CLI wrapper
+  around `reconstruct` (read a node's checkpoint txs → emit a user's leaf + proof) is **shipped** as
+  [`lc-exit`](../crates/client/src/bin/lc-exit.rs). It enumerates the pool's checkpoints from a CKB
+  node's indexer, folds the published blobs, and checks the rebuilt root equals the live anchor. See
+  **[REPRODUCE-EXIT.md](REPRODUCE-EXIT.md)** to run it yourself against the live pool.
 * DA is the prerequisite for **Phase 3 force-exit**: the on-chain SMT-inclusion verifier
   that lets a user spend against the last committed root after an operator-silence
   timeout. The reconstruction here produces exactly the proof that verifier consumes.

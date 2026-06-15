@@ -139,9 +139,11 @@ real user can exercise the hatch today. This turns a paper guarantee into a runn
    use a JSON-RPC client).
 2. Locate the pool's **anchor by its type-script hash** (e.g. the type-id'd pool's `0xf7dfded8…`),
    newest live cell first.
-3. **Walk the checkpoint chain backward**: each checkpoint consumes the prior anchor and produces the
-   next, so follow the input/output anchor lineage to genesis, collecting each checkpoint tx's
-   witness `output_type` = the DA blob.
+3. **Enumerate the pool's checkpoints** via the indexer (`get_transactions` filtered by the anchor
+   type script), oldest-first, then pull each checkpoint tx's witness `output_type` = the DA blob
+   with `get_transaction` (genesis carries none). *(This indexer enumeration is what the shipped tool
+   does; a pure base-node alternative is to walk the anchor input/output lineage backward from the
+   live cell, but the anchor carries no back-pointer so that path is unshipped.)*
 4. **Fold blobs oldest-first** with `stf::reconstruct()` to rebuild the SMT / the caller's leaf
    `{balance, nonce}`.
 5. **Assert** the reconstructed root == the current on-chain anchor root (integrity check; if it
@@ -154,9 +156,10 @@ real user can exercise the hatch today. This turns a paper guarantee into a runn
 **Acceptance test:** point it at the **live type-id'd pool on Pudge** (anchor `0x332e49ff…:0`, seq 1),
 reconstruct, confirm the root matches on-chain, and emit a valid force-exit witness for a known leaf.
 
-**Risks / notes:** the chain-walk (finding all checkpoints by anchor type hash via RPC) is the only
-non-trivial part; everything downstream already exists. Keep full-diff DA as the source of truth (do
-not depend on any snapshot until B4 lands).
+**Risks / notes:** the enumeration (finding all checkpoints by anchor type hash via the indexer) is
+the only non-trivial part; everything downstream already exists. The indexer is substitutable, not
+trusted: a source that omits/reorders/corrupts checkpoints fails the step-5 root-equality check.
+Keep full-diff DA as the source of truth (do not depend on any snapshot until B4 lands).
 
 ### B2. Anchor minimum-capacity floor / tail-drain  ✅ **RESOLVED (not a bug)**  *invariant documented + tested*
 
