@@ -15,12 +15,12 @@ const TIMEOUT: u64 = 1000;
 const DEP_CAP: u64 = 100_00000000; // 100 CKB
 
 // ---------------------------------------------------------------------------
-// VECTOR 1: SWEEP — borrowed/forged type-hash cell to steal funds to attacker.
+// VECTOR 1: SWEEP, borrowed/forged type-hash cell to steal funds to attacker.
 //
 // The deposit lock sweep path returns 0 if ANY input bears `pool_type_hash`.
 // It NEVER inspects the output destination on the sweep path. So if an attacker
-// can place a cell bearing the pool anchor type-script hash as an input — WITHOUT
-// it being a real, validated checkpoint — the deposit funds can be routed to the
+// can place a cell bearing the pool anchor type-script hash as an input, WITHOUT
+// it being a real, validated checkpoint, the deposit funds can be routed to the
 // attacker. This test creates an attacker-owned cell carrying the pool type script
 // (an always-success type stand-in, exactly as the existing positive test does),
 // then routes ALL the deposit capacity to an attacker lock.
@@ -87,12 +87,12 @@ fn sweep_borrowed_pooltype_cell_routes_funds_to_attacker() {
     println!("VECTOR1 borrowed-pooltype sweep-to-attacker result: {:?}", res);
     // If this PASSES, the deposit lock alone lets a borrowed/forged pool-type cell steal the
     // deposit. Whether that is a real theft depends on whether the anchor type script would
-    // reject this tx as a checkpoint — but the DEPOSIT LOCK ITSELF does not enforce that.
+    // reject this tx as a checkpoint, but the DEPOSIT LOCK ITSELF does not enforce that.
     assert!(res.is_ok(), "demonstration: deposit lock unlocks on ANY input bearing pool_type_hash");
 }
 
 // ---------------------------------------------------------------------------
-// VECTOR 2a: REFUND — relative-epoch since (no 0x20 absolute flag) should be rejected.
+// VECTOR 2a: REFUND, relative-epoch since (no 0x20 absolute flag) should be rejected.
 // abs_epoch requires top byte 0x20. A relative-epoch since (0xA0...) for the same number
 // must NOT satisfy the timeout.
 // ---------------------------------------------------------------------------
@@ -104,7 +104,7 @@ fn refund_with_relative_epoch_since_rejected() {
     assert!(res.is_err(), "a relative-epoch since must not satisfy the absolute-epoch timeout");
 }
 
-// VECTOR 2b: REFUND — block-number since (0x00 flag) must be rejected.
+// VECTOR 2b: REFUND, block-number since (0x00 flag) must be rejected.
 #[test]
 fn refund_with_block_number_since_rejected() {
     // since = absolute block number TIMEOUT (top byte 0x00). abs_epoch returns None.
@@ -114,10 +114,10 @@ fn refund_with_block_number_since_rejected() {
     assert!(res.is_err(), "a block-number since must not satisfy the epoch timeout");
 }
 
-// VECTOR 2c: REFUND — epoch fraction games. abs_epoch ignores the index/length fraction
+// VECTOR 2c: REFUND, epoch fraction games. abs_epoch ignores the index/length fraction
 // (low bits above 24). Encode timeout-1 in the epoch number but stuff a high fraction.
 // CKB since absolute-epoch layout: 0x20 | (length<<40) | (index<<24) | number.
-// We set number = TIMEOUT-1 but a big index/length — must still be rejected (e < timeout).
+// We set number = TIMEOUT-1 but a big index/length, must still be rejected (e < timeout).
 #[test]
 fn refund_epoch_fraction_cannot_round_up() {
     // number = TIMEOUT-1, index=0xFFFF, length=0xFFFF (max fraction). e = TIMEOUT-1 < TIMEOUT.
@@ -128,7 +128,7 @@ fn refund_epoch_fraction_cannot_round_up() {
     assert!(res.is_err(), "epoch fraction must not push a sub-timeout epoch over the timeout");
 }
 
-// VECTOR 2d: REFUND — split refund across attacker + depositor: pay depositor full but
+// VECTOR 2d: REFUND, split refund across attacker + depositor: pay depositor full but
 // is there any way to ALSO siphon? The lock sums outputs to refund_lock_hash >= owed.
 // Try: pay depositor exactly owed, but the tx ALSO has another deposit-lock input whose
 // since is NOT mature, riding on the first's maturity. (group-wide since check)
@@ -197,7 +197,7 @@ fn refund_second_immature_group_input_rejected() {
 // VECTOR 3: THIRD-PARTY THEFT via refund-lock-hash collision is keccak/blake-hard; instead
 // try: after timeout, pay depositor the FULL amount but in a tx that also has a separate
 // (non-group) input the attacker controls, and an extra output to attacker funded by that
-// input. This is legitimate (attacker funds their own output), NOT a break — skip.
+// input. This is legitimate (attacker funds their own output), NOT a break, skip.
 // Real third-party attempt: refund output to refund_lock_hash but with LESS than owed while
 // the rest goes to attacker. Covered by insufficient-capacity test. Here test the boundary:
 // pay depositor exactly owed-1 with the deposit, rest to attacker.

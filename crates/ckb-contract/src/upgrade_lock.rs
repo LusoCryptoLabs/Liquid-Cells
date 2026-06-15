@@ -1,20 +1,20 @@
-//! Timelocked upgrade lock — caps the single-upgrade-key blast radius (ROADMAP / HARDENING).
+//! Timelocked upgrade lock, caps the single-upgrade-key blast radius (ROADMAP / HARDENING).
 //!
 //! The anchor type script is deployed via type-id, so it is upgradable in place by spending its
 //! **code cell**. If that code cell is locked by a plain key, that key can replace the verifier with
 //! a malicious one and drain every pool **instantly**, with no window for users to force-exit first.
 //! This lock removes the "instant" part: an upgrade may proceed only if it was **announced** at least
 //! `delay` epochs earlier, giving every user a guaranteed window to exit before the new code takes
-//! effect — turning a sudden rug into a slow, publicly-visible, exit-able event.
+//! effect, turning a sudden rug into a slow, publicly-visible, exit-able event.
 //!
 //! Mechanism (commit-reveal with a consensus-enforced delay):
-//!   * **Announce:** governance creates an *announcement* cell — locked by `governance_lock_hash`,
+//!   * **Announce:** governance creates an *announcement* cell, locked by `governance_lock_hash`,
 //!     whose data is the **data hash of the new code cell** it intends to deploy. This is public, so
 //!     users see exactly what is coming.
 //!   * **Execute (≥ `delay` epochs later):** a tx consumes the old code cell (this lock) **and** the
 //!     announcement cell, and creates the new code cell. This lock requires that announcement input
 //!     to be (a) locked by `governance_lock_hash`, (b) committing to the new code cell's data hash,
-//!     and (c) spent with a **relative-epoch `since` ≥ `delay`** — which CKB consensus only permits
+//!     and (c) spent with a **relative-epoch `since` ≥ `delay`**, which CKB consensus only permits
 //!     `delay` epochs after the announcement cell was created. Relative since is measured from the
 //!     cell's own block, so the delay cannot be backdated.
 //!
@@ -93,7 +93,7 @@ fn program_entry() -> i8 {
     };
 
     // Require a governance-locked announcement input that committed to exactly this new code, and
-    // that has aged ≥ `delay` epochs (relative-epoch since, consensus-enforced — the user window).
+    // that has aged ≥ `delay` epochs (relative-epoch since, consensus-enforced, the user window).
     let mut i = 0usize;
     loop {
         match load_cell_lock_hash(i, Source::Input) {

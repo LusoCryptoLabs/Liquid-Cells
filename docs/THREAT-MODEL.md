@@ -75,7 +75,7 @@ cannot mint value, it fails the conservation check. Tested.
 Deposits are folded into a batch only after a conservative confirmation depth.
 `PendingDeposits` (`crates/sequencer/src/pending.rs`) gates a deposit until it is `depth` blocks
 deep before it may be sealed, and `prune_above` drops deposits orphaned by a reorg before they ever
-seal — so a short reorg that removes a deposit (and any checkpoint sweeping it) cannot leave the
+seal, so a short reorg that removes a deposit (and any checkpoint sweeping it) cannot leave the
 sequencer crediting a deposit absent from the canonical chain. Chain-agnostic (the operator's L1
 watcher supplies heights + tip; no RPC in the crate); a reorg deeper than `depth` (far beyond CKB's
 practical finality) falls back to the heavier resume-from-L1-DA path (`Sequencer::resume`).
@@ -112,13 +112,13 @@ funded, *zero-fee* transfers/HTLC-locks each cost the operator a touched leaf's 
 adding nothing to `fee_acc`. This is a **sustainability / griefing** gap, **not a fund-safety** one
 (`fee_withdrawal` stays capped at fee revenue, so no balance is ever skimmed). Mitigated in two
 layers: a **live** sequencer admission floor (`liquid_cells_sequencer::FeePolicy`, rejects/drops
-underpayers — policy, off by default), and a **staged provable** floor (`liquid_cells_stf`
+underpayers, policy, off by default), and a **staged provable** floor (`liquid_cells_stf`
 `min_fee` feature, `MIN_FEE_PER_LEAF`) that is OFF in the deployed guest (it re-bakes the vkey) and
 bundled for the next coordinated upgrade. Both pin to the same constant. See [FEES.md](FEES.md).
 
 ### L3, ECDSA high-S signature malleability · 🟡 known, deferred
 `sig::verify` (`crates/stf/src/sig.rs`) *normalizes* a high-S signature to low-S and then
-verifies it, so both encodings of a signature pass — contradicting its own comment ("only the
+verifies it, so both encodings of a signature pass, contradicting its own comment ("only the
 low-S form verifies"). Impact is **transaction-ID (signature-bytes) malleability only**: it
 grants no debit, replay, or value creation, because every state effect is keyed by the signed
 message + the leaf nonce (which blocks replay of a mutated copy), and the signature is never
@@ -134,32 +134,32 @@ run real malicious transactions/batches against the contract in CKB-VM (and the 
 across four surfaces: checkpoint accounting/fee/solvency, the force-exit/force-refund escape
 hatches + epoch/`since` handling + anchor-capture, the deposit lock + pool isolation + DA
 binding, and the STF safety invariants + contract public-input binding. **No exploitable break
-was found** — every fund-safety and capture-proofness invariant held. The tests live alongside
+was found**, every fund-safety and capture-proofness invariant held. The tests live alongside
 the existing suites (`crates/ckb-contract-tests/tests/redteam_*.rs`, `crates/stf/tests/redteam.rs`)
 as permanent regression coverage. Four findings, all low/informational, none enabling fund loss:
 
-* **L3 above** — high-S signature malleability (txid-only).
+* **L3 above**, high-S signature malleability (txid-only).
 * **Legacy (empty-args) pools share one anchor type hash**, so a deposit can be swept into a
   *different legacy pool* of the same contract (the depositor is still credited there, recoverable
-  by force-exit — not third-party theft). Eliminated by **type-id'd pools** (distinct hashes;
+  by force-exit, not third-party theft). Eliminated by **type-id'd pools** (distinct hashes;
   proven by the `sweep_into_a_foreign_pool_rejected` test and demonstrated live on Pudge).
 * **The deposit lock's sweep predicate is deliberately loose** (it unlocks on any input bearing
   the pool's type hash and does not check the sweep destination); safety is **delegated to the
   anchor type script's solvency/commitment checks**, which the red-team confirmed backstop it (a
   diversion-to-attacker tx is rejected). A hard invariant to preserve across future changes.
 * **The force-exit epoch cap relies on CKB consensus** rejecting an absolute-epoch `since` before
-  its epoch — a standard, correct CKB pattern, and the one defense not fully self-contained in the
+  its epoch, a standard, correct CKB pattern, and the one defense not fully self-contained in the
   contract.
 
 A further follow-up considered whether a draining pool could strand the last exiter by pushing the
 anchor below its occupied capacity. It cannot: GENESIS forces `total == 0`, every mode preserves
 `slack = capacity − total`, so `capacity ≥ slack ≥ occupied` always and a full drain leaves a valid
 anchor. Documented in `escape.rs` and proven by `crates/ckb-contract-tests/tests/redteam_drain.rs`.
-The genuine sub-≈61-CKB limit is the force-exit *payout* cell — the **C1** dust-egress case above.
+The genuine sub-≈61-CKB limit is the force-exit *payout* cell, the **C1** dust-egress case above.
 
 Scope honesty: this is an internal logic-bug red-team, **not** a substitute for external audit. It
 does **not** cover BN254 field-arithmetic soundness of the verifier or game-theoretic/economic
-attacks — those remain for formal review and the public program.
+attacks, those remain for formal review and the public program.
 
 ---
 

@@ -91,7 +91,7 @@ fn underpaying_htlc_lock_is_dropped_too() {
 #[test]
 fn a_dropped_underpayer_transitively_defers_its_dependent() {
     // key(2) is funded only by the underpaying (dropped) transfer, so its own spend can't fund and
-    // defers — the same transitive-deferral guarantee, now driven by a fee drop.
+    // defers, the same transitive-deferral guarantee, now driven by a fee drop.
     let mut s = funded(1, 1_000_000, FeePolicy::new(FLOOR));
     s.submit_transfer(xfer(1, key(2), 5000, FLOOR - 1, 0)); // underpays -> dropped, key(2) uncredited
     s.submit_transfer(xfer(2, key(3), 1000, FLOOR, 0)); // depends on key(2)'s credit -> defers

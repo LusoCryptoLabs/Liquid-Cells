@@ -1,11 +1,11 @@
 //! Staged `min_fee` in-proof floor. These tests compile only with `--features min_fee` (the
 //! feature that is deliberately OFF in the deployed guest, so it does not touch the vkey). They
 //! prove the floor, once flipped on at a coordinated upgrade, makes "every fee-paying intent
-//! contributes ≥ MIN_FEE_PER_LEAF" an unforgeable, proven invariant — not just operator policy.
+//! contributes ≥ MIN_FEE_PER_LEAF" an unforgeable, proven invariant, not just operator policy.
 //!
 //! Run: `cargo test -p liquid-cells-stf --features min_fee --test min_fee` (this file only). The
 //! *rest* of the stf suite is written against the deployed, floor-OFF rule (it uses zero-fee
-//! transfers), so running the whole package with `--features min_fee` is not a supported config —
+//! transfers), so running the whole package with `--features min_fee` is not a supported config,
 //! the floor is a behaviour change, validated here in isolation.
 #![cfg(feature = "min_fee")]
 

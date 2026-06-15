@@ -1,6 +1,6 @@
 //! Regression for the escape-hatch core (what `lc-exit` does, sans RPC): folding the published DA
 //! blob of the live type-id'd pool (Pudge checkpoint 0x332e49ff…, seq 1) must rebuild the exact
-//! on-chain anchor root and the depositor's leaf — proving a user can recover from L1 data alone.
+//! on-chain anchor root and the depositor's leaf, proving a user can recover from L1 data alone.
 use liquid_cells_client::{proof_from_da, reconstruct_tree};
 
 fn blob() -> Vec<u8> {

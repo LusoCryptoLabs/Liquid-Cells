@@ -142,7 +142,7 @@ impl Mempool {
         }
     }
 
-    /// Rebuild a mempool from an (already-validated) batch — the inverse of [`into_batch`], used by
+    /// Rebuild a mempool from an (already-validated) batch, the inverse of [`into_batch`], used by
     /// resilient sealing to install the accepted sub-batch before the authoritative seal.
     fn from_batch(b: Batch) -> Self {
         Mempool {
@@ -186,7 +186,7 @@ impl Sequencer {
 
     /// Install a fee-admission [`FeePolicy`] (builder form). Off by default; once set, the strict
     /// [`seal_batch`] rejects an underpaying batch (`InsufficientFees`) and the resilient
-    /// [`seal_resilient`] *drops* underpaying intents. Policy, not proof — see [`FeePolicy`].
+    /// [`seal_resilient`] *drops* underpaying intents. Policy, not proof, see [`FeePolicy`].
     pub fn with_fee_policy(mut self, policy: FeePolicy) -> Self {
         self.fee_policy = policy;
         self
@@ -250,7 +250,7 @@ impl Sequencer {
     /// replaying the whole DA history (so force-exit reconstruction stays O(snapshot + tail) as the
     /// pool ages). It carries no new trust: a client checks `reconstruct([snapshot]).root()` equals
     /// the on-chain anchor root at this seq (`self.root()`), and full-history replay remains the
-    /// source of truth — a snapshot that omits/forges a leaf simply fails that root check.
+    /// source of truth, a snapshot that omits/forges a leaf simply fails that root check.
     pub fn snapshot_blob(&self) -> Vec<u8> {
         let mut leaves: Vec<(Hash, liquid_cells_stf::Leaf)> = self
             .state
@@ -336,12 +336,12 @@ impl Sequencer {
 
     /// Like [`seal_batch`], but instead of failing the whole checkpoint on one invalid *signed*
     /// intent, drop the offending intents (transitively deferring their dependents, never
-    /// reordering) and seal the rest — closing the liveness/censorship footgun where one bad intent
+    /// reordering) and seal the rest, closing the liveness/censorship footgun where one bad intent
     /// stalls a whole checkpoint. Deposits are never dropped (they are bound to consumed L1 cells).
     /// Returns the [`CheckpointJob`] plus the dropped intents (so the caller can surface rejections
     /// and re-submit any that later become valid). A genuinely batch-wide failure (a deposit
     /// overflow, or `fee_withdrawal` exceeding the *accepted* batch's fee revenue) still returns
-    /// `Err`. The accepted sub-batch is sealed by [`seal_batch`], which re-applies atomically — so
+    /// `Err`. The accepted sub-batch is sealed by [`seal_batch`], which re-applies atomically, so
     /// the atomic seal remains the authority and this can only ever drop intents the STF rejects.
     pub fn seal_resilient(
         &mut self,

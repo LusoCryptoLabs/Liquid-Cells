@@ -1,12 +1,12 @@
-//! Deposit confirmation-depth gate — closes the **deposit reorg → phantom balance** risk (M4).
+//! Deposit confirmation-depth gate, closes the **deposit reorg → phantom balance** risk (M4).
 //!
 //! A deposit cell observed on L1 must not be folded into a checkpoint until it is buried under a
 //! conservative number of confirmations. Otherwise a short reorg that removes the deposit tx (and
 //! any checkpoint that swept it) would leave the sequencer's in-memory state crediting a deposit
-//! that no longer exists on the canonical chain — a credit the next proof would carry forward while
+//! that no longer exists on the canonical chain, a credit the next proof would carry forward while
 //! the on-chain anchor reverted.
 //!
-//! [`PendingDeposits`] is the gate. It is **chain-agnostic** — it holds no RPC; the operator's L1
+//! [`PendingDeposits`] is the gate. It is **chain-agnostic**, it holds no RPC; the operator's L1
 //! watcher supplies the block height each deposit cell was first seen at and the current tip, and on
 //! a detected reorg tells it the canonical height to prune back to. Deposits only leave the gate (to
 //! be handed to [`crate::Sequencer::submit_deposit`]) once they are `depth` blocks deep, by which

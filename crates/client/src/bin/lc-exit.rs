@@ -1,4 +1,4 @@
-//! `lc-exit` — reconstruct your Liquid Cells balance from L1 alone and build a force-exit witness,
+//! `lc-exit`, reconstruct your Liquid Cells balance from L1 alone and build a force-exit witness,
 //! **without the sequencer**. This is the runnable proof that the escape hatch works end-to-end:
 //! it scrapes the pool's checkpoint chain from a CKB RPC (via the indexer), folds the published DA
 //! blobs through the canonical `liquid_cells_stf::reconstruct`, checks the rebuilt root equals the
@@ -135,7 +135,7 @@ fn main() {
     let smt = reconstruct_tree(&blobs).expect("reconstruct: malformed DA blob");
     let recon_root = smt.root();
     let ok = recon_root == onchain_root;
-    println!("reconstructed: root=0x{}  [{}]", hex::encode(recon_root), if ok { "MATCH" } else { "MISMATCH — DA withholding/corruption!" });
+    println!("reconstructed: root=0x{}  [{}]", hex::encode(recon_root), if ok { "MATCH" } else { "MISMATCH, DA withholding/corruption!" });
 
     // 5. your leaf + inclusion proof + the force-exit witness
     let (leaf, _siblings) = proof_from_da(&blobs, &key).expect("proof_from_da");
@@ -149,7 +149,7 @@ fn main() {
                 println!("=> submit a force-exit tx consuming the live anchor with this as witness[0].input_type,");
                 println!("   paying {} shannons to your secp256k1_blake160 lock (args=blake160(pubkey)).", leaf.balance);
             }
-            None => println!("(zero balance — nothing to exit)"),
+            None => println!("(zero balance, nothing to exit)"),
         }
     }
     if !ok {

@@ -1,4 +1,4 @@
-# Liquid Cells vs. Fiber — an honest comparison
+# Liquid Cells vs. Fiber: an honest comparison
 
 > **Intent:** Fiber and Liquid Cells are **complementary**, not rivals. This doc states, plainly and
 > with concessions, why a shared pool is a good fit for long-tail microtipping, where Fiber wins, and
@@ -14,7 +14,7 @@ inbound liquidity. So the real comparison is **non-custodial pool vs. hub**, and
 kind of hub.
 
 - The **channel-free** Fiber tipping design that exists today is a **custodial hub with an internal
-  ledger** — which is exactly how the community's [Fiber Link](https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845)
+  ledger**, which is exactly how the community's [Fiber Link](https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845)
   proposal describes itself, and what Scryve's own first-iteration custodial tipping is.
 - **Liquid Cells is the non-custodial version of that hub:** the operator cannot steal or inflate
   (on-chain validity proof), every balance is reconstructable from on-chain data, and any user can
@@ -36,7 +36,7 @@ UX with strictly stronger trust than a custodial hub.**
 
 ## The precise constraint (and the rebuttal it must survive)
 
-A naive claim — "each recipient needs their own ≥61-CKB channel" — is **false**, and a Fiber expert
+A naive claim, "each recipient needs their own ≥61-CKB channel", is **false**, and a Fiber expert
 would rightly demolish it: **LSPs / hubs** provision inbound liquidity so end users do not each open a
 channel. The honest, surviving form:
 
@@ -62,7 +62,7 @@ channel. The honest, surviving form:
 ## Where they compose
 
 Liquid Cells' designed path for moving a **sub-61-CKB** balance *out* of the pool is an **atomic swap
-sharing one hashlock with a Fiber leg** — i.e. Fiber is the intended egress rail.
+sharing one hashlock with a Fiber leg**, i.e. Fiber is the intended egress rail.
 
 > **Status (honest):** this is **design and roadmap, not shipped.** The in-pool escrow leg (hash-lock
 > + sender-side refund) is built and tested; the Fiber integration, the liquidity-provider side, and
@@ -81,12 +81,12 @@ for everyday progress; archival DA retention for recovery. Full list in
 
 ## References
 
-- Fiber Network light paper — https://github.com/nervosnetwork/fiber/blob/main/docs/light-paper.md
-- Fiber Link (custodial-hub tipping proposal) — https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845
-- Fiber 2026 outlook (liquidity solutions are roadmap) — https://talk.nervos.org/t/fiber-protocol-complete-network-tested-development-status-challenges-and-2026-outlook/9827
-- ckb-zkp (prior art: Groth16 on CKB) — https://github.com/sec-bit/ckb-zkp
-- CKB cell minimum — https://docs.nervos.org/docs/getting-started/how-ckb-works
-- Liquid Cells non-custody & exit — [NON-CUSTODY.md](NON-CUSTODY.md), [FORCE-EXIT.md](FORCE-EXIT.md), [DA.md](DA.md)
+- Fiber Network light paper, https://github.com/nervosnetwork/fiber/blob/main/docs/light-paper.md
+- Fiber Link (custodial-hub tipping proposal), https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845
+- Fiber 2026 outlook (liquidity solutions are roadmap), https://talk.nervos.org/t/fiber-protocol-complete-network-tested-development-status-challenges-and-2026-outlook/9827
+- ckb-zkp (prior art: Groth16 on CKB), https://github.com/sec-bit/ckb-zkp
+- CKB cell minimum, https://docs.nervos.org/docs/getting-started/how-ckb-works
+- Liquid Cells non-custody & exit, [NON-CUSTODY.md](NON-CUSTODY.md), [FORCE-EXIT.md](FORCE-EXIT.md), [DA.md](DA.md)
 
 ---
 

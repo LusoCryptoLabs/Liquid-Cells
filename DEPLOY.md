@@ -56,7 +56,7 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
   (`crates/client/src/bin/lc-exit.rs`, `cargo build -p liquid-cells-client --features cli`) scrapes
   the type-id'd pool's checkpoint chain from a public RPC, folds the published DA blobs through the
   canonical `liquid_cells_stf::reconstruct`, and **reproduced the live anchor root `0x00b5dbaf…`
-  (seq 1)** — recovering the depositor's leaf (199.989 CKB, nonce 1) and emitting the 8249-byte
+  (seq 1)**, recovering the depositor's leaf (199.989 CKB, nonce 1) and emitting the 8249-byte
   force-exit witness, with **no sequencer cooperation**. This turns "any user can exit without the
   operator" from a contract property into a runnable tool (regression test: `crates/client/tests/`).
 - **The anchor type script deploys and executes on Pudge CKB-VM.** Creating the genesis
@@ -158,9 +158,9 @@ A second pool was created with an **always-success anchor lock**, so the anchor 
   consuming the old code cell and recreating it). The anchor type script takes empty args;
   `pool_id`/`chain_id`/vkey are baked.
 - The code cell locks **~117K CKB** (the ~117 KB ark-bn254 verifier binary, with force-refund +
-  lock continuity; 1 data byte = 1 CKB) — down from ~293K before the ark-bn254 verifier shrink
+  lock continuity; 1 data byte = 1 CKB), down from ~293K before the ark-bn254 verifier shrink
   (binary 293 KB → ~112 KB, verify 3.47B → ~80M cycles; see the ark-bn254 upgrade row above). This
   capacity is **locked (recoverable when the cell is consumed), shared by every pool via one
-  `cell_dep`, and paid once** — genesis-ing a new pool adds no binary capacity, only its 80-byte
+  `cell_dep`, and paid once**, genesis-ing a new pool adds no binary capacity, only its 80-byte
   anchor + lock.
 - Deployer: a fresh, dedicated testnet key (address `ckt1qzda0cr…wyjs05`).

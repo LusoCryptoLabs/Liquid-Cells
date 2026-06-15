@@ -1,19 +1,19 @@
-//! Resilient sealing — a single bad signed intent must not fail the whole checkpoint.
+//! Resilient sealing, a single bad signed intent must not fail the whole checkpoint.
 //!
 //! `Sequencer::seal_batch` is **atomic**: if any intent is invalid the entire batch is rejected and
 //! nothing is folded. That is the right *safety* property (no partial application), but on its own it
 //! is a **liveness / censorship-resistance** footgun: one un-fundable or stale-nonce intent stalls a
-//! whole checkpoint until an operator manually prunes it — and `ShardedSequencer` propagates that per
+//! whole checkpoint until an operator manually prunes it, and `ShardedSequencer` propagates that per
 //! shard, so it gets K× worse as you scale.
 //!
 //! [`validate_batch`] closes that: it mirrors `liquid_cells_stf`'s `apply_ops` per-op logic, but
 //! **drops** the offending *signed* intents (transfers, HTLC ops, withdrawals) instead of aborting,
-//! and — crucially — never reorders, so a later intent that depended on a dropped one (e.g. a
+//! and, crucially, never reorders, so a later intent that depended on a dropped one (e.g. a
 //! transfer funded by a dropped transfer) is **transitively deferred** because it then fails its own
 //! balance check against the un-credited working state. Deposits are never dropped (they are bound to
 //! the L1 cells the checkpoint consumes); a deposit overflow is fatal. It lives here, in the
 //! sequencer crate, deliberately: it must NOT enter the guest-compiled `liquid_cells_stf` (that would
-//! move the proven vkey), and the **real `apply` stays the authority** — [`Sequencer::seal_resilient`]
+//! move the proven vkey), and the **real `apply` stays the authority**, [`Sequencer::seal_resilient`]
 //! feeds the accepted sub-batch to `seal_batch`, which re-validates atomically. A parity test pins
 //! `validate_batch` to `apply_ops`.
 
@@ -48,11 +48,11 @@ pub enum DroppedOp {
 /// `policy` adds the operator's fee-admission floor: a transfer or HTLC-lock paying below
 /// `policy.min_fee_per_intent` is dropped (as `InsufficientFees`) exactly where the staged
 /// `liquid_cells_stf` `min_fee` check sits, so this mirrors `apply_ops` compiled either without the
-/// floor (`policy` disabled — the deployed guest) or with `MIN_FEE_PER_LEAF = min_fee_per_intent`.
+/// floor (`policy` disabled, the deployed guest) or with `MIN_FEE_PER_LEAF = min_fee_per_intent`.
 /// Dropping an underpayer is always safe: the policy is stricter than the STF, and `seal_batch`
 /// re-validates the survivors atomically.
 ///
-/// MUST mirror `liquid_cells_stf::transition::apply_ops` — pinned by the parity test below.
+/// MUST mirror `liquid_cells_stf::transition::apply_ops`, pinned by the parity test below.
 pub fn validate_batch(
     prev: &PoolState,
     batch: &Batch,
@@ -70,7 +70,7 @@ pub fn validate_batch(
     };
     let epoch = batch.current_epoch;
 
-    // deposits — never dropped (bound to consumed L1 cells); overflow is fatal.
+    // deposits, never dropped (bound to consumed L1 cells); overflow is fatal.
     for d in &batch.deposits {
         let l = work.get_mut(&d.to_key).expect("seeded");
         l.balance = l.balance.checked_add(d.amount).ok_or(StfError::Overflow)?;

@@ -21,7 +21,7 @@
 //!   but before the marker leaves the recovered state one checkpoint behind the
 //!   in-memory one. [`DurableSequencer::recover`] replays this **local** log to restore the
 //!   unsealed mempool and the last locally-sealed state; it does *not* itself talk to L1.
-//!   Reconciling against the chain — the crash-gap above, or a deposit/checkpoint reorg — is the
+//!   Reconciling against the chain, the crash-gap above, or a deposit/checkpoint reorg, is the
 //!   operator's job and uses the *consensus* source of truth (the on-chain anchor + L1 DA) via
 //!   [`Sequencer::resume`], since this local log is a mempool-durability aid, **not** the ledger
 //!   of record. (Deposit-reorg specifically is gated before it can seal by

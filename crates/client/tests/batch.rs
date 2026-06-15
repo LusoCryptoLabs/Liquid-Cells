@@ -1,4 +1,4 @@
-//! `Account::batch_transfer` — N-recipient fan-out (payroll / disbursement / split) over the
+//! `Account::batch_transfer`, N-recipient fan-out (payroll / disbursement / split) over the
 //! existing `Transfer` primitive, with NO protocol change. Proves the "de-facto per-payer
 //! atomicity" claim: legs share the payer + chain nonces, so in one checkpoint they either all
 //! land (funded) or an underfunded leg and every later leg defer together under `seal_resilient`.
@@ -60,7 +60,7 @@ fn underfunded_batch_defers_the_unaffordable_tail_together() {
     let (job1, dropped) = operator.seal_resilient(1, 0).expect("seal");
 
     // Leg a (10) affords; leg b (20) can't (only 5 left) and is dropped; leg c chains on b's nonce
-    // so it defers too — the tail moves together, never a partial mid-batch state.
+    // so it defers too, the tail moves together, never a partial mid-batch state.
     let blobs = vec![job0.da_blob, job1.da_blob];
     assert_eq!(latest_leaf(&blobs, &a.key()).unwrap().balance, 10_000_000_000, "first leg landed");
     assert_eq!(latest_leaf(&blobs, &b.key()).map(|l| l.balance).unwrap_or(0), 0, "unaffordable leg deferred");

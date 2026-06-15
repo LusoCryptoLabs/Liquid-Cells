@@ -131,7 +131,7 @@ pub(crate) fn force_exit(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
     // the same amount. So `anchor_capacity = total + slack ≥ slack ≥ ANCHOR_OCCUPIED` always, and
     // draining `total` to 0 leaves a valid anchor holding the genesis slack (proven:
     // `crates/ckb-contract-tests/tests/redteam_drain.rs`). The separate sub-≈61-CKB limit is the
-    // *payout* cell, not the anchor — that is the documented dust-egress case (THREAT-MODEL C1).
+    // *payout* cell, not the anchor, that is the documented dust-egress case (THREAT-MODEL C1).
     let in_cap = match load_cell_capacity(0, Source::GroupInput) {
         Ok(c) => c,
         Err(_) => return 65,

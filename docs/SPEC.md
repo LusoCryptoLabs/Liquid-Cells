@@ -1,4 +1,4 @@
-# Liquid Cells — Technical Specification (working draft)
+# Liquid Cells: Technical Specification (working draft)
 
 > **Status: working draft / scaffold.** Liquid Cells is **testnet-only, unaudited** software with no
 > real value at stake (deployed on the Nervos **Pudge** testnet). This document consolidates the
@@ -33,19 +33,19 @@ A checkpoint cannot **steal** (no debit without a signature), **inflate** (value
 
 ## 2. Roles
 
-- **User** — holds a balance (a leaf in the state tree), signs intents, can exit unilaterally.
-- **Sequencer / operator** — orders intents, builds checkpoints, generates proofs, posts DA. Has
+- **User**, holds a balance (a leaf in the state tree), signs intents, can exit unilaterally.
+- **Sequencer / operator**, orders intents, builds checkpoints, generates proofs, posts DA. Has
   **no spending authority** (§7).
-- **Anyone** — under the deployed permissionless lock, any party that can produce a valid proof may
+- **Anyone**, under the deployed permissionless lock, any party that can produce a valid proof may
   advance the root (§9). Not a privileged role.
 
 ## 3. On-chain objects  _(expand → [CELL-FORMAT.md](CELL-FORMAT.md), [DEPLOY.md](../DEPLOY.md))_
 
-- **Anchor cell** — the single cell carrying the pool's type script; its data is
+- **Anchor cell**, the single cell carrying the pool's type script; its data is
   `root(32) ‖ seq(8) ‖ total(16) ‖ fee_acc(16) ‖ last_epoch(8)` (80 bytes). One per pool.
-- **Code cell** — the shared anchor type-script binary (~112 KB), referenced by every pool via one
+- **Code cell**, the shared anchor type-script binary (~112 KB), referenced by every pool via one
   `cell_dep`; upgradable in place by type-id (§11).
-- **Deposit lock** — sweep-or-refund lock binding a deposit to a pool's anchor type hash.
+- **Deposit lock**, sweep-or-refund lock binding a deposit to a pool's anchor type hash.
 
 ## 4. State and the state-transition function  _(expand → [ARCHITECTURE.md](ARCHITECTURE.md))_
 
@@ -71,7 +71,7 @@ budget, ~43x reduction** from the prior substrate-bn verifier) and binds the pro
 chain facts (prev/new root, seq, totals, fee, DA commitment). A batch touches at most
 **`MAX_LEAVES_PER_BATCH = 1024`** leaves.
 
-## 6. Data availability  _(normative — [DA.md](DA.md))_
+## 6. Data availability  _(normative, [DA.md](DA.md))_
 
 Every checkpoint **force-publishes** its full state diff in the transaction witness (`output_type`):
 each touched leaf as `key(32) ‖ balance(16 BE) ‖ nonce(8 BE)` = 56 bytes. The proof commits
@@ -95,7 +95,7 @@ source is detected, not trusted).
   (the default full node retains them; a light client does not). This is the standard rollup
   DA-liveness assumption, not an operator dependency.
 
-## 7. Non-custody and the exit guarantees  _(normative — [NON-CUSTODY.md](NON-CUSTODY.md))_
+## 7. Non-custody and the exit guarantees  _(normative, [NON-CUSTODY.md](NON-CUSTODY.md))_
 
 | Guarantee | Mechanism |
 |---|---|
@@ -134,7 +134,7 @@ checkpoint toward ~1 min (planned). See [ROADMAP.md](../ROADMAP.md).
 
 ## 11. Upgrade governance  _(expand → [UPGRADE-TIMELOCK.md](UPGRADE-TIMELOCK.md))_
 
-The anchor code cell is upgradable in place by a **single key** today — the one custody-relevant
+The anchor code cell is upgradable in place by a **single key** today, the one custody-relevant
 residual. A **timelocked upgrade lock** (commitment + matured delay, guaranteeing a force-exit
 window) is **built and tested** but not yet adopted on the live deployment.
 
@@ -147,7 +147,7 @@ window) is **built and tested** but not yet adopted on the live deployment.
 - **Force-exit:** ~30-day operator-silence window; payout lands a ≥61-CKB cell, so dust exit is the
   weak spot. The **Fiber-leg dust egress is designed but not built** (in-pool HTLC escrow + sender
   refund are built and tested; the Fiber integration, the LP, and receiver-side force-claim are not).
-- **Plaintext DA** — no amount privacy.
+- **Plaintext DA**, no amount privacy.
 - **Operator liveness** for everyday progress (mitigated by force-exit) and **archival DA retention**
   for recovery (§6.1).
 

@@ -8,9 +8,9 @@ design can be optimized.
 
 ## The closest cousins
 
-- **Clover Protocol** (sec-bit) — a zkRollup *on Nervos CKB*, design + runnable demo.
+- **Clover Protocol** (sec-bit), a zkRollup *on Nervos CKB*, design + runnable demo.
   `github.com/sec-bit/clover-protocol`. The single most overlapping piece of prior art.
-- **Intmax2** (Ethereum) — a stateless, payment-focused zk-rollup with client-side balance
+- **Intmax2** (Ethereum), a stateless, payment-focused zk-rollup with client-side balance
   proofs. eprint 2023/1082, `intmax.io`. The closest cousin on *model and use case*.
 - Supporting prior art on CKB: **ckb-zkp** (sec-bit, on-chain Groth16/SNARK verifier toolkit,
   ~77M cycles for a BN254 Groth16 verify), **Godwoken** (CKB's L2; optimistic, with a zk-rollup
@@ -57,11 +57,11 @@ design can be optimized.
 
 Ordered by leverage:
 
-1. **Swap the BN254 library — DONE.** The verifier was ported to `ark-bn254`, removing the
+1. **Swap the BN254 library, DONE.** The verifier was ported to `ark-bn254`, removing the
    3-pairing `e(alpha,beta)` precompute hack (now a plain 4-pairing check), with the **same SP1
    proofs verifying and all 40 contract tests green** (good proof accepted, every tampered
    proof/root/accounting case still rejected). Speed-optimized, the port measured (not projected)
-   **3,474,607,239 → 53,308,780 cycles** at a ~420KB binary — but that binary was too big for the
+   **3,474,607,239 → 53,308,780 cycles** at a ~420KB binary, but that binary was too big for the
    code cell, so the **deployed** build is optimized for *size* (`opt-level="z"` + LTO + strip),
    trading speed for capacity: **~112KB binary at ~80M cycles** (still a **~43x reduction**, ~2.3%
    of the block limit). Details below were the investigation that led here.

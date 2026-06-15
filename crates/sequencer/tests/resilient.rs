@@ -54,7 +54,7 @@ fn plain_seal_batch_would_have_failed_the_whole_checkpoint() {
     s.submit_transfer(xfer(1, key(3), 1000, 0, 9)); // bad nonce
     s.submit_transfer(xfer(1, key(4), 1000, 0, 1));
     assert_eq!(s.seal_batch(0, 0).unwrap_err(), StfError::BadNonce, "atomic seal fails closed");
-    // mempool intact after the failed atomic seal — resilient seal then salvages the good ones.
+    // mempool intact after the failed atomic seal, resilient seal then salvages the good ones.
     let (_job, dropped) = s.seal_resilient(0, 0).expect("resilient salvages");
     assert_eq!(dropped.len(), 1);
 }

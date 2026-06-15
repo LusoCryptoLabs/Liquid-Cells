@@ -1,6 +1,6 @@
 //! Worked tipping integration (the scryve flow), end-to-end against the real STF/sequencer:
 //! a fan deposits, tips an author with a platform cut split, the checkpoint is sealed, and the
-//! author's + platform's balances are **reconstructed from L1 DA alone** — the trust-minimized
+//! author's + platform's balances are **reconstructed from L1 DA alone**, the trust-minimized
 //! replacement for a custodial tip ledger. See docs/INTEGRATION-TIPPING.md.
 use liquid_cells_client::{latest_leaf, reconstruct_tree, Account};
 use liquid_cells_sequencer::Sequencer;

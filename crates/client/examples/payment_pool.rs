@@ -1,4 +1,4 @@
-//! A complete, generic Liquid Cells lifecycle in ~60 lines — no tipping, no L1, no prover.
+//! A complete, generic Liquid Cells lifecycle in ~60 lines, no tipping, no L1, no prover.
 //!
 //! This is the "hello world" for reusing Liquid Cells in ANY use case: a pooled-balance ledger
 //! where the operator provably can't steal or mint, and any user can exit unilaterally. It runs the
@@ -11,7 +11,7 @@
 //!
 //! What a real deployment adds around this (see DEPLOY.md / docs/): proving `job.sp1_input` to a
 //! Groth16 proof and submitting a CKB tx that pins `job.new_anchor` and publishes `job.da_blob`.
-//! The off-chain logic — everything below — is unchanged regardless of use case.
+//! The off-chain logic, everything below, is unchanged regardless of use case.
 
 use liquid_cells_client::{latest_leaf, Account};
 use liquid_cells_sequencer::Sequencer;
@@ -19,7 +19,7 @@ use liquid_cells_stf::{keccak, Deposit};
 
 fn main() {
     // --- 0. Pool identity. `pool_id` and `chain_id` MUST match the deployed anchor contract's
-    // baked constants. You REUSE the fixed, vkey-proven STF — you do not fork it. ---
+    // baked constants. You REUSE the fixed, vkey-proven STF, you do not fork it. ---
     let pool_id = keccak(b"my-app/payment-pool/v1");
     let chain_id = 0x434b_42; // CKB
 
@@ -43,7 +43,7 @@ fn main() {
     operator.submit_transfer(pay);
     let job1 = operator.seal_batch(1, 0).expect("transfer checkpoint");
 
-    // --- 4. Anyone reconstructs any balance from the published DA blobs alone — zero trust in the
+    // --- 4. Anyone reconstructs any balance from the published DA blobs alone, zero trust in the
     // operator's database. This is the data-availability pillar. ---
     let blobs = vec![job0.da_blob.clone(), job1.da_blob.clone()];
     let alice_bal = latest_leaf(&blobs, &alice.key()).map(|l| l.balance).unwrap_or(0);
@@ -59,10 +59,10 @@ fn main() {
     let witness = bob.force_exit_witness(&blobs).expect("force-exit witness from L1 data");
     println!("bob can force-exit unilaterally: {}-byte witness built from L1 alone", witness.len());
 
-    println!("\nThat's the whole off-chain shape — reuse it for payments, payroll, escrow, etc.");
+    println!("\nThat's the whole off-chain shape, reuse it for payments, payroll, escrow, etc.");
 }
 
-/// Toy deterministic secret key (DON'T do this in production — use real entropy).
+/// Toy deterministic secret key (DON'T do this in production, use real entropy).
 fn secret(n: u8) -> [u8; 32] {
     let mut s = [0u8; 32];
     s[31] = n;

@@ -105,7 +105,7 @@ pub fn reconstruct_tree(blobs: &[Vec<u8>]) -> Option<Smt> {
 }
 
 /// Restore the tree from a full-state **snapshot** blob plus the DA blobs of the checkpoints *after*
-/// it (`tail`, oldest-first) — the O(snapshot+tail) recovery path. `snapshot_root` is the on-chain
+/// it (`tail`, oldest-first), the O(snapshot+tail) recovery path. `snapshot_root` is the on-chain
 /// anchor root at the snapshot's seq (your trusted reference); the snapshot is rejected (`None`) if
 /// it does not reconstruct to exactly that root, so a malicious snapshot that omits or forges a leaf
 /// cannot be used. Folding the tail then advances to the current state. Equivalent to a full-history
@@ -191,13 +191,13 @@ impl Account {
         Transfer { from_pubkey: self.pubkey, to_key, amount, fee, nonce, expiry, sig }
     }
 
-    /// Build N signed transfers from this account in one call — a batch payment / fan-out
+    /// Build N signed transfers from this account in one call, a batch payment / fan-out
     /// (payroll, treasury disbursement, multi-recipient split). The transfers carry **consecutive
     /// nonces** and are meant to be sealed in **one checkpoint**; submit them all.
     ///
     /// This is the SDK answer to "atomic multi-output transfer" without a protocol change: because
     /// every leg shares this payer and chains nonces, in a single checkpoint they settle
-    /// **together** — either the payer can fund all of them (all land) or an underfunded leg and
+    /// **together**, either the payer can fund all of them (all land) or an underfunded leg and
     /// every later leg **defer together** under [`Sequencer::seal_resilient`]. That is de-facto
     /// per-payer atomicity over the existing `Transfer` primitive (no vkey-baked STF change). `fee`
     /// is charged per output (pass 0 for none); total debit is `Σ amount + N·fee`.
@@ -210,13 +210,13 @@ impl Account {
         outputs.iter().map(|(to, amount)| self.transfer(*to, *amount, fee, expiry)).collect()
     }
 
-    /// Split one gross payment into two signed transfers — `cut_bps`/10000 of it to
-    /// `cut_recipient_key`, the remainder to `recipient_key` — a generic "pay X, route a basis-point
+    /// Split one gross payment into two signed transfers, `cut_bps`/10000 of it to
+    /// `cut_recipient_key`, the remainder to `recipient_key`, a generic "pay X, route a basis-point
     /// cut to Y" recipe. Conservation is exact: the cut is `floor(gross·bps/10000)` and the main
     /// recipient gets `gross − cut`, so `recipient + cut == gross`. The two transfers carry
     /// consecutive nonces and are meant to be sealed in the same checkpoint; submit both.
     ///
-    /// This is pure client-side composition (two ordinary [`transfer`]s) — the protocol has no
+    /// This is pure client-side composition (two ordinary [`transfer`]s), the protocol has no
     /// notion of "platform", "author", or a cut. It serves any fee-split use case: creator tipping
     /// (author + platform), marketplace (seller + marketplace), affiliate/referral, treasury rake,
     /// etc. (For a protocol fee that accrues to the pool's `fee_acc` instead of a recipient, pass a
@@ -239,7 +239,7 @@ impl Account {
     /// Deprecated tipping-flavored alias for [`split_payment`]. `author_key`→`recipient_key`,
     /// `platform_key`→`cut_recipient_key`, `platform_bps`→`cut_bps`. Kept for the tipping
     /// integration; new code should use the generic [`split_payment`].
-    #[deprecated(note = "use `split_payment` — the mechanism is a generic fee-split, not tipping-specific")]
+    #[deprecated(note = "use `split_payment`, the mechanism is a generic fee-split, not tipping-specific")]
     pub fn split_tip(
         &mut self,
         author_key: Hash,

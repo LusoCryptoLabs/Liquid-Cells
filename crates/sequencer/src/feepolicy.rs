@@ -1,4 +1,4 @@
-//! Fee-admission policy — the operator's defence against zero-fee griefing, enforced *now*.
+//! Fee-admission policy, the operator's defence against zero-fee griefing, enforced *now*.
 //!
 //! The proven STF charges whatever `fee` an intent carries, with **no minimum**. A flood of
 //! correctly-signed, fully-funded, zero-fee transfers is therefore valid: each one costs the
@@ -7,8 +7,8 @@
 //! every such intent.
 //!
 //! [`FeePolicy`] closes that at the sequencer boundary: a configurable per-intent floor that the
-//! sequencer refuses to seal below. It is **policy, not proof** — an honest operator's self-
-//! protection, not a trustless guarantee — and it is deliberately *stricter* than the STF, so
+//! sequencer refuses to seal below. It is **policy, not proof**, an honest operator's self-
+//! protection, not a trustless guarantee, and it is deliberately *stricter* than the STF, so
 //! dropping an underpayer is always safe (the authoritative atomic `seal_batch` re-validates the
 //! kept intents). The matching *provable* floor lives in `liquid_cells_stf` behind the `min_fee`
 //! feature (OFF in the deployed guest, so it does not move the vkey); flipping that on at a
@@ -28,7 +28,7 @@ pub struct FeePolicy {
 }
 
 impl FeePolicy {
-    /// A policy that admits everything (floor 0) — the backward-compatible default.
+    /// A policy that admits everything (floor 0), the backward-compatible default.
     pub fn disabled() -> Self {
         FeePolicy { min_fee_per_intent: 0 }
     }

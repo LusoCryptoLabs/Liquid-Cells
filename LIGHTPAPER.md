@@ -9,7 +9,7 @@
 > **testnet-only and not audited**, so it is **not usable with real funds today.** We lead with
 > this on purpose, see *§6 What's proven vs. what isn't*. It has passed an internal adversarial
 > red-team (56 cases, no break); suspected vulnerabilities go through private, coordinated
-> disclosure — see [SECURITY.md](SECURITY.md).
+> disclosure, see [SECURITY.md](SECURITY.md).
 
 ---
 

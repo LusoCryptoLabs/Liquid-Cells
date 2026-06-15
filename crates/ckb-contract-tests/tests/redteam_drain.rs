@@ -7,13 +7,13 @@
 //! Define `slack = anchor_capacity − pool_total`. The anchor type script's GENESIS branch forces
 //! `total == 0`, so a real pool starts with `slack = genesis_capacity`, which must already satisfy
 //! CKB's occupied-capacity rule for the cell to exist (`slack ≥ ANCHOR_OCCUPIED`). Every mode
-//! preserves slack exactly — force-exit drops `capacity` and `total` by the same `balance`;
+//! preserves slack exactly, force-exit drops `capacity` and `total` by the same `balance`;
 //! checkpoints change both by the same `Σdep − Σwd − fee_wd`. So `slack` is invariant, and the
 //! anchor capacity `= total + slack ≥ slack ≥ ANCHOR_OCCUPIED` at all times. Draining `total` to 0
 //! therefore leaves a valid anchor holding exactly the (operator-seeded) genesis slack.
 //!
 //! (The existing `forceexit.rs` tests use the shortcut `in_cap = total`, i.e. slack 0, which the
-//! test VM accepts but a real chain never produces — genesis-total-0 guarantees slack ≥ occupied.)
+//! test VM accepts but a real chain never produces, genesis-total-0 guarantees slack ≥ occupied.)
 
 use ckb_testtool::ckb_types::core::{ScriptHashType, TransactionBuilder, TransactionView};
 use ckb_testtool::ckb_types::{bytes::Bytes, packed::*, prelude::*};
@@ -28,7 +28,7 @@ const TIMEOUT: u64 = 180;
 const LAST_EPOCH: u64 = 5;
 /// A conservative lower bound on a real anchor cell's occupied capacity (capacity(8) + an
 /// always-success/secp lock + the anchor type script + the 80-byte data ≈ 150–190 CKB). The
-/// genesis slack — seeded once, never withdrawable below this — must clear it.
+/// genesis slack, seeded once, never withdrawable below this, must clear it.
 const ANCHOR_OCCUPIED: u64 = 18_600_000_000; // ~186 CKB
 /// Realistic genesis slack (matches the live pools' 250 CKB genesis anchor over total 0).
 const GENESIS_SLACK: u64 = 25_000_000_000; // 250 CKB

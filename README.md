@@ -41,10 +41,10 @@ itself, the same base as any on-chain transaction.
 > for the work and the honest, audit-aside roadmap to mainnet.
 
 > **Security.** An internal adversarial red-team ran **56
-> adversarial cases** (in CKB-VM + the STF in-process) across accounting, escape hatches, the deposit lock, and the STF — no
+> adversarial cases** (in CKB-VM + the STF in-process) across accounting, escape hatches, the deposit lock, and the STF, no
 > exploitable break found; they live as permanent regression tests (`redteam_*.rs`), with findings
 > in **[docs/THREAT-MODEL.md](docs/THREAT-MODEL.md)**. Suspected vulnerabilities go through **private,
-> coordinated disclosure** — see **[SECURITY.md](SECURITY.md)**. Testnet-only and unaudited; an
+> coordinated disclosure**, see **[SECURITY.md](SECURITY.md)**. Testnet-only and unaudited; an
 > external audit is the next step before any real-value use.
 
 > **Honest positioning (prior art).** This is a working *implementation*, not a novel protocol.
@@ -223,8 +223,8 @@ cargo build --release # optimized native build
 cargo run -p liquid-cells-client --example payment_pool
 ```
 
-**Reusing it for your own app?** Start with **[docs/INTEGRATION-GENERIC.md](docs/INTEGRATION-GENERIC.md)**
-— the five primitives, a recipe cookbook (payments / payroll / escrow / fee-split / swap), and the
+**Reusing it for your own app?** Start with **[docs/INTEGRATION-GENERIC.md](docs/INTEGRATION-GENERIC.md)**:
+the five primitives, a recipe cookbook (payments / payroll / escrow / fee-split / swap), and the
 hard invariants (you *reuse* the fixed STF, you don't fork it).
 
 SP1 (`cargo-prove`, toolchain) is installed under `/root/.sp1`; the keccak SMT and

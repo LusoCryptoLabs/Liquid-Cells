@@ -22,7 +22,7 @@ evidence for the hand-written crypto, durability, a real deposit lock, and key r
 | Key recovery | **Session-key export/import** in the demo so losing browser storage no longer means losing access, with an honest note on why deterministic derivation is not possible under JoyID. | n/a | `crates/demo-ui/src/index.html` |
 | Reproducibility | **vkey consistency check** asserting the guest vkey is identical across the contract, the fixture, and the prover assertion, plus the documented full-rebuild procedure. | n/a | `scripts/verify-vkey.sh` |
 
-Suite (all green): **49 STF**, **23 sequencer**, **100 contract integration**, **10 client**, and the **5-test differential verifier** crate — including, added since this pass, the **55-case adversarial red-team**, the resilient-seal, full-drain, deposit-confirmation-gate, tipping-integration, DA-snapshot, and timelocked-upgrade-lock suites.
+Suite (all green): **49 STF**, **23 sequencer**, **100 contract integration**, **10 client**, and the **5-test differential verifier** crate, including, added since this pass, the **55-case adversarial red-team**, the resilient-seal, full-drain, deposit-confirmation-gate, tipping-integration, DA-snapshot, and timelocked-upgrade-lock suites.
 
 ### Why the differential verifier test matters most
 
@@ -44,7 +44,7 @@ formality): the buildable path, ranked by leverage. Items marked done were close
 - [x] Fuzz the STF against an independent shadow ledger.
 - [~] Reproducible-build attestation that the deployed code cell is exactly this source: the
   `verify-vkey.sh` full-rebuild path has now been **run and reproduces the baked vkey `0x00213af5…`
-  exactly** (which also caught and fixed a real drift — post-Phase-5 journal helpers had leaked into
+  exactly** (which also caught and fixed a real drift, post-Phase-5 journal helpers had leaked into
   the proven guest ELF; now feature-gated out). The vkey **pin-agreement check now runs in CI** (`.github/workflows/ci.yml`); remaining: the heavier
   full guest-ELF rebuild in CI (needs the sideloaded succinct toolchain) and a clean-room/formal
   re-derivation of the Groth16 verify equation.
@@ -73,8 +73,8 @@ formality): the buildable path, ranked by leverage. Items marked done were close
 - [x] Advance the type-id'd pool with a proved checkpoint and route the deposit lock to its unique
   type hash. Done **live on Pudge**: a 200 CKB deposit cell created under the deposit lock bound to
   the type-id'd pool's unique anchor type hash `0xf7dfded8…` (tx `0x91b0bcdf…:0`), then swept by a
-  checkpoint that advanced that pool **seq 0 → 1** (tx `0x332e49ff…`) whose BN254 Groth16 proof —
-  produced with the sequencer configured for `pool_id = type-id` — **verifies on-chain** against the
+  checkpoint that advanced that pool **seq 0 → 1** (tx `0x332e49ff…`) whose BN254 Groth16 proof,
+  produced with the sequencer configured for `pool_id = type-id`, **verifies on-chain** against the
   baked vkey `0x00213af5…`. The deposit's `to_key` is credited inside the proof and the funds fold
   into the new anchor (root `0x00b5dbaf…`, seq 1). See [DEPLOY.md](DEPLOY.md).
 - [ ] Receiver-side force-claim for HTLC egress: the one documented architectural residual
@@ -101,7 +101,7 @@ formality): the buildable path, ranked by leverage. Items marked done were close
   further iteration, so it is a mainnet step, not a testnet one. The **timelock half is now built**:
   `crates/ckb-contract/src/upgrade_lock.rs` (announce → `delay`-epoch user-exit window → execute, 6
   tests; [docs/UPGRADE-TIMELOCK.md](docs/UPGRADE-TIMELOCK.md)). Remaining: a governance multisig as the
-  gov lock, and the live migration (redeploy the code cell under it) — both deliberately mainnet-last.
+  gov lock, and the live migration (redeploy the code cell under it), both deliberately mainnet-last.
 - [~] Adversarial review + coordinated disclosure. An internal adversarial red-team ran (56 cases,
   no break found; permanent regression suite + findings in
   [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md)). Suspected vulnerabilities go through private,
@@ -143,7 +143,7 @@ in three places (contract `VKEY_HASH`, `fixtures/vkey.txt`, `prove_one.rs EXPECT
 `scripts/verify-vkey.sh` asserts they agree and prints the full-rebuild check. Build inputs that must
 match to reproduce the vkey byte-for-byte: **succinct rustc 1.94.0** (cargo-prove's toolchain, == the
 `ghcr.io/succinctlabs/sp1:v6.2.4` image), **sp1-zkvm / sp1-sdk 6.2.4** (the committed lock), the guest's
-**`journal` feature off** (default — the journal-only codec helpers are gated out so they never enter
+**`journal` feature off** (default, the journal-only codec helpers are gated out so they never enter
 the proven ELF), and the **absolute build path** (`$HOME/liquid-cells`, since SP1 embeds the source path
 in the ELF). The full rebuild has been run and **reproduces `0x00213af5…` exactly**. Any STF change
 re-bakes the vkey and requires an in-place contract upgrade (the anchor preserves its code hash across

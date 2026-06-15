@@ -5,14 +5,14 @@
 //! accepted batch, checks the protocol's hard invariants against an independent
 //! shadow ledger computed outside the STF:
 //!
-//!   1. **Value conservation** — `Σ balances + fee_acc == total`, always.
-//!   2. **No debit without a signature** — a corrupted or forged authorization is
+//!   1. **Value conservation**, `Σ balances + fee_acc == total`, always.
+//!   2. **No debit without a signature**, a corrupted or forged authorization is
 //!      always rejected, and a rejected batch never moves the root.
-//!   3. **Shadow agreement** — a balance/nonce ledger maintained independently of the
+//!   3. **Shadow agreement**, a balance/nonce ledger maintained independently of the
 //!      STF matches the STF's leaves leaf-for-leaf after every batch. A divergent root
 //!      class of bug (the thing the whole rollup rests on) would surface here.
-//!   4. **Determinism** — the same seed replays to a byte-identical final root.
-//!   5. **Total stability under rejection** — checked arithmetic means a malformed or
+//!   4. **Determinism**, the same seed replays to a byte-identical final root.
+//!   5. **Total stability under rejection**, checked arithmetic means a malformed or
 //!      over-drawing batch returns `Err`, never panics, and leaves state untouched.
 //!
 //! The RNG is a seeded SplitMix64/xorshift (no external crate, no `rand`), so any
