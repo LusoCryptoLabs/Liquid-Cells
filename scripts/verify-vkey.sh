@@ -39,28 +39,29 @@ echo
 # The guest ELF (hence the vkey) must compile the STF with NO vkey-affecting features. `journal`
 # (codec helpers), `min_fee` (the in-proof fee floor), `compact_smt` (the compact tree's node-hash
 # rules), `reject_high_s` (high-S signature rejection), `da_varint` (varint DA-blob layout),
-# `htlc_sha256` (the SHA-256 HTLC hashlock), `htlc_keyspace` (the H-1 escrow keyspace fix) and
+# `htlc_sha256` (the SHA-256 HTLC hashlock), `htlc_keyspace` (the H-1 escrow keyspace fix),
+# `ecrecover` (the pubkey-recovery signature scheme) and
 # `hash_count` (the keccak counter) all change the guest if enabled, so the guest's stf dependency
 # must pull default features only. Catch an accidental feature leak cheaply. (`htlc_sha256 =
 # ["dep:sha2"]` so a leak would also pull sha2.)
 GUEST_STF_LINE="$(grep -E 'liquid-cells-stf' crates/sp1-guest/Cargo.toml || true)"
 echo "guest stf dep      : $GUEST_STF_LINE"
-if echo "$GUEST_STF_LINE" | grep -qE 'journal|min_fee|compact_smt|reject_high_s|da_varint|htlc_sha256|htlc_keyspace|hash_count'; then
+if echo "$GUEST_STF_LINE" | grep -qE 'journal|min_fee|compact_smt|reject_high_s|da_varint|htlc_sha256|htlc_keyspace|ecrecover|hash_count'; then
   echo "FAIL: crates/sp1-guest enables a vkey-affecting stf feature (journal/min_fee/compact_smt/"
-  echo "      reject_high_s/da_varint/htlc_sha256/htlc_keyspace/hash_count). The deployed vkey is for the feature-OFF guest."
+  echo "      reject_high_s/da_varint/htlc_sha256/htlc_keyspace/ecrecover/hash_count). The deployed vkey is for the feature-OFF guest."
   exit 1
 fi
 # And the STF must not turn any of them on by default. (Each must be `name = [...]`, possibly empty.)
-if grep -E '^(journal|min_fee|compact_smt|reject_high_s|da_varint|htlc_sha256|htlc_keyspace|hash_count)\s*=' crates/stf/Cargo.toml | grep -qvE '=\s*\[[^]]*\]'; then
+if grep -E '^(journal|min_fee|compact_smt|reject_high_s|da_varint|htlc_sha256|htlc_keyspace|ecrecover|hash_count)\s*=' crates/stf/Cargo.toml | grep -qvE '=\s*\[[^]]*\]'; then
   echo "FAIL: a vkey-affecting stf feature has non-list defaults in crates/stf."
   exit 1
 fi
-echo "OK: guest compiles the STF with journal + min_fee + compact_smt + reject_high_s + da_varint + htlc_sha256 + htlc_keyspace + hash_count OFF (vkey-neutral)."
+echo "OK: guest compiles the STF with journal + min_fee + compact_smt + reject_high_s + da_varint + htlc_sha256 + htlc_keyspace + ecrecover + hash_count OFF (vkey-neutral)."
 echo
 echo "Pinned build inputs (ALL must match to reproduce the vkey byte-for-byte):"
 echo "  succinct rustc   1.94.0   (cargo-prove's toolchain; == the ghcr.io/succinctlabs/sp1:v6.2.4 image)"
 echo "  sp1-zkvm/sdk     6.2.4    (crates/sp1-guest, crates/sp1-host)"
-echo "  guest features   journal + min_fee + compact_smt + reject_high_s + da_varint + hash_count OFF (default)"
+echo "  guest features   journal + min_fee + compact_smt + reject_high_s + da_varint + htlc_sha256 + htlc_keyspace + ecrecover + hash_count OFF (default)"
 echo "  build path       \$HOME/liquid-cells   (SP1 embeds the absolute source path in the guest ELF,"
 echo "                   so the rebuild must run from the SAME path the deploy used, with HOME=/root)"
 echo

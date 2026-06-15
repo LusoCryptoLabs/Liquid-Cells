@@ -16,18 +16,33 @@ This doc is the checklist for that re-bake, plus the result of verifying the bun
 | `htlc_sha256` | stf | yes (HTLC hashlock) | sha256 (not keccak) HTLC hashlock, Fiber-compatible egress |
 | `htlc_keyspace` | stf + sequencer + ckb-contract + client | yes (guest); the contract/client halves are a deployed-format change | audit H-1: lock accumulates, claim/refund sweep-and-consume; force-refund reconstructs/sweeps the real committed balance via a 16-byte-widened witness (FORCEREFUND_LEN 8321 -> 8337) |
 | `min_fee` | stf | yes (in-proof fee floor) | reject intents with `fee < MIN_FEE_PER_LEAF` (anti zero-fee griefing) |
+| `ecrecover` | stf (primitive); integration is re-bake-time | yes (sig scheme + `*_msg` digests) | recover the signer pubkey from the signature, drop the 33-byte `from_pubkey` from each signed intent (net -32 bytes/intent) |
 
 `htlc_keyspace` is itself a 4-part bundle (guest + sequencer + contract + client) gated by the SAME
 feature name in each crate; see `crates/stf/Cargo.toml`. The contract/client halves do not touch the
 vkey (force-refund is not the guest), but they ARE a deployed witness-format change, so they redeploy
 with the anchor at the re-bake.
 
-## NOT yet staged (do at the re-bake itself)
+## `ecrecover`: primitive staged, integration is a re-bake-time change
 
-- **`ecrecover`**: recover the signer pubkey from the signature instead of carrying it, dropping 33
-  bytes from each `Transfer`/`Withdrawal`/`HtlcLock` and the force-exit witness. This is a struct
-  change that ripples through `codec` / `touched_keys` / the client / tests, so it is not cleanly
-  pre-stageable behind a `#[cfg]`; implement it AT the re-bake (it re-bakes the vkey anyway).
+The reusable crypto is staged and tested behind the `ecrecover` feature (`crates/stf/src/sig.rs`:
+`sign_recoverable` produces `r‖s‖recovery_id` (65 bytes); `recover` returns the signer pubkey;
+`crates/stf/tests/ecrecover.rs` proves the round-trip, the message/signature authentication, and the
+32-byte saving). The verifier derives the SMT key as `keccak(recovered_pubkey)`, so a signed intent
+need not carry `from_pubkey`: `(33 pubkey + 64 sig) -> 65` is **-32 bytes per signed transfer /
+withdrawal / htlc_lock** on the wire (DA + witness).
+
+The FULL integration is deliberately NOT pre-staged behind `#[cfg]`, because it ripples destructively:
+- the signed message must be **independent of the pubkey** (recovery is circular otherwise), so the
+  `transfer_msg` / `withdraw_msg` / `htlc_lock_msg` digests must omit the sender key, changing every
+  call site;
+- the intent structs drop `from_pubkey` and widen `sig` to 65 bytes, changing `codec`,
+  `touched_keys`, `apply`, the client builders, and every test fixture that constructs an intent.
+
+So `ecrecover` is implemented AT the re-bake (which re-bakes the vkey regardless): swap the `*_msg`
+digests to the pubkey-free form, drop the field and use `sig::recover` in `apply`/`touched_keys`/
+`codec`, and have the client sign with `sign_recoverable`. The primitive here is the load-bearing
+crypto; the rest is mechanical wiring done once, unconditionally, at that point.
 
 ## Verification: does the bundle compose?
 
@@ -81,7 +96,10 @@ flag flip**.
 
 ## Re-bake execution steps
 
-1. Implement `ecrecover` (the only unstaged item) and confirm the STF suite is green with it on.
+1. Wire in `ecrecover` (the primitive is staged + tested in `sig.rs`; the re-bake does the
+   integration: pubkey-free `*_msg` digests, drop `from_pubkey` and use `sig::recover` in
+   `apply`/`codec`/`touched_keys`, client signs with `sign_recoverable`) and confirm the suite is
+   green with it on.
 2. Complete the `min_fee` activation checklist above.
 3. Build the guest with ALL bundle features ON (the re-bake config), in the pinned toolchain
    (rustc 1.96.0 / SP1 6.2.x, build path `$HOME/liquid-cells`), and recompute the vkey.

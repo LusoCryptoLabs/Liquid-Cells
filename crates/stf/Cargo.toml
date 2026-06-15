@@ -78,6 +78,15 @@ da_varint = []
 # would brick force-refund of a griefed escrow). All four are implemented + tested; they activate
 # together at the re-bake/redeploy.
 htlc_keyspace = []
+# `ecrecover` drops the 33-byte `from_pubkey` from each signed intent and recovers the signer's
+# pubkey from the signature (r||s||recovery_id, 65 bytes), net -32 bytes per signed transfer /
+# withdrawal / htlc_lock on the wire (DA + witness). The reusable crypto primitives (sig::recover /
+# sign_recoverable) are staged + tested here behind the feature; the FULL integration (drop the field
+# from the structs, omit the sender key from the *_msg digests so recovery is not circular, thread
+# through codec / touched_keys / apply / the client) ripples through every construction and *_msg call
+# site including all tests, so it is a coordinated re-bake-time change (docs/V2-REBAKE.md), not a
+# pre-staged #[cfg]. OFF by default; the deployed guest never compiles it (vkey unchanged).
+ecrecover = []
 
 [dependencies]
 # Keccak-256: chosen over CKB-native blake2b because SP1 has a keccak precompile,
