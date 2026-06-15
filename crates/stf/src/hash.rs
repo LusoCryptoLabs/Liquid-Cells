@@ -47,3 +47,17 @@ pub fn node_hash(left: &Hash, right: &Hash) -> Hash {
     buf[32..].copy_from_slice(right);
     keccak(&buf)
 }
+
+/// SHA-256 of an arbitrary byte slice. Only compiled under `htlc_sha256` (the Fiber-compatible
+/// HTLC hashlock); SP1 ships a sha256 precompile, so it is cheap to prove. Absent from the
+/// deployed guest, so it never perturbs the vkey.
+#[cfg(feature = "htlc_sha256")]
+pub fn sha256(bytes: &[u8]) -> Hash {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(bytes);
+    let out = h.finalize();
+    let mut r = [0u8; 32];
+    r.copy_from_slice(&out);
+    r
+}

@@ -37,7 +37,13 @@ sender **cannot double-spend** the locked funds while the swap is pending.
 
 Classic HTLC, secret held by the party who claims first:
 
-1. Alice picks secret `s`, `H = keccak(s)`.
+1. Alice picks secret `s`, `H = hash(s)`. **Both legs must use the same hash function**, or the
+   single shared `H` no longer binds them to one secret and the swap stops being trustless (a
+   malicious sender could commit different secrets per leg). The deployed in-pool HTLC uses
+   `keccak`; Fiber's HTLC `HashAlgorithm` is `Sha256` (or `CkbHash`), never keccak, so the pool leg
+   must hashlock with **SHA-256** to share `H` with a Fiber/Lightning HTLC. That is the staged
+   `htlc_sha256` feature (the claim checks `sha256(s) == H`); see ROADMAP Tier C and the **Status**
+   note below.
 2. **Pool leg**, Alice `htlc_lock`s her dust to Bob under `H`, timeout `T_pool` (long).
 3. **L1/Fiber leg**, Bob locks his payment to Alice under the same `H`, timeout
    `T_L1 < T_pool`.
@@ -103,6 +109,14 @@ force-exit regardless of any of this.
   unnullified root, and bad total all reject). It carries no SP1 proof, like force-exit it is a
   pure SMT-inclusion path against the committed root, so the STF and the baked vkey are
   unchanged.
-* The L1 HTLC counterparty lock and Fiber integration are external/standard and out of scope
-  here. The receiver-side residual above is resolved by Phase 6, not by additional code in this
-  mode.
+* **SHA-256 hashlock (the Fiber-compat prerequisite): staged.** `crates/stf/src/transition.rs`
+  switches the `htlc_claim` preimage check from `keccak` to `sha256` under the `htlc_sha256`
+  feature, so the pool leg can share one hashlock `H = sha256(s)` with a Fiber/Bitcoin-Lightning
+  HTLC (`tests/htlc_sha256.rs`). It re-bakes the vkey, so it is OFF in the deployed guest and ships
+  in the coordinated re-bake bundle (like the compact SMT and the `min_fee` floor); `sha2` is an
+  optional dep absent from the deployed guest. `htlc_id` and the anchor contract never hash a
+  preimage, so both are unchanged.
+* The L1 HTLC counterparty lock and the rest of the Fiber integration (a Fiber node + LP liquidity,
+  an LP/swap-coordinator mirroring Fiber's Cross-Chain Hub, and `T_fiber < T_pool` timeout mapping)
+  are off-chain engineering, buildable but out of scope for this repo. The receiver-side residual
+  above is resolved by Phase 6, not by additional code in this mode.

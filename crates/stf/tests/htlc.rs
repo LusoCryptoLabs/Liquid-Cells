@@ -46,8 +46,15 @@ fn href(sender: u8, receiver_key: Hash, amount: u128, hashlock: Hash, timeout: u
 }
 
 const PRE: &[u8] = b"liquid-cells/atomic-swap/preimage";
+// The hashlock uses whichever preimage hash the active build claims against: keccak by default,
+// SHA-256 under the staged `htlc_sha256` (so this suite passes under both).
+#[cfg(not(feature = "htlc_sha256"))]
 fn hashlock() -> Hash {
     keccak(PRE)
+}
+#[cfg(feature = "htlc_sha256")]
+fn hashlock() -> Hash {
+    liquid_cells_stf::hash::sha256(PRE)
 }
 
 #[test]

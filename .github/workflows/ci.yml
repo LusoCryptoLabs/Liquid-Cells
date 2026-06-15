@@ -43,6 +43,8 @@ jobs:
         run: cargo test -p liquid-cells-stf --features reject_high_s
       - name: Test the staged DA-blob varint layout (vkey-affecting; OFF in the guest)
         run: cargo test -p liquid-cells-stf --features da_varint
+      - name: Test the staged SHA-256 HTLC hashlock (Fiber-compat; vkey-affecting; OFF in the guest)
+        run: cargo test -p liquid-cells-stf --features htlc_sha256
       - name: Build the lc-exit DA-reconstruction CLI (feature-gated, RPC)
         run: cargo build -p liquid-cells-client --features cli
       - name: Run the generic payment-pool example (the dev "hello world")

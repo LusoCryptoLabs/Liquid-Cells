@@ -241,7 +241,16 @@ fn apply_ops(
         if h.timeout <= batch.current_epoch {
             return Err(StfError::HtlcExpired);
         }
+        // The hashlock check. Deployed: `keccak(preimage)`. Under the staged `htlc_sha256`,
+        // `sha256(preimage)` instead, so the pool leg can share one hashlock with a Fiber /
+        // Bitcoin-Lightning HTLC (whose hash is SHA-256) for a trustless atomic swap. The
+        // statement-level `#[cfg]` keeps the off path byte-identical (vkey unchanged).
+        #[cfg(not(feature = "htlc_sha256"))]
         if keccak(&c.preimage) != h.hashlock {
+            return Err(StfError::BadPreimage);
+        }
+        #[cfg(feature = "htlc_sha256")]
+        if crate::hash::sha256(&c.preimage) != h.hashlock {
             return Err(StfError::BadPreimage);
         }
         work.get_mut(&id).unwrap().balance = 0;

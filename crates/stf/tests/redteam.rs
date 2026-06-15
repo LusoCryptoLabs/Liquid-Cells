@@ -21,6 +21,16 @@ fn pool_id() -> Hash {
 fn key_for(b: u8) -> Hash {
     key_of_pubkey(&sig::pubkey(&secret(b)))
 }
+// The HTLC hashlock uses whichever preimage hash the active build claims against (keccak by
+// default, SHA-256 under the staged `htlc_sha256`), so these attacks run under both.
+#[cfg(not(feature = "htlc_sha256"))]
+fn htlc_hash(p: &[u8]) -> Hash {
+    keccak(p)
+}
+#[cfg(feature = "htlc_sha256")]
+fn htlc_hash(p: &[u8]) -> Hash {
+    liquid_cells_stf::hash::sha256(p)
+}
 fn signed_transfer(b: u8, to_key: Hash, amount: u128, fee: u128, nonce: u64, expiry: u64) -> Transfer {
     let sk = secret(b);
     let from_pubkey = sig::pubkey(&sk);
@@ -144,7 +154,7 @@ fn attack_htlc_claim_then_refund_double_credit() {
     let bob = key_for(2);
     let (amount, fee) = (5_000_000u128, 0u128);
     let pre = b"redteam-preimage";
-    let hl = keccak(pre);
+    let hl = htlc_hash(pre);
     let sk = secret(1);
     let sender_key = key_for(1);
     let msg = htlc_lock_msg(CHAIN_ID, &pool_id(), &sender_key, &bob, amount, fee, &hl, 50, 0);
@@ -178,7 +188,7 @@ fn attack_htlc_claim_and_refund_same_batch() {
     let bob = key_for(2);
     let amount = 5_000_000u128;
     let pre = b"rt-pre2";
-    let hl = keccak(pre);
+    let hl = htlc_hash(pre);
     let sk = secret(1);
     let sender_key = key_for(1);
     let msg = htlc_lock_msg(CHAIN_ID, &pool_id(), &sender_key, &bob, amount, 0, &hl, 50, 0);
@@ -304,7 +314,7 @@ fn attack_keyset_stability_all_ops() {
     let bob = key_for(2);
     let carol = key_for(3);
     let pre = b"keyset-pre";
-    let hl = keccak(pre);
+    let hl = htlc_hash(pre);
     let sk1 = secret(1);
     let k1 = key_for(1);
     let lk_msg = htlc_lock_msg(CHAIN_ID, &pool_id(), &k1, &carol, 1_000_000, 0, &hl, 50, 0);

@@ -129,6 +129,16 @@ already done. **Detailed scope below.**
   so only the canonical low-S encoding verifies; `tests/high_s.rs` malleates a real signature to
   `(r, n-s)` and asserts rejection). OFF in the deployed guest so the vkey is untouched (asserted by
   `verify-vkey.sh`); flip on in this bundle. *strengthens.*
+- ✅ **SHA-256 HTLC hashlock** (the Fiber dust-egress prerequisite), *staged and tested in-tree*
+  behind the `htlc_sha256` feature (`crates/stf/src/transition.rs`: the `htlc_claim` preimage check
+  switches `keccak(preimage)` → `sha256(preimage)`, statement-level `#[cfg]` so the off build is
+  byte-identical). An atomic swap needs both legs locked to the SAME hash of one secret, and Fiber's
+  `HashAlgorithm` is `Sha256` (or `CkbHash`), never keccak, so the in-pool leg must hashlock with
+  sha256 to share one `H` with a Fiber/Lightning HTLC. `tests/htlc_sha256.rs` claims under a sha256
+  hashlock, proves a legacy keccak hashlock no longer opens, and pins that the pool leg's `H` equals
+  Fiber's. `sha2` is an OPTIONAL dep pulled only by the feature (deployed guest never compiles it);
+  at flip-on, pin it to the SP1 sha256 precompile (as `sha3` is for keccak). See [docs/EGRESS.md](docs/EGRESS.md).
+  *preserved (enables a new egress path; no change to the trust model).*
 
 ## Tier D: scale infrastructure (no protocol change, when volume demands)
 - **Operationalize anchor sharding** (the `ShardedSequencer` primitive exists; needs the deploy /
@@ -140,7 +150,12 @@ already done. **Detailed scope below.**
 ## Tier E: strategic
 - **Fiber egress leg + a reference LP**, turn sub-61-CKB dust egress from theory into product; the
   defensible wedge vs. prior art ("the only *live*, force-exitable, permissionless zk-rollup on CKB
-  with a Fiber egress").
+  with a Fiber egress"). *Crypto prerequisite DONE:* the SHA-256 HTLC hashlock above lets the pool
+  leg share a hashlock with a Fiber/Lightning HTLC. Remaining is off-chain integration (no research
+  gap): a Fiber node + LP liquidity, an LP/swap-coordinator (mirrors Fiber's own Cross-Chain Hub),
+  and epoch↔Fiber timeout mapping (`T_fiber < T_pool`). The receiver-side force-claim residual
+  (docs/EGRESS.md) is a priced LP risk, mitigated by short-lived dust swaps while the operator is
+  demonstrably live, not a blocker for v1.
 - **Drop the dead vendored `bn`** (verifier is ark-bn254 now; keep substrate-bn only as the
   differential-test oracle, clearly marked), less supply-chain/reviewer surface.
 - **Position permissionless sequencing as the censorship answer** (it's framed as a perf feature) and

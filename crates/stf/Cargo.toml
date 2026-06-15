@@ -35,6 +35,17 @@ compact_smt = []
 # compact-SMT cost test to measure the proving-cycle win. Test-only and OFF by default,
 # so it is absent from the guest ELF and never perturbs the vkey.
 hash_count = []
+# `htlc_sha256` switches the in-pool HTLC preimage check from keccak to SHA-256
+# (`sha256(preimage) == hashlock`), so the pool swap leg can share one hashlock with a Fiber /
+# Bitcoin-Lightning HTLC, whose `HashAlgorithm` is Sha256 (Fiber has no keccak option). An atomic
+# swap needs both legs locked to the SAME hash of one secret, so this is the prerequisite for the
+# Fiber dust-egress leg (docs/EGRESS.md). Gated OFF for the SAME reason as the others: it changes
+# the guest ELF, hence the vkey, so it is staged for the coordinated post-audit re-bake. Only the
+# claim check changes (statement-level `#[cfg]` => byte-identical off; `htlc_id` and the anchor
+# contract are untouched, they never hash a preimage). `sha2` is an OPTIONAL dep pulled only by
+# this feature, so the deployed guest never compiles it. At flip-on, pin `sha2` to the SP1
+# sha256-precompile patch (as `sha3` is pinned for keccak). Validated in `tests/htlc_sha256.rs`.
+htlc_sha256 = ["dep:sha2"]
 # `reject_high_s` makes `sig::verify` reject high-S (malleable) ECDSA signatures outright
 # instead of normalizing them, closing THREAT-MODEL L3 (signature-bytes malleability). Gated
 # OFF for the SAME reason as the others: it changes the guest ELF, hence the vkey, so it is
@@ -57,6 +68,9 @@ da_varint = []
 sha3 = { version = "=0.10.8", default-features = false }
 # secp256k1 ECDSA: native here, patched to the SP1 secp256k1 precompile in the guest.
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
+# SHA-256: optional, only compiled under `htlc_sha256` (the Fiber-compatible HTLC hashlock). Pinned
+# to the same 0.10.8 line as sha3 so it can be patched to the SP1 sha256 precompile at flip-on.
+sha2 = { version = "=0.10.8", default-features = false, optional = true }
 
 [dev-dependencies]
 hex = "0.4"
