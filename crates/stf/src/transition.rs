@@ -29,7 +29,10 @@
 
 use crate::error::StfError;
 use crate::hash::{keccak, Hash};
+#[cfg(not(feature = "compact_smt"))]
 use crate::smt::{root_from_witness, Smt};
+#[cfg(feature = "compact_smt")]
+use crate::smt_compact::{root_from_witness, Smt};
 use crate::types::*;
 use std::collections::{BTreeMap, BTreeSet};
 

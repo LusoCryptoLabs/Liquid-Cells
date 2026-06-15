@@ -15,7 +15,10 @@
 //! sequencer. [`reconstruct`] is that independent verifier.
 
 use crate::hash::{keccak, Hash};
+#[cfg(not(feature = "compact_smt"))]
 use crate::smt::Smt;
+#[cfg(feature = "compact_smt")]
+use crate::smt_compact::Smt;
 use crate::types::Leaf;
 
 /// Bytes per leaf record: `key(32) ‖ balance(16 BE) ‖ nonce(8 BE)`.

@@ -22,6 +22,19 @@ journal = []
 # hold operationally; flipping this on makes them unforgeable. Verify-vkey asserts it is OFF.
 # Validated in isolation by `tests/min_fee.rs` (the rest of the suite assumes the floor is off).
 min_fee = []
+# `compact_smt` swaps the deployed depth-256 sparse Merkle tree for the compact
+# (pass-through) tree in `src/smt_compact.rs`, cutting SMT proving cost from
+# O(touched · 256) keccaks to ~O(touched · log pool). Gated OFF for the SAME reason as
+# `min_fee`: it changes the node-hashing rules, hence the guest ELF and the vkey, so it
+# must be OFF in the deployed guest and is staged here for the coordinated post-audit
+# re-bake bundle. When OFF the `#[cfg]` redirects compile byte-identically to today, so
+# the deployed vkey (0x00213af5…) stays reproducible. Validated against the live scheme
+# in `tests/compact_smt.rs` (`cargo test -p liquid-cells-stf --features compact_smt`).
+compact_smt = []
+# `hash_count` exposes a process-global keccak-call counter (`hash::count`) used by the
+# compact-SMT cost test to measure the proving-cycle win. Test-only and OFF by default,
+# so it is absent from the guest ELF and never perturbs the vkey.
+hash_count = []
 
 [dependencies]
 # Keccak-256: chosen over CKB-native blake2b because SP1 has a keccak precompile,

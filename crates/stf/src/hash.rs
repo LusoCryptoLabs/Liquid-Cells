@@ -11,8 +11,27 @@ use sha3::{Digest, Keccak256};
 /// A 32-byte digest / SMT node / key.
 pub type Hash = [u8; 32];
 
+/// Test-only keccak call counter, used to measure the SMT scheme's proving-cost win
+/// (keccak invocations dominate guest cycles). Gated behind `hash_count` and therefore
+/// **absent from the deployed guest ELF**, so the counter never perturbs the vkey.
+#[cfg(feature = "hash_count")]
+pub mod count {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    pub(super) static N: AtomicU64 = AtomicU64::new(0);
+    /// Number of `keccak` calls since the last [`reset`].
+    pub fn get() -> u64 {
+        N.load(Ordering::Relaxed)
+    }
+    /// Zero the counter.
+    pub fn reset() {
+        N.store(0, Ordering::Relaxed);
+    }
+}
+
 /// Keccak-256 of an arbitrary byte slice.
 pub fn keccak(bytes: &[u8]) -> Hash {
+    #[cfg(feature = "hash_count")]
+    count::N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut h = Keccak256::new();
     h.update(bytes);
     let out = h.finalize();

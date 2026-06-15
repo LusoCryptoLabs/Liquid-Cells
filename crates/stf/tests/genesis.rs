@@ -14,6 +14,7 @@ fn genesis_root_is_the_empty_smt_root() {
     assert_eq!(st.pool.seq, 0);
     assert_eq!(st.pool.total, 0);
     assert_eq!(st.pool.fee_acc, 0);
-    // The empty SMT root equals Smt::new().root() (depth-256 default node).
-    assert_eq!(st.pool.root, smt::Smt::new().root());
+    // The empty SMT root equals the active scheme's `Smt::new().root()` (the depth-256
+    // default node today; the zero constant under the staged `compact_smt`).
+    assert_eq!(st.pool.root, Smt::new().root());
 }

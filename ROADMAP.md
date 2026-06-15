@@ -70,8 +70,19 @@ already done. **Detailed scope below.**
   [docs/EGRESS.md](docs/EGRESS.md)). The sender-side `force_refund` remains the implemented escape.
 
 ## Tier C: coordinated "v2" upgrade bundle (each re-bakes the vkey → ship together, audit once)
-- **SMT depth-256 → shallow/extension-node tree**, biggest single cost win, ~30–50% total proving
-  cycles (and a smaller witness). *preserved (differential-test the new tree like the verifier port).*
+- ✅ **SMT depth-256 → compact (pass-through) tree**, biggest single cost win, *staged and
+  differential-tested in-tree* behind the `compact_smt` feature (`crates/stf/src/smt_compact.rs`).
+  The deployed tree descends all 256 levels for every touched leaf; the compact tree makes empty
+  subtrees a single constant, collapses single-occupant paths (a node with one empty child *is* its
+  child, no hash), and binds each leaf's key so the collapse can't relocate it. Measured win
+  (`cargo test -p liquid-cells-stf --features "compact_smt hash_count"`, pool=512 / batch=16):
+  **batch reconstruction 4046 → 115 keccaks (~35×), single-leaf force-exit verify 256 → 10 keccaks
+  (~26×)**, well past the original ~30–50% estimate, because SMT keccaks (not the only proving cost,
+  k256 sig-verify is the other big one) drop ~97%. OFF in the deployed guest so the vkey is untouched
+  (asserted by `verify-vkey.sh`); the *entire* existing STF suite also passes under `compact_smt`,
+  evidence it is a correct drop-in. Witness-size compaction (dropping the pass-through empty siblings
+  via a shape bitmap) is the follow-on within this same bundle. *preserved (differential-tested vs the
+  live depth-256 tree like the verifier port).*
 - **In-proof minimum fee per intent**, *staged and tested in-tree* behind the `min_fee` feature
   (`liquid_cells_stf::MIN_FEE_PER_LEAF`, enforced in `apply_ops` for every transfer/HTLC-lock; OFF in
   the deployed guest so the vkey is untouched, asserted by `verify-vkey.sh`; `cargo test -p
