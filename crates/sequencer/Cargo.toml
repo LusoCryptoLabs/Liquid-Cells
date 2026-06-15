@@ -13,6 +13,13 @@ repository = { workspace = true }
 [dependencies]
 liquid-cells-stf = { path = "../stf", features = ["journal"] }
 
+[features]
+# `htlc_keyspace` forwards the STF's H-1 escrow-keyspace fix so the resilient-seal validation
+# (resilient.rs) mirrors the proven apply_ops under that staged change. Without it, seal_resilient
+# would DROP exactly the top-up/front-run recovery intents the STF accepts, defeating the fix on the
+# resilient cadence. OFF by default (matches the deployed guest), staged for the coordinated re-bake.
+htlc_keyspace = ["liquid-cells-stf/htlc_keyspace"]
+
 # The end-to-end demo (`examples/demo.rs`) drives the sequencer with client-built,
 # client-signed intents and then recovers a balance from L1 DA on the client side, so it
 # needs the client SDK. Dev-only: it never enters the sequencer's own dependency graph.

@@ -102,3 +102,36 @@ fn batch_wide_failure_still_fails_closed() {
     // ask to withdraw more fees than were collected -> seal_batch rejects -> resilient propagates.
     assert!(s.seal_resilient(0, 10_000).is_err(), "fee_withdrawal > revenue fails closed");
 }
+
+#[cfg(feature = "htlc_keyspace")]
+#[test]
+fn resilient_seal_does_not_drop_an_h1_recovery_claim() {
+    // Under htlc_keyspace the claim of a topped-up escrow is VALID in the proven STF, so
+    // seal_resilient (which re-validates each intent) must mirror apply_ops and NOT drop it. This
+    // pins that resilient.rs is gated to the same rules; on the deployed rules it would drop the
+    // claim (escrow.balance != amount), defeating the H-1 recovery on the resilient cadence.
+    use liquid_cells_stf::{htlc_id, htlc_lock_msg, HtlcClaim, HtlcLock, HtlcRef};
+    let mut s = funded(1, 100_000_000);
+    let bob = key(2);
+    let (amount, fee) = (5_000_000u128, 1_000u128);
+    let h = keccak(b"recovery");
+    let sk = secret(1);
+    let pk = sig::pubkey(&sk);
+    let ak = key_of_pubkey(&pk);
+    let msg = htlc_lock_msg(CHAIN, &pool(), &ak, &bob, amount, fee, &h, 50, 0);
+    let (_p, sig) = sig::sign(&sk, &msg);
+    s.submit_htlc_lock(HtlcLock { sender_pubkey: pk, receiver_key: bob, amount, fee, hashlock: h, timeout: 50, nonce: 0, sig });
+    s.seal_batch(1, 0).expect("lock seals");
+
+    let id = htlc_id(&pool(), &ak, &bob, amount, &h, 50, 0);
+    s.submit_deposit(Deposit { to_key: id, amount: 1 }); // hostile top-up of the escrow key
+    s.seal_batch(2, 0).expect("top-up seals");
+
+    let claim = HtlcClaim {
+        htlc: HtlcRef { sender_key: ak, receiver_key: bob, amount, hashlock: h, timeout: 50, lock_nonce: 0 },
+        preimage: b"recovery".to_vec(),
+    };
+    s.submit_htlc_claim(claim);
+    let (_job, dropped) = s.seal_resilient(3, 0).expect("resilient seal");
+    assert!(dropped.is_empty(), "the H-1-recovery claim must NOT be dropped by seal_resilient");
+}

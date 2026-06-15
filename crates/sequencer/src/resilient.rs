@@ -141,9 +141,15 @@ pub fn validate_batch(
             if from.balance < debit {
                 return Err(StfError::InsufficientBalance);
             }
+            // Mirror the STF: deployed requires the escrow slot empty; under `htlc_keyspace` the lock
+            // accumulates onto any pre-existing balance (validated overflow-safe here so a near-MAX
+            // pre-credit is dropped, not panicked). Keeps seal_resilient a true superset of apply_ops.
+            #[cfg(not(feature = "htlc_keyspace"))]
             if !work.get(&id).expect("seeded").is_empty() {
                 return Err(StfError::HtlcExists);
             }
+            #[cfg(feature = "htlc_keyspace")]
+            work.get(&id).expect("seeded").balance.checked_add(l.amount).ok_or(StfError::Overflow)?;
             Ok(debit)
         })();
         match r {
@@ -152,7 +158,14 @@ pub fn validate_batch(
                 f.balance -= debit;
                 f.nonce += 1;
                 let e = work.get_mut(&id).unwrap();
-                e.balance = l.amount;
+                #[cfg(not(feature = "htlc_keyspace"))]
+                {
+                    e.balance = l.amount;
+                }
+                #[cfg(feature = "htlc_keyspace")]
+                {
+                    e.balance = e.balance.checked_add(l.amount).expect("validated overflow-safe above");
+                }
                 e.nonce = 0;
                 out.htlc_locks.push(l.clone());
             }
@@ -166,7 +179,12 @@ pub fn validate_batch(
         let id = htlc_id(&prev.pool_id, &h.sender_key, &h.receiver_key, h.amount, &h.hashlock, h.timeout, h.lock_nonce);
         let r = (|| {
             let escrow = *work.get(&id).expect("seeded");
+            #[cfg(not(feature = "htlc_keyspace"))]
             if escrow.balance != h.amount || escrow.nonce != 0 {
+                return Err(StfError::HtlcMissing);
+            }
+            #[cfg(feature = "htlc_keyspace")]
+            if escrow.balance < h.amount || escrow.nonce != 0 {
                 return Err(StfError::HtlcMissing);
             }
             if h.timeout <= epoch {
@@ -175,7 +193,12 @@ pub fn validate_batch(
             if keccak(&c.preimage) != h.hashlock {
                 return Err(StfError::BadPreimage);
             }
-            work.get(&h.receiver_key).expect("seeded").balance.checked_add(h.amount).ok_or(StfError::Overflow)
+            // Deployed credits `amount`; under `htlc_keyspace` sweep the whole leaf to the receiver.
+            #[cfg(not(feature = "htlc_keyspace"))]
+            let pay = h.amount;
+            #[cfg(feature = "htlc_keyspace")]
+            let pay = escrow.balance;
+            work.get(&h.receiver_key).expect("seeded").balance.checked_add(pay).ok_or(StfError::Overflow)
         })();
         match r {
             Ok(to_new) => {
@@ -193,13 +216,23 @@ pub fn validate_batch(
         let id = htlc_id(&prev.pool_id, &h.sender_key, &h.receiver_key, h.amount, &h.hashlock, h.timeout, h.lock_nonce);
         let r = (|| {
             let escrow = *work.get(&id).expect("seeded");
+            #[cfg(not(feature = "htlc_keyspace"))]
             if escrow.balance != h.amount || escrow.nonce != 0 {
+                return Err(StfError::HtlcMissing);
+            }
+            #[cfg(feature = "htlc_keyspace")]
+            if escrow.balance < h.amount || escrow.nonce != 0 {
                 return Err(StfError::HtlcMissing);
             }
             if h.timeout > epoch {
                 return Err(StfError::HtlcNotExpired);
             }
-            work.get(&h.sender_key).expect("seeded").balance.checked_add(h.amount).ok_or(StfError::Overflow)
+            // Deployed refunds `amount`; under `htlc_keyspace` sweep the whole leaf back to the sender.
+            #[cfg(not(feature = "htlc_keyspace"))]
+            let pay = h.amount;
+            #[cfg(feature = "htlc_keyspace")]
+            let pay = escrow.balance;
+            work.get(&h.sender_key).expect("seeded").balance.checked_add(pay).ok_or(StfError::Overflow)
         })();
         match r {
             Ok(to_new) => {

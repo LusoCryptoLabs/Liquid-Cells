@@ -60,6 +60,24 @@ reject_high_s = []
 # build is byte-identical and the deployed vkey stays reproducible. The anchor only checks
 # `keccak(blob) == da_commitment`, so it is layout-agnostic. Validated in `tests/da_varint.rs`.
 da_varint = []
+# `htlc_keyspace` closes audit finding H-1 (HTLC escrow keyspace-collision freeze): instead of
+# requiring the escrow slot empty (so a 1-unit pre-credit at the `htlc_id` key froze or blocked a
+# swap), the lock ACCUMULATES onto any pre-existing balance and claim/refund SWEEP the whole leaf
+# (`amount` + any hostile surplus) to the htlc_id-fixed counterparty, then consume the leaf. So a
+# top-up or front-run pre-credit can neither block the lock, freeze the in-pool claim/refund, nor be
+# drained by a repeated claim (the leaf is swept, not partially debited, so a second op finds it
+# empty). Gated OFF for the SAME reason as the others (it changes the guest ELF, hence the vkey) and
+# staged for the coordinated post-audit re-bake. Statement-level `#[cfg]` keeps the OFF build
+# byte-identical, so the deployed vkey stays reproducible. Validated in `tests/htlc_keyspace.rs`.
+# COORDINATED RESIDUAL (must ship together at the re-bake): the on-chain force-refund
+# (crates/ckb-contract/src/escape.rs) still reconstructs `leaf_hash(amount, 0)`, so a balance-altered
+# escrow (reachable by ANY third party via a 1-unit pre-credit at the public DA-derivable htlc_id)
+# is un-force-refundable under operator silence until escape.rs is updated to reconstruct/sweep the
+# real committed balance. DO NOT flip this feature on without (1) that matching escape.rs contract
+# change AND (2) the sequencer's `htlc_keyspace` feature (resilient.rs mirrors apply_ops, else
+# seal_resilient drops the very recovery intents this fix accepts). All three flip together at the
+# re-bake.
+htlc_keyspace = []
 
 [dependencies]
 # Keccak-256: chosen over CKB-native blake2b because SP1 has a keccak precompile,

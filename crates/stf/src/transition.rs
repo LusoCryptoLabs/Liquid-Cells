@@ -210,9 +210,22 @@ fn apply_ops(
             &prev.pool_id, &sender_key, &l.receiver_key, l.amount, &l.hashlock, l.timeout, l.nonce,
         );
         let slot = *work.get(&id).ok_or(StfError::MalformedWitness)?;
+        // Deployed: the escrow slot must be empty, else a pre-credit at `id` blocks the lock and an
+        // attacker can grief a swap (H-1). Under the staged `htlc_keyspace` fix the lock instead
+        // *accumulates* onto any pre-existing balance (and claim/refund SWEEP the whole leaf to the
+        // fixed counterparty), so a hostile pre-credit/top-up can neither block the lock nor freeze
+        // the in-pool escrow. Statement-level `#[cfg]` keeps the off path byte-identical (vkey
+        // unchanged). NOTE: this closes the IN-POOL path only; the on-chain force-refund
+        // (crates/ckb-contract/src/escape.rs) still reconstructs `leaf_hash(amount, 0)`, so a
+        // balance-altered escrow remains un-force-refundable under operator silence until escape.rs
+        // is updated to reconstruct/sweep the real committed balance. The two MUST ship together at
+        // the vkey re-bake; flipping this feature alone would brick force-refund of a griefed escrow.
+        #[cfg(not(feature = "htlc_keyspace"))]
         if !slot.is_empty() {
             return Err(StfError::HtlcExists);
         }
+        #[cfg(feature = "htlc_keyspace")]
+        let _ = slot; // read to fault the escrow leaf into the witness; balance is accumulated below
         {
             let f = work.get_mut(&sender_key).unwrap();
             f.balance -= debit;
@@ -220,7 +233,14 @@ fn apply_ops(
         }
         {
             let e = work.get_mut(&id).unwrap();
-            e.balance = l.amount;
+            #[cfg(not(feature = "htlc_keyspace"))]
+            {
+                e.balance = l.amount;
+            }
+            #[cfg(feature = "htlc_keyspace")]
+            {
+                e.balance = e.balance.checked_add(l.amount).ok_or(StfError::Overflow)?;
+            }
             e.nonce = 0;
         }
         fee_delta = fee_delta.checked_add(l.fee).ok_or(StfError::Overflow)?;
@@ -235,8 +255,13 @@ fn apply_ops(
             h.lock_nonce,
         );
         let escrow = *work.get(&id).ok_or(StfError::MalformedWitness)?;
+        #[cfg(not(feature = "htlc_keyspace"))]
         if escrow.balance != h.amount || escrow.nonce != 0 {
             return Err(StfError::HtlcMissing);
+        }
+        #[cfg(feature = "htlc_keyspace")]
+        if escrow.balance < h.amount || escrow.nonce != 0 {
+            return Err(StfError::HtlcMissing); // `>=`: a top-up cannot freeze the claim (H-1)
         }
         if h.timeout <= batch.current_epoch {
             return Err(StfError::HtlcExpired);
@@ -255,7 +280,16 @@ fn apply_ops(
         }
         work.get_mut(&id).unwrap().balance = 0;
         let to = work.get_mut(&h.receiver_key).ok_or(StfError::MalformedWitness)?;
-        to.balance = to.balance.checked_add(h.amount).ok_or(StfError::Overflow)?;
+        // Deployed: credit the receiver exactly `amount`. Under `htlc_keyspace`: credit the WHOLE
+        // swept leaf (`amount` + any hostile top-up/front-run surplus). The leaf is consumed (zeroed
+        // above), so a surplus can neither freeze the claim nor be drained by a repeated claim (a
+        // second claim finds an empty leaf). Any surplus is the griefer's own funds, reaches only the
+        // htlc_id-fixed receiver, and value is conserved.
+        #[cfg(not(feature = "htlc_keyspace"))]
+        let credit = h.amount;
+        #[cfg(feature = "htlc_keyspace")]
+        let credit = escrow.balance;
+        to.balance = to.balance.checked_add(credit).ok_or(StfError::Overflow)?;
     }
 
     // HTLC refunds: at/after `timeout` ⇒ return the amount to the sender (fixed by id).
@@ -266,15 +300,27 @@ fn apply_ops(
             h.lock_nonce,
         );
         let escrow = *work.get(&id).ok_or(StfError::MalformedWitness)?;
+        #[cfg(not(feature = "htlc_keyspace"))]
         if escrow.balance != h.amount || escrow.nonce != 0 {
             return Err(StfError::HtlcMissing);
+        }
+        #[cfg(feature = "htlc_keyspace")]
+        if escrow.balance < h.amount || escrow.nonce != 0 {
+            return Err(StfError::HtlcMissing); // `>=`: a top-up cannot freeze the refund (H-1)
         }
         if h.timeout > batch.current_epoch {
             return Err(StfError::HtlcNotExpired);
         }
         work.get_mut(&id).unwrap().balance = 0;
         let to = work.get_mut(&h.sender_key).ok_or(StfError::MalformedWitness)?;
-        to.balance = to.balance.checked_add(h.amount).ok_or(StfError::Overflow)?;
+        // Deployed: refund the sender exactly `amount`. Under `htlc_keyspace`: sweep the WHOLE leaf
+        // (`amount` + any surplus) back to the sender; the leaf is consumed (zeroed above), so a
+        // surplus cannot freeze the refund nor be double-refunded. Value is conserved.
+        #[cfg(not(feature = "htlc_keyspace"))]
+        let credit = h.amount;
+        #[cfg(feature = "htlc_keyspace")]
+        let credit = escrow.balance;
+        to.balance = to.balance.checked_add(credit).ok_or(StfError::Overflow)?;
     }
 
     // withdrawals: owner signature debits, value leaves the pool.
