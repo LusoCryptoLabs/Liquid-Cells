@@ -1,0 +1,21 @@
+[package]
+name = "liquid-cells-sequencer-service"
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/tecmeup123/Liquid-Cells"
+
+# Standalone (not in the lean root workspace): the off-chain sequencer behind a tiny HTTP front, so a
+# client (the WASM SDK, or any HTTP caller) can submit signed intents and have them sealed into
+# checkpoints. It parses intents with `liquid_cells_client::wire`, the SAME definitions the SDK
+# serializes with, so the wire encoding cannot drift. The heavy Groth16 proving + Pudge submission of
+# a sealed checkpoint stays the separate driver it already is; this service is the off-chain half.
+[workspace]
+
+[dependencies]
+liquid-cells-sequencer = { path = "../sequencer" }
+liquid-cells-stf = { path = "../stf" }
+liquid-cells-client = { path = "../client", features = ["wire"] }
+serde_json = "1"
+hex = "0.4"
+tiny_http = "0.12"
