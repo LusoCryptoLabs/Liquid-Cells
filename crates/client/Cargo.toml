@@ -20,6 +20,10 @@ cli = ["dep:ureq", "dep:native-tls", "dep:serde_json", "dep:hex"]
 # end-to-end test settles the pool leg the way a deployed (post-re-bake) pool would. The coordinator
 # logic itself is hash-agnostic; only that one test needs the STF to claim against sha256.
 htlc_sha256 = ["liquid-cells-stf/htlc_sha256"]
+# `fiber` builds the fnn-backed `CounterpartyLeg` (`fiber::FiberLeg`) + the `lc-swap` binary: the swap
+# drivers run against a LIVE `fnn` node instead of `MockLeg`. Pulls the same HTTP stack as `cli`, plus
+# `htlc_sha256` so the in-process pool leg claims under the Fiber-compatible sha256 hashlock.
+fiber = ["dep:ureq", "dep:native-tls", "dep:serde_json", "dep:hex", "htlc_sha256"]
 
 [dependencies]
 liquid-cells-stf = { path = "../stf" }
@@ -39,6 +43,11 @@ hex = { version = "0.4", optional = true }
 name = "lc-exit"
 path = "src/bin/lc-exit.rs"
 required-features = ["cli"]
+
+[[bin]]
+name = "lc-swap"
+path = "src/bin/lc-swap.rs"
+required-features = ["fiber"]
 
 [dev-dependencies]
 hex = "0.4"

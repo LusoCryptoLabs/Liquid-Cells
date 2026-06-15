@@ -45,6 +45,10 @@ pub use fees::FeeSchedule;
 
 pub mod swap;
 
+/// fnn-backed counterparty leg (the live Fiber adapter for [`swap`]). Behind `--features fiber`.
+#[cfg(feature = "fiber")]
+pub mod fiber;
+
 /// SMT depth (matches `liquid_cells_stf::smt` and the on-chain contract).
 const SMT_DEPTH: usize = 256;
 

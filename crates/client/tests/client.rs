@@ -19,6 +19,19 @@ fn secret(n: u8) -> [u8; 32] {
     s
 }
 
+/// The active HTLC hashlock: sha256 under `htlc_sha256` (the Fiber-compatible build, also pulled in
+/// by `fiber`), keccak otherwise. Lets the HTLC tests run under either hash with no other change.
+fn htlc_hash(b: &[u8]) -> Hash {
+    #[cfg(feature = "htlc_sha256")]
+    {
+        liquid_cells_stf::hash::sha256(b)
+    }
+    #[cfg(not(feature = "htlc_sha256"))]
+    {
+        keccak(b)
+    }
+}
+
 /// Apply a batch and return the DA blob the checkpoint would publish (post-state of touched
 /// leaves), the bytes a client later reconstructs from L1.
 fn apply_and_blob(st: &mut State, batch: &Batch) -> Vec<u8> {
@@ -172,7 +185,7 @@ fn htlc_lock_and_force_refund_witness_from_da() {
         },
     ));
 
-    let hashlock = keccak(b"client-preimage");
+    let hashlock = htlc_hash(b"client-preimage");
     let (lock, r) = alice.htlc_lock(bob.key(), 5000, 1, hashlock, 50);
     blobs.push(apply_and_blob(
         &mut st,

@@ -76,6 +76,42 @@ Then the taker, knowing `s`, submits the LC `htlc_claim` the `TakerDriver` alrea
 pool dust settles to the LP. Timeout ordering: the Fiber invoice `expiry` / `final_htlc_minimum_
 expiry_delta` must be shorter than the pool `T_pool`, as `SwapTerms::validate` enforces abstractly.
 
+## Live adapter: the drivers run against a real node (`FiberLeg` + `lc-swap`)
+
+The mapping above is implemented in [`crates/client/src/fiber.rs`](../crates/client/src/fiber.rs)
+(`--features fiber`): `FiberLeg` is a `CounterpartyLeg` over `fnn` JSON-RPC, so the existing
+`MakerDriver` / `TakerDriver` drive a live swap with **no coordinator change**, `MockLeg` is simply
+swapped for `FiberLeg`. It is role-aware: the maker leg creates the hold invoice
+(`create_hold_invoice`) and settles it (`claim` → `settle_invoice`); the taker leg pays it
+(`lock` → `send_payment`); `state()` maps each node's view (`get_invoice` / `get_payment`) onto
+`LegState`.
+
+The binary [`lc-swap`](../crates/client/src/bin/lc-swap.rs) runs it end to end against two live nodes.
+The Fiber leg is fully live; the pool leg settles through the canonical in-process `liquid_cells_stf`
+(the same STF the sequencer and contract run, the faithful-pool approach the driver tests use; a
+production operator would instead seal the returned pool intents into Groth16 checkpoints, the path
+already proven live for seq 1 → 2 → 3). A run (fresh salted `H` each time):
+
+```
+[01] maker: escrowed 200000000 dust in the pool HTLC (H-locked)
+[01] taker: paid the Fiber invoice (HTLC in flight)
+[02] maker: settled the Fiber invoice, secret revealed
+[03] maker: DONE (claimed the Fibt payment)
+[03] taker: claimed the pool dust with the revealed secret
+[04] taker: DONE
+SWAP COMPLETE: live Fiber payment + in-pool dust egress, atomic under H = sha256(secret).
+```
+
+**The preimage gap, handled honestly.** When the maker settles, the preimage propagates back to the
+taker as the HTLC fulfillment, so the taker's node holds it (we confirmed it lands in the taker
+node's RocksDB channel store). A production Lightning/Fiber node exposes that fulfilled preimage to
+its operator; **fnn v0.8.1's `get_payment` does not** (status only, no preimage field, no log line).
+So the taker leg learns the revealed secret in order: (1) the `payment_preimage`/`preimage` field of
+`get_payment` if a node exposes it (forward compatible); (2) else a supplied fallback, surfaced only
+after `get_payment` proves `Success` (the maker provably revealed it) and always re-checked
+`sha256(preimage) == H`. Safety does not rest on this bridge: `decide` re-verifies `sha256(preimage)
+== H` regardless, and a payment reaches `Success` only if the real preimage was revealed.
+
 ## Runbook
 
 **1. Run a node (no build needed):**
@@ -99,14 +135,23 @@ Pudge faucet, then `open_channel`. **Both** parties must be funded: the opener p
 counterparty fails funding with `capacity not enough ... value=99.0`. A second local node on ports
 `8237/8238` is the simplest counterparty for an end-to-end demo.
 
+**4. Run the swap through the drivers** (channel `ChannelReady`):
+```
+cargo build -p liquid-cells-client --features fiber --bin lc-swap
+./target/debug/lc-swap --maker-rpc http://127.0.0.1:8237 --taker-rpc http://127.0.0.1:8227
+```
+
 ## Status
 
+* ✅ **Drivers run against a live node.** `FiberLeg` (`crates/client/src/fiber.rs`) is a real
+  `CounterpartyLeg` over `fnn` RPC; `lc-swap` drives `MakerDriver`/`TakerDriver` to a full live swap,
+  `MockLeg` is no longer the only backing. This was the last LC-side code item for the egress.
 * ✅ **Funded live swap, end to end.** Two funded `fnn` nodes, a `ChannelReady` channel, a `sha256`
   hold invoice, a real `send_payment`, `settle_invoice` revealing the 32-byte preimage, payment
   `Success` / invoice `Paid` (the "Live funded swap" section above).
 * ✅ **Hash compatibility, live.** Both legs lock to one `H = sha256(preimage)`; the exact live
   preimage and `payment_hash` are pinned in `crates/stf/tests/htlc_sha256.rs`.
-* ✅ **LC side complete + tested in-process.** `htlc_sha256` hashlock, swap coordinator, and runnable
-  Maker/Taker drivers (`crates/client/tests/swap.rs` settles a full swap through the real STF).
+* ✅ **LC side complete + tested in-process.** `htlc_sha256` hashlock, swap coordinator, runnable
+  Maker/Taker drivers, and the `FiberLeg` adapter (`crates/client/tests/swap.rs` + `fiber.rs` tests).
 * The receiver-side force-claim residual ([EGRESS.md](EGRESS.md)) is a priced LP risk, mitigated by
   short-lived dust swaps while the operator is live, not a blocker for v1.
