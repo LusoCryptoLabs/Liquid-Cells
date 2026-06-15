@@ -35,8 +35,9 @@ async function rpc(path, method = 'GET', body) {
   console.log('alice', alice.key());
   console.log('bob  ', bobKey);
 
-  // 1. Fund Alice (a deposit is L1-authorized; the demo submits it directly).
-  await rpc('/submit', 'POST', { type: 'deposit', to_key: alice.key(), amount: '1000000' });
+  // 1. Fund Alice. A deposit is L1-authorized, never client-submittable, so it goes through the
+  // operator-only faucet endpoint (the service must be started with --allow-deposits for the demo).
+  await rpc('/admin/deposit', 'POST', { type: 'deposit', to_key: alice.key(), amount: '1000000' });
   await rpc('/seal', 'POST', { current_epoch: 1 });
   console.log('alice funded:', (await rpc('/leaf?key=' + alice.key())).balance);
 

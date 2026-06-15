@@ -108,7 +108,9 @@ impl SwapTerms {
         if self.maker_key == self.taker_key {
             return Err("maker == taker");
         }
-        if self.fiber_timeout + MIN_TIMEOUT_MARGIN > self.pool_timeout {
+        // saturating_add so a near-`u64::MAX` fiber_timeout cannot wrap and falsely pass the
+        // ordering check (overflow-checks is off in release): on overflow it saturates and rejects.
+        if self.fiber_timeout.saturating_add(MIN_TIMEOUT_MARGIN) > self.pool_timeout {
             return Err("fiber_timeout must precede pool_timeout by the margin");
         }
         Ok(())
@@ -294,7 +296,7 @@ fn decide_taker(terms: &SwapTerms, pool: &LegState, cp: &LegState, now: u64) -> 
             if *timeout != terms.pool_timeout {
                 return Action::Abort("pool lock: wrong timeout");
             }
-            if terms.fiber_timeout + MIN_TIMEOUT_MARGIN > terms.pool_timeout {
+            if terms.fiber_timeout.saturating_add(MIN_TIMEOUT_MARGIN) > terms.pool_timeout {
                 return Action::Abort("pool lock: insufficient timeout margin");
             }
             match cp {

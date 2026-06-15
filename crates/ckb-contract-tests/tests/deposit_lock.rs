@@ -30,13 +30,20 @@ const DEP_CAP: u64 = 100_00000000; // 100 CKB
 
 #[derive(Clone)]
 enum Spend {
-    /// Spent alongside an input carrying the pool anchor type script (a checkpoint).
-    SweepWithPoolInput,
+    /// Spent alongside the pool anchor input, consumed in a given mode (the anchor input's witness
+    /// `input_type` length). 644 = checkpoint (credits the depositor, must unlock); 8249/8321 =
+    /// escape mode (force-exit/force-refund, does NOT credit deposits, must NOT unlock: H-2).
+    WithPoolAnchor { mode_len: usize },
     /// Spent alongside a checkpoint of a DIFFERENT pool (a distinct anchor type hash). Models a
     /// type-id'd pool B trying to sweep a deposit bound to pool A: the lock must refuse.
     SweepWithForeignPool,
     /// Spent without any pool input. `since` epoch, and where the (single) output's capacity goes.
     NoPool { since_epoch: u64, refund_to_depositor: bool, refund_cap: u64 },
+}
+
+/// A WitnessArgs whose `input_type` is `n` bytes, modelling the anchor's mode-selecting witness.
+fn mode_witness(n: usize) -> WitnessArgs {
+    WitnessArgs::new_builder().input_type(Some(Bytes::from(vec![0u8; n])).pack()).build()
 }
 
 fn build(spend: Spend) -> (Context, TransactionView) {
@@ -80,8 +87,11 @@ fn build(spend: Spend) -> (Context, TransactionView) {
         .cell_dep(CellDep::new_builder().out_point(as_op.clone()).build());
 
     match spend {
-        Spend::SweepWithPoolInput => {
-            // input[0] = a cell carrying the pool anchor type script (the checkpoint).
+        Spend::WithPoolAnchor { mode_len } => {
+            // input[0] = the pool anchor cell, consumed in `mode_len` mode; input[1] = the deposit.
+            // The swept funds route to a third party (sink_lock): harmless in checkpoint mode (the
+            // anchor credits the depositor, which the deposit lock delegates to), but it is exactly
+            // the theft an escape-mode anchor must NOT enable. witnesses[0] is the anchor's.
             let pool_cell = ctx.create_cell(
                 CellOutput::new_builder()
                     .capacity(50_00000000u64.pack())
@@ -93,7 +103,6 @@ fn build(spend: Spend) -> (Context, TransactionView) {
             b = b
                 .input(CellInput::new_builder().previous_output(pool_cell).build())
                 .input(CellInput::new_builder().previous_output(deposit_out).build())
-                // one output: the swept funds (lock irrelevant to the deposit lock on the sweep path).
                 .output(
                     CellOutput::new_builder()
                         .capacity((DEP_CAP + 50_00000000).pack())
@@ -101,7 +110,7 @@ fn build(spend: Spend) -> (Context, TransactionView) {
                         .build(),
                 )
                 .output_data(Bytes::new().pack())
-                .witness(WitnessArgs::default().as_bytes().pack())
+                .witness(mode_witness(mode_len).as_bytes().pack())
                 .witness(WitnessArgs::default().as_bytes().pack());
         }
         Spend::SweepWithForeignPool => {
@@ -149,8 +158,42 @@ fn build(spend: Spend) -> (Context, TransactionView) {
 
 #[test]
 fn sweep_into_a_pool_checkpoint_verifies() {
-    let (ctx, tx) = build(Spend::SweepWithPoolInput);
+    // Checkpoint mode (witness input_type == 644): the anchor credits the depositor, so the sweep
+    // unlocks (the deposit lock delegates the destination to the anchor type script).
+    let (ctx, tx) = build(Spend::WithPoolAnchor { mode_len: 644 });
     ctx.verify_tx(&tx, MAX_CYCLES).expect("a deposit consumed by a pool checkpoint must unlock");
+}
+
+#[test]
+fn sweep_in_force_exit_mode_rejected() {
+    // H-2 regression: a force-exit (witness input_type == 8249) also consumes the anchor but does
+    // NOT credit deposits, so it must NOT be able to sweep/siphon a deposit cell to a third party.
+    let (ctx, tx) = build(Spend::WithPoolAnchor { mode_len: 8249 });
+    assert!(
+        ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
+        "an escape-mode (force-exit) tx must not be able to sweep a deposit cell"
+    );
+}
+
+#[test]
+fn sweep_in_force_refund_mode_rejected() {
+    // H-2 regression, the force-refund mode (witness input_type == 8321): same, must not sweep.
+    let (ctx, tx) = build(Spend::WithPoolAnchor { mode_len: 8321 });
+    assert!(
+        ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
+        "an escape-mode (force-refund) tx must not be able to sweep a deposit cell"
+    );
+}
+
+#[test]
+fn sweep_with_empty_anchor_witness_rejected() {
+    // Defense in depth: an anchor input with no/empty input_type (not a recognized mode) is not a
+    // valid sweep either.
+    let (ctx, tx) = build(Spend::WithPoolAnchor { mode_len: 0 });
+    assert!(
+        ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
+        "an anchor input with no checkpoint witness must not sweep a deposit"
+    );
 }
 
 #[test]

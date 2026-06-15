@@ -15,15 +15,17 @@ const TIMEOUT: u64 = 1000;
 const DEP_CAP: u64 = 100_00000000; // 100 CKB
 
 // ---------------------------------------------------------------------------
-// VECTOR 1: SWEEP, borrowed/forged type-hash cell to steal funds to attacker.
+// VECTOR 1 (H-2, now CLOSED): SWEEP, borrowed/forged type-hash cell to steal funds.
 //
-// The deposit lock sweep path returns 0 if ANY input bears `pool_type_hash`.
-// It NEVER inspects the output destination on the sweep path. So if an attacker
-// can place a cell bearing the pool anchor type-script hash as an input, WITHOUT
-// it being a real, validated checkpoint, the deposit funds can be routed to the
-// attacker. This test creates an attacker-owned cell carrying the pool type script
-// (an always-success type stand-in, exactly as the existing positive test does),
-// then routes ALL the deposit capacity to an attacker lock.
+// The OLD sweep path returned 0 if ANY input bore `pool_type_hash`, never checking
+// the anchor's mode, so an attacker who placed a borrowed pool-type cell as an input
+// (with no valid checkpoint) could route the deposit to themselves. The fix gates the
+// sweep on the anchor input being in CHECKPOINT mode (witness `input_type` length 644);
+// only a checkpoint credits the depositor. Here the borrowed cell carries an empty
+// (non-checkpoint) witness, so the deposit lock now REJECTS the sweep. (Layered defense:
+// even with a 644-length witness, the REAL anchor type script, not this always-success
+// stand-in, requires a valid Groth16 proof in checkpoint mode, so a forged checkpoint
+// fails there too.)
 // ---------------------------------------------------------------------------
 #[test]
 fn sweep_borrowed_pooltype_cell_routes_funds_to_attacker() {
@@ -85,10 +87,9 @@ fn sweep_borrowed_pooltype_cell_routes_funds_to_attacker() {
     let tx = ctx.complete_tx(b.build());
     let res = ctx.verify_tx(&tx, MAX_CYCLES);
     println!("VECTOR1 borrowed-pooltype sweep-to-attacker result: {:?}", res);
-    // If this PASSES, the deposit lock alone lets a borrowed/forged pool-type cell steal the
-    // deposit. Whether that is a real theft depends on whether the anchor type script would
-    // reject this tx as a checkpoint, but the DEPOSIT LOCK ITSELF does not enforce that.
-    assert!(res.is_ok(), "demonstration: deposit lock unlocks on ANY input bearing pool_type_hash");
+    // H-2 fix: the borrowed pool-type cell carries a non-checkpoint (empty) witness, so the deposit
+    // lock no longer unlocks. Sweeping a deposit now requires a checkpoint-mode anchor input.
+    assert!(res.is_err(), "H-2: a non-checkpoint anchor input must not be able to sweep the deposit");
 }
 
 // ---------------------------------------------------------------------------

@@ -16,11 +16,20 @@
 use liquid_cells_sequencer_service::Service;
 use liquid_cells_stf::{keccak, Hash};
 use serde_json::{json, Value};
+use std::io::Read;
 use tiny_http::{Header, Method, Response, Server};
+
+/// Maximum accepted request body. Intents are small (a few hundred bytes); a cap stops a multi-GB
+/// body OOM-ing the single-process service.
+const MAX_BODY: u64 = 64 * 1024;
 
 fn arg(name: &str) -> Option<String> {
     let a: Vec<String> = std::env::args().collect();
     a.iter().position(|x| x == name).and_then(|i| a.get(i + 1).cloned())
+}
+
+fn flag(name: &str) -> bool {
+    std::env::args().any(|x| x == name)
 }
 
 fn parse_hash(s: &str) -> Option<Hash> {
@@ -56,22 +65,42 @@ fn main() {
         })
         .unwrap_or(0x0043_4b42);
     let pool_id: Hash = arg("--pool-id").and_then(|s| parse_hash(&s)).unwrap_or_else(|| keccak(b"lc-service-pool"));
+    // Deposits are operator-authorized (an on-chain deposit cell), never client-submittable. The
+    // /admin/deposit faucet endpoint is exposed only with this explicit opt-in (off by default).
+    let allow_deposits = flag("--allow-deposits");
 
     let mut svc = Service::genesis(pool_id, chain_id);
     let server = Server::http(format!("0.0.0.0:{port}")).unwrap_or_else(|e| panic!("bind :{port}: {e}"));
     println!("lc-sequencer-service on http://127.0.0.1:{port}");
-    println!("pool_id 0x{}  chain_id 0x{:x}", hex::encode(pool_id), chain_id);
+    println!("pool_id 0x{}  chain_id 0x{:x}  admin_deposits={allow_deposits}", hex::encode(pool_id), chain_id);
+
+    let header = || Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
 
     for mut req in server.incoming_requests() {
         let method = req.method().clone();
         let url = req.url().to_string();
         let path = url.split('?').next().unwrap_or("").to_string();
+
+        // Read the body with a hard cap so a giant body cannot OOM the process.
         let mut body = String::new();
-        let _ = req.as_reader().read_to_string(&mut body);
+        let _ = req.as_reader().take(MAX_BODY + 1).read_to_string(&mut body);
+        if body.len() as u64 > MAX_BODY {
+            println!("{method} {path} -> 413 (body too large)");
+            let payload = json!({ "error": "request body too large" }).to_string();
+            let _ = req.respond(Response::from_string(payload).with_status_code(413).with_header(header()));
+            continue;
+        }
 
         let result: Result<Value, String> = match (&method, path.as_str()) {
             (Method::Get, "/") | (Method::Get, "/info") => Ok(svc.info()),
             (Method::Post, "/submit") => svc.submit(&body),
+            (Method::Post, "/admin/deposit") => {
+                if allow_deposits {
+                    svc.admin_deposit(&body)
+                } else {
+                    Err("forbidden: start the service with --allow-deposits to enable the deposit faucet".to_string())
+                }
+            }
             (Method::Post, "/seal") => {
                 let v: Value = serde_json::from_str(&body).unwrap_or_else(|_| json!({}));
                 let epoch = v.get("current_epoch").and_then(|x| x.as_u64()).unwrap_or(1);
@@ -87,10 +116,12 @@ fn main() {
 
         let (code, payload) = match &result {
             Ok(v) => (200, v.to_string()),
-            Err(e) => (if e.starts_with("no route") { 404 } else { 400 }, json!({ "error": e }).to_string()),
+            Err(e) => {
+                let code = if e.starts_with("no route") { 404 } else if e.starts_with("forbidden") { 403 } else { 400 };
+                (code, json!({ "error": e }).to_string())
+            }
         };
         println!("{method} {path} -> {code}");
-        let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
-        let _ = req.respond(Response::from_string(payload).with_status_code(code).with_header(header));
+        let _ = req.respond(Response::from_string(payload).with_status_code(code).with_header(header()));
     }
 }

@@ -39,11 +39,17 @@ impl Service {
     /// `POST /submit`: parse a tagged intent JSON (the SDK's `wire` encoding) and add it to the
     /// mempool. Validation happens at seal (the STF's atomic apply), so this only rejects malformed
     /// JSON, never an economically-invalid-but-well-formed intent.
+    ///
+    /// A `Deposit` is REJECTED here: its only legitimate authority is the consumed on-chain deposit
+    /// cell, so accepting one from an anonymous HTTP client would let anyone mint balance in the
+    /// off-chain committed state (a phantom deposit that no honest checkpoint can ever seal, since
+    /// the on-chain `deposits_commitment` is recomputed from real L1 cells, but it wedges the local
+    /// state/DA). Deposits enter only via [`admin_deposit`](Self::admin_deposit), the operator's
+    /// confirmed-L1 ingestion path.
     pub fn submit(&mut self, body: &str) -> Result<Value, String> {
         let kind = match wire::intent_from_json(body)? {
-            Intent::Deposit(d) => {
-                self.seq.submit_deposit(d);
-                "deposit"
+            Intent::Deposit(_) => {
+                return Err("deposits are not accepted over /submit; they are authorized by an on-chain deposit cell".to_string())
             }
             Intent::Transfer(t) => {
                 self.seq.submit_transfer(t);
@@ -67,6 +73,20 @@ impl Service {
             }
         };
         Ok(json!({ "ok": true, "accepted": kind, "pending": self.seq.pending() }))
+    }
+
+    /// Operator-only deposit ingestion (NOT the public `/submit` path). In production this is called
+    /// only after the on-chain deposit cell is confirmed to the configured depth; in a local/demo
+    /// deployment it doubles as a faucet. The HTTP front exposes it only when started with an
+    /// explicit opt-in flag, so it is never reachable by an anonymous client by default.
+    pub fn admin_deposit(&mut self, body: &str) -> Result<Value, String> {
+        match wire::intent_from_json(body)? {
+            Intent::Deposit(d) => {
+                self.seq.submit_deposit(d);
+                Ok(json!({ "ok": true, "accepted": "deposit", "pending": self.seq.pending() }))
+            }
+            _ => Err("admin_deposit accepts only a deposit intent".to_string()),
+        }
     }
 
     /// `POST /seal`: seal the mempool into one checkpoint at `current_epoch`, drawing `fee_withdrawal`
@@ -133,9 +153,11 @@ mod tests {
         let mut alice = Account::new(pool_id(), CHAIN, [7u8; 32]);
         let bob = Account::new(pool_id(), CHAIN, [9u8; 32]);
 
-        // 1. fund Alice with a deposit (authorized off-chain here; on-chain it binds a real L1 cell).
+        // 1. fund Alice with a deposit via the operator-only path (on-chain it binds a real L1
+        // cell); the public /submit rejects deposits (see below).
         let dep = wire::deposit_to_value(&liquid_cells_stf::Deposit { to_key: alice.key(), amount: 1_000_000 }).to_string();
-        let r = svc.submit(&dep).unwrap();
+        assert!(svc.submit(&dep).is_err(), "deposits are not accepted over the public submit path");
+        let r = svc.admin_deposit(&dep).unwrap();
         assert_eq!(r["pending"], 1);
         svc.seal(1, 0).unwrap();
         assert_eq!(svc.leaf(&hexs(&alice.key())).unwrap()["balance"], "1000000");

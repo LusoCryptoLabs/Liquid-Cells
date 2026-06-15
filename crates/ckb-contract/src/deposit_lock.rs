@@ -7,12 +7,14 @@
 //! spend the deposited CKB to themselves before the sequencer sweeps it. This lock closes that
 //! window. A deposit can move in exactly two ways:
 //!
-//!   * **Sweep** (no signature): the spending transaction also consumes a cell carrying this
-//!     pool's anchor type script (`pool_type_hash`). That transaction *is* a checkpoint, and the
-//!     anchor type script guarantees the deposit is credited to its `to_key`. Anyone may submit
-//!     the checkpoint; the credit still goes to the depositor, because `to_key` is immutable cell
-//!     data. This is what lets a permissionless sequencer include the deposit without the
-//!     depositor's key.
+//!   * **Sweep** (no signature): the spending transaction consumes this pool's anchor cell
+//!     (`pool_type_hash`) **in checkpoint mode** (the anchor input's witness has the checkpoint
+//!     `input_type` length). A checkpoint, and only a checkpoint, credits the deposit to its
+//!     `to_key` via the anchor's `fold_cells`. The escape modes (force-exit / force-refund) also
+//!     consume the anchor but do NOT credit deposits, so the sweep is gated on checkpoint mode to
+//!     stop an escape tx siphoning the deposit's capacity to a third party. Anyone may submit the
+//!     checkpoint; the credit still goes to the depositor, because `to_key` is immutable cell data.
+//!     This is what lets a permissionless sequencer include the deposit without the depositor's key.
 //!   * **Refund** (no signature, after a timeout): if the deposit is never swept, then once the
 //!     cell's input `since` reaches `timeout_epoch` (absolute epoch), it may be spent only if the
 //!     transaction pays at least the deposited capacity to the depositor's own `refund_lock_hash`.
@@ -36,6 +38,7 @@ use ckb_std::ckb_constants::Source;
 use ckb_std::error::SysError;
 use ckb_std::high_level::{
     load_cell_capacity, load_cell_lock_hash, load_cell_type_hash, load_input_since, load_script,
+    load_witness_args,
 };
 
 ckb_std::entry!(program_entry);
@@ -45,6 +48,11 @@ ckb_std::default_alloc!();
 mod atomics;
 
 const ARGS_LEN: usize = 72; // pool_type_hash(32) ‖ refund_lock_hash(32) ‖ timeout_epoch(8 BE)
+/// The anchor's checkpoint-mode witness `input_type` length (PROOF_LEN 356 + PV_LEN 288), matching
+/// `WITNESS_LEN` in the anchor type script. ONLY a checkpoint may sweep a deposit (it credits the
+/// depositor via `fold_cells`); the escape modes (force-exit 8249 / force-refund 8321) also consume
+/// the anchor but never credit deposits, so they must not unlock a deposit cell.
+const CHECKPOINT_WITNESS_LEN: usize = 644;
 
 /// Extract the epoch number from a CKB `since` flagged **absolute epoch** (`0x20` top byte).
 /// Whole-epoch granularity (the index/length fraction is ignored). `None` if not absolute-epoch.
@@ -73,15 +81,32 @@ fn program_entry() -> i8 {
     tb.copy_from_slice(&args[64..72]);
     let timeout = u64::from_be_bytes(tb);
 
-    // --- Path A: sweep into a checkpoint of THIS pool. ---
-    // Any input bearing the pool anchor type script means a checkpoint of this pool is running;
-    // its anchor type script enforces that this deposit is credited to its `to_key`.
+    // --- Path A: sweep into a CHECKPOINT of THIS pool. ---
+    // An input bearing the pool anchor type script means the anchor is being consumed. But a deposit
+    // may be swept ONLY by a checkpoint, which credits it to `to_key` via the anchor's `fold_cells`.
+    // The escape modes (force-exit / force-refund) also consume the anchor yet never credit deposits,
+    // so unlocking here for them would let an escape tx siphon the deposit's capacity to a third
+    // party (the anchor's own solvency is anchor-local and does not bind extra inputs). So gate the
+    // sweep on the anchor input being in checkpoint mode: its witness `input_type` length must equal
+    // `CHECKPOINT_WITNESS_LEN`. There is at most one anchor input (the anchor type script enforces a
+    // single anchor in/out), so on finding it we decide and stop.
     let mut i = 0usize;
     loop {
         match load_cell_type_hash(i, Source::Input) {
             Ok(th) => {
                 if th == Some(pool_type_hash) {
-                    return 0;
+                    let wa = match load_witness_args(i, Source::Input) {
+                        Ok(w) => w,
+                        Err(_) => return 92,
+                    };
+                    let mode_len = match wa.input_type().to_opt() {
+                        Some(b) => b.raw_data().len(),
+                        None => 0,
+                    };
+                    if mode_len == CHECKPOINT_WITNESS_LEN {
+                        return 0; // a real checkpoint: the deposit is credited to its depositor
+                    }
+                    break; // anchor present but not in checkpoint mode (escape tx): not a valid sweep
                 }
                 i += 1;
             }
