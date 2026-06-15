@@ -103,8 +103,11 @@ already done. **Detailed scope below.**
   path can't give. The five-op core stays minimal.
 - **DA-blob varint compression** (balance 16B→~8B, nonce), ~30–40% off the per-checkpoint footprint.
   *preserved (still reconstructable from L1; do **not** drop keys).*
-- **High-S rejection** (close THREAT-MODEL L3), one line, currently stuck behind exactly this re-bake.
-  *strengthens.*
+- ✅ **High-S rejection** (closes THREAT-MODEL L3), *staged and tested in-tree* behind the
+  `reject_high_s` feature (`crates/stf/src/sig.rs`: reject high-S outright instead of normalizing,
+  so only the canonical low-S encoding verifies; `tests/high_s.rs` malleates a real signature to
+  `(r, n-s)` and asserts rejection). OFF in the deployed guest so the vkey is untouched (asserted by
+  `verify-vkey.sh`); flip on in this bundle. *strengthens.*
 
 ## Tier D: scale infrastructure (no protocol change, when volume demands)
 - **Operationalize anchor sharding** (the `ShardedSequencer` primitive exists; needs the deploy /

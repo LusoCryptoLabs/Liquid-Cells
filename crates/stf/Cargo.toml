@@ -35,6 +35,12 @@ compact_smt = []
 # compact-SMT cost test to measure the proving-cycle win. Test-only and OFF by default,
 # so it is absent from the guest ELF and never perturbs the vkey.
 hash_count = []
+# `reject_high_s` makes `sig::verify` reject high-S (malleable) ECDSA signatures outright
+# instead of normalizing them, closing THREAT-MODEL L3 (signature-bytes malleability). Gated
+# OFF for the SAME reason as the others: it changes the guest ELF, hence the vkey, so it is
+# staged for the coordinated post-audit re-bake bundle. When OFF the `#[cfg]` keeps `verify`
+# byte-identical, so the deployed vkey stays reproducible. Validated in `tests/high_s.rs`.
+reject_high_s = []
 
 [dependencies]
 # Keccak-256: chosen over CKB-native blake2b because SP1 has a keccak precompile,

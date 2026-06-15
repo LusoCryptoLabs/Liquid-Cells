@@ -17,7 +17,17 @@ pub fn verify(pubkey33: &[u8; 33], msg32: &[u8; 32], sig64: &[u8; 64]) -> bool {
         Ok(s) => s,
         Err(_) => return false,
     };
-    // Reject high-S (malleable) by normalizing; only the low-S form verifies.
+    // Deployed behaviour: normalize a high-S signature to low-S and verify, so BOTH encodings
+    // pass (the documented THREAT-MODEL L3 signature-bytes malleability: harmless because every
+    // effect is keyed by the signed message + leaf nonce and the signature is never committed
+    // on-chain). The staged `reject_high_s` feature rejects high-S outright so only the
+    // canonical low-S encoding verifies; it changes the guest ELF, so it is OFF in the deployed
+    // guest (vkey 0x00213af5… unchanged) and the `#[cfg]` below keeps the off path byte-identical.
+    #[cfg(feature = "reject_high_s")]
+    if sig.normalize_s().is_some() {
+        return false; // `normalize_s` returns Some iff the input was high-S => reject it
+    }
+    #[cfg(not(feature = "reject_high_s"))]
     let sig = sig.normalize_s().unwrap_or(sig);
     vk.verify_prehash(msg32, &sig).is_ok()
 }

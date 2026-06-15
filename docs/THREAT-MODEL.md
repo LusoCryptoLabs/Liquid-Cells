@@ -116,16 +116,21 @@ underpayers, policy, off by default), and a **staged provable** floor (`liquid_c
 `min_fee` feature, `MIN_FEE_PER_LEAF`) that is OFF in the deployed guest (it re-bakes the vkey) and
 bundled for the next coordinated upgrade. Both pin to the same constant. See [FEES.md](FEES.md).
 
-### L3, ECDSA high-S signature malleability · 🟡 known, deferred
+### L3, ECDSA high-S signature malleability · 🟡 fix staged (vkey re-bake)
 `sig::verify` (`crates/stf/src/sig.rs`) *normalizes* a high-S signature to low-S and then
 verifies it, so both encodings of a signature pass, contradicting its own comment ("only the
 low-S form verifies"). Impact is **transaction-ID (signature-bytes) malleability only**: it
 grants no debit, replay, or value creation, because every state effect is keyed by the signed
 message + the leaf nonce (which blocks replay of a mutated copy), and the signature is never
 committed to any on-chain fact (the DA blob is `key‖balance‖nonce`; public values carry no
-signature). Found by the internal red-team. The fix (reject high-S outright) changes the STF
-and therefore re-bakes the guest vkey, so it is **deferred to the next coordinated contract
-upgrade** rather than hot-fixed; disclosed here.
+signature). Found by the internal red-team. The fix (reject high-S outright, so only the
+canonical low-S encoding verifies) is **implemented and tested behind the `reject_high_s`
+feature** (`cargo test -p liquid-cells-stf --features reject_high_s`; `tests/high_s.rs`
+malleates a real low-S signature to `(r, n-s)` and asserts it is rejected while legit low-S
+flows stay green). Because it changes the STF and therefore re-bakes the guest vkey, the
+feature is **OFF in the deployed guest** (vkey `0x00213af5…` unchanged, asserted by
+`verify-vkey.sh`), staged to flip on in the coordinated post-audit re-bake bundle alongside
+the compact SMT and the in-proof `min_fee` floor.
 
 ## Adversarial red-team (internal)
 
