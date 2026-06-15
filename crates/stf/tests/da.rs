@@ -77,12 +77,14 @@ fn da_blobs_reconstruct_tree_and_prove_leaf() {
         },
     ));
 
-    // Checkpoint 3: Alice tops Carol up again; Bob withdraws to L1.
+    // Checkpoint 3: Alice tops Carol up again; Bob withdraws to L1. (Fee 1, not 0, so the batch is
+    // also valid under the staged `min_fee` floor; the fee is Alice's, so it does not affect Carol's
+    // asserted balance or the reconstruction.)
     blobs.push(checkpoint(
         &mut st,
         &Batch {
             current_epoch: 2,
-            transfers: vec![signed_transfer(1, key_for(3), 50_000_000, 0, 1, 100)],
+            transfers: vec![signed_transfer(1, key_for(3), 50_000_000, 1, 1, 100)],
             withdrawals: vec![signed_withdrawal(2, keccak(b"bob-l1"), 30_000_000, 0, 100)],
             ..Default::default()
         },
