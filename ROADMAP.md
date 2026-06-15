@@ -150,12 +150,15 @@ already done. **Detailed scope below.**
 ## Tier E: strategic
 - **Fiber egress leg + a reference LP**, turn sub-61-CKB dust egress from theory into product; the
   defensible wedge vs. prior art ("the only *live*, force-exitable, permissionless zk-rollup on CKB
-  with a Fiber egress"). *Crypto prerequisite DONE:* the SHA-256 HTLC hashlock above lets the pool
-  leg share a hashlock with a Fiber/Lightning HTLC. Remaining is off-chain integration (no research
-  gap): a Fiber node + LP liquidity, an LP/swap-coordinator (mirrors Fiber's own Cross-Chain Hub),
-  and epoch↔Fiber timeout mapping (`T_fiber < T_pool`). The receiver-side force-claim residual
-  (docs/EGRESS.md) is a priced LP risk, mitigated by short-lived dust swaps while the operator is
-  demonstrably live, not a blocker for v1.
+  with a Fiber egress"). *Crypto prerequisite DONE + LIVE-VALIDATED:* a real `fnn` v0.8.1 testnet
+  node created a `sha256` hold invoice whose `payment_hash` equals our `sha256(secret)`, the exact
+  `H` the pool leg locks to, so both legs share one hashlock against a real node, not a mock (see
+  [docs/FIBER-INTEGRATION.md](docs/FIBER-INTEGRATION.md)). The swap coordinator + runnable drivers
+  (`crates/client/src/swap.rs`) are done and in-process tested. Remaining is operational wiring only
+  (no research gap): the `CounterpartyLeg` impl over the `fnn` RPC, a funded node + LP liquidity +
+  channel, and the epoch↔Fiber timeout mapping (`T_fiber < T_pool`). The receiver-side force-claim
+  residual (docs/EGRESS.md) is a priced LP risk, mitigated by short-lived dust swaps while the
+  operator is demonstrably live, not a blocker for v1.
 - **Drop the dead vendored `bn`** (verifier is ark-bn254 now; keep substrate-bn only as the
   differential-test oracle, clearly marked), less supply-chain/reviewer surface.
 - **Position permissionless sequencing as the censorship answer** (it's framed as a perf feature) and
