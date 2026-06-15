@@ -31,6 +31,16 @@ path = "src/upgrade_lock.rs"
 # ckb-contract-tests force-refund suite.
 htlc_keyspace = []
 
+# `compact_smt` is the on-chain half of the staged STF `compact_smt` tree (the v2 re-bake bundle).
+# When the guest re-bakes with the compact (pass-through, key-binding) SMT, committed roots change
+# scheme, so the proof-less escape hatch (force_exit / force_refund) must reconstruct the inclusion
+# path with the SAME compact hashing or it would reject every valid escape proof. Switches
+# `escape::smt_root` to the compact node hashing (vkey-irrelevant: the escape hatch has no SP1 proof,
+# this is the on-chain verifier, not the guest). OFF by default so the DEPLOYED anchor is unchanged;
+# activates at the coordinated re-bake alongside the guest/client `compact_smt`. Validated by running
+# the force-exit/force-refund suites under `--features compact_smt` (the test tree builds compact too).
+compact_smt = []
+
 [dependencies]
 ckb-std = "0.16"
 # The SP1 Groth16 (BN254) verifier lives in its own no_std crate so the deployed contract and the

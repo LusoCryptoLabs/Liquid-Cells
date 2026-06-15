@@ -1,15 +1,24 @@
 //! Regression for the escape-hatch core (what `lc-exit` does, sans RPC): folding the published DA
 //! blob of the live type-id'd pool (Pudge checkpoint 0x332e49ff…, seq 1) must rebuild the exact
 //! on-chain anchor root and the depositor's leaf, proving a user can recover from L1 data alone.
-use liquid_cells_client::{proof_from_da, reconstruct_tree};
+use liquid_cells_client::proof_from_da;
+// Only the deployed-scheme root-pin test uses the full-tree reconstruct + on-chain anchor fixture.
+#[cfg(not(feature = "compact_smt"))]
+use liquid_cells_client::reconstruct_tree;
 
 fn blob() -> Vec<u8> {
     std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/typeid/da_blob.bin")).unwrap()
 }
+#[cfg(not(feature = "compact_smt"))]
 fn anchor() -> Vec<u8> {
     std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/typeid/new_anchor.bin")).unwrap()
 }
 
+// Pins the DEPLOYED (depth-256 keccak) tree: the fixture is the LIVE type-id pool's on-chain anchor,
+// whose root was produced by the deployed tree. Under the staged `compact_smt` scheme the same DA
+// blob reconstructs to a DIFFERENT (compact) root, and there is no deployed compact pool to pin
+// against, so this regression is deployed-scheme-only. (Leaf recovery below is scheme-independent.)
+#[cfg(not(feature = "compact_smt"))]
 #[test]
 fn reconstruct_typeid_pool_root_matches_onchain_anchor() {
     let blobs = vec![blob()];

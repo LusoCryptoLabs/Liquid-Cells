@@ -18,6 +18,10 @@ path = "src/bin/wd_target.rs"
 [dependencies]
 ckb-testtool = "0.13"
 hex = "0.4"
+# Used by the tests to build a real SMT tree + inclusion proofs natively (no SP1 proof). A NORMAL
+# (not dev) dependency so the `compact_smt` feature below can forward to it: Cargo only allows
+# `dep/feature` forwarding to normal/build dependencies, not dev-dependencies.
+liquid-cells-stf = { path = "../stf" }
 
 [features]
 # `htlc_keyspace` gates the force-refund tests to the widened (8337-byte) witness that the anchor,
@@ -26,10 +30,15 @@ hex = "0.4"
 #   cargo test --release --features htlc_keyspace --test forcerefund
 htlc_keyspace = []
 
-# Test-only: build a real SMT tree + inclusion proof natively to exercise the force-exit
-# path (no SP1 proof involved), and blake160(pubkey) for the owner's secp lock args.
+# `compact_smt` forwards the STF's compact (pass-through) SMT to the test's tree builder so the
+# committed root, the leaf hashing, and the inclusion siblings are all the compact scheme, then the
+# force-exit/force-refund suites verify the anchor's compact `smt_root` arm against it. Run together:
+#   (cd ../ckb-contract && cargo build --release --features compact_smt)
+#   cargo test --release --features compact_smt --test forceexit --test forcerefund
+compact_smt = ["liquid-cells-stf/compact_smt"]
+
+# blake160(pubkey) for the owner's secp lock args in the force-exit / force-refund tests.
 [dev-dependencies]
-liquid-cells-stf = { path = "../stf" }
 blake2b-ref = "0.3"
 
 [workspace]

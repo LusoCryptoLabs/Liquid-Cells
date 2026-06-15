@@ -10,7 +10,7 @@ This doc is the checklist for that re-bake, plus the result of verifying the bun
 
 | Feature | Crate(s) | Changes the vkey? | What it does |
 |---|---|---|---|
-| `compact_smt` | stf | yes (SMT node-hash rules) | pass-through compact SMT, ~35x fewer reconstruct keccaks |
+| `compact_smt` | stf + ckb-contract + client | yes (guest SMT node-hash rules); the contract/client halves are an off-chain-verifier + witness change | pass-through compact SMT, ~35x fewer reconstruct keccaks |
 | `reject_high_s` | stf | yes (sig verify) | reject high-S (malleable) ECDSA sigs (THREAT-MODEL L3) |
 | `da_varint` | stf | yes (DA blob bytes) | LEB128 balance/nonce in DA records, ~30-40% smaller blobs |
 | `htlc_sha256` | stf + sequencer | yes (guest HTLC hashlock); the sequencer mirror half is off-chain | sha256 (not keccak) HTLC hashlock, Fiber-compatible egress |
@@ -31,6 +31,24 @@ this feature exists to enable, as `BadPreimage` on the resilient cadence. So `cr
 forwards `htlc_sha256 = ["liquid-cells-stf/htlc_sha256"]` and gates that check statement-level. At the
 re-bake the sequencer build must enable `htlc_sha256` WHENEVER it enables `htlc_keyspace` (the bundle
 flips both on together). The sequencer mirror is off-chain, so this is vkey-neutral.
+
+`compact_smt` ALSO has a contract + client half (staged after the v2-bundle internal audit surfaced
+that they were missing, the same class of gap as `htlc_sha256`'s sequencer half). The compact tree
+changes the SMT node-hashing rules, so the committed-root *scheme* changes. The on-chain escape hatch
+(`crates/ckb-contract/src/escape.rs` `force_exit` / `force_refund`) reconstructs the inclusion path
+with NO SP1 proof, just keccak SMT walking, so it MUST hash with the same scheme that produced the
+committed root, or every valid escape proof would be rejected and the escape hatch would brick under
+the compact re-bake. So `escape::smt_root` now has a `#[cfg(feature = "compact_smt")]` arm matching
+`smt_compact::{leaf_node, combine}` (key-binding bottom node + pass-through internal nodes), and
+`crates/ckb-contract` + `crates/client` both forward `compact_smt` to the STF (the client's
+`proof_from_da` then builds compact siblings via the `lib.rs` redirect, so the witnesses it emits
+verify against the compact `smt_root`). These halves are off-chain-verifier + witness, NOT the guest,
+so they are **vkey-neutral**; they redeploy with the anchor at the re-bake. Validated by running the
+force-exit/force-refund suites under `--features compact_smt` (the test tree builds compact too) and
+under `--features "htlc_keyspace compact_smt"` (both deployed-format changes compose). NOTE: the
+single-leaf escape witness is still 256 siblings (mostly empty under compact); compacting that *size*
+(a sparse bitmap + only the non-empty siblings, ~8KB -> a few hundred bytes) is a follow-on that also
+re-shapes the witness-length dispatch, staged separately.
 
 ## `ecrecover`: primitive staged, integration is a re-bake-time change
 
@@ -116,10 +134,15 @@ flag flip**.
    `crates/ckb-contract/src/main.rs` `VKEY_HASH`, `fixtures/vkey.txt`,
    `crates/sp1-host/src/bin/prove_one.rs` `EXPECTED_VKEY` (and the other host bins that bake it).
 5. Re-generate the Groth16 fixtures against the new guest.
-6. Build the anchor with `--features htlc_keyspace` (the widened force-refund witness) and run the
-   contract suite with the matching feature:
-   `cd crates/ckb-contract && cargo build --release --features htlc_keyspace` then
-   `cd ../ckb-contract-tests && cargo test --release --features htlc_keyspace`.
+6. Build the anchor with BOTH deployed-format features `--features "htlc_keyspace compact_smt"` (the
+   widened force-refund witness AND the compact escape-hatch SMT scheme) and run the contract suite
+   with the matching features:
+   `cd crates/ckb-contract && cargo build --release --features "htlc_keyspace compact_smt"` then
+   `cd ../ckb-contract-tests && cargo test --release --features "htlc_keyspace compact_smt"`.
+   (Forgetting `compact_smt` here would deploy an anchor whose escape hatch reconstructs the live
+   depth-256 root while the guest commits compact roots, bricking force-exit/force-refund.) Likewise
+   the sequencer runs with `--features "htlc_keyspace htlc_sha256"` and the client with
+   `--features "htlc_keyspace compact_smt"` so its escape witnesses match.
 7. Redeploy the anchor code cell (new code hash) under the timelocked upgrade lock; refresh the
    deposit-lock binding (`pool_type_hash`) and any genesis/anchor references.
 8. Update DEPLOY.md with the new vkey, code hash, and dep outpoints.

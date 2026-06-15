@@ -27,9 +27,22 @@ fn leaf_hash(balance: u128, nonce: u64) -> [u8; 32] {
 }
 
 /// Reconstruct the SMT root from a single-leaf inclusion path, bottom-up, the exact walk
-/// `liquid_cells_stf::smt::verify_proof` performs. `siblings` is 256 × 32 bytes top-down.
+/// `liquid_cells_stf::smt::verify_proof` (deployed) / `smt_compact::verify_proof` (staged) performs.
+/// `siblings` is 256 × 32 bytes top-down.
+///
+/// The deployed depth-256 keccak tree places the leaf CONTENT at the bottom directly and hashes an
+/// internal node as `keccak(left ‖ right)`. The staged `compact_smt` tree (the v2 re-bake bundle)
+/// changes both: the bottom node binds the key (`keccak(0x00 ‖ key ‖ content)`) so a pass-through
+/// collapse cannot relocate it, and a node with one empty child IS the other child (no hash), else
+/// `keccak(0x01 ‖ left ‖ right)`. The on-chain escape hatch MUST match whichever scheme produced the
+/// committed root, or a force-exit / force-refund proof built from the compact committed root would
+/// not verify here and the escape hatch would brick under the compact re-bake. Gated statement-level,
+/// so the deployed (feature-off) path is byte-identical.
 fn smt_root(key: &[u8; 32], leaf: &[u8; 32], siblings: &[u8]) -> [u8; 32] {
+    #[cfg(not(feature = "compact_smt"))]
     let mut cur = *leaf;
+    #[cfg(feature = "compact_smt")]
+    let mut cur = compact_leaf_node(key, leaf);
     let mut depth = SMT_DEPTH;
     while depth > 0 {
         depth -= 1;
@@ -42,9 +55,51 @@ fn smt_root(key: &[u8; 32], leaf: &[u8; 32], siblings: &[u8]) -> [u8; 32] {
             buf[..32].copy_from_slice(sib);
             buf[32..].copy_from_slice(&cur);
         }
-        cur = keccak(&buf);
+        #[cfg(not(feature = "compact_smt"))]
+        {
+            cur = keccak(&buf);
+        }
+        #[cfg(feature = "compact_smt")]
+        {
+            cur = compact_combine(&buf);
+        }
     }
     cur
+}
+
+/// Compact-SMT bottom node: binds the leaf's key so a pass-through collapse cannot move it. An
+/// absent leaf (`content` all-zero) stays empty. Byte-identical to `smt_compact::leaf_node`.
+#[cfg(feature = "compact_smt")]
+fn compact_leaf_node(key: &[u8; 32], content: &[u8; 32]) -> [u8; 32] {
+    if *content == [0u8; 32] {
+        return [0u8; 32];
+    }
+    let mut b = [0u8; 65];
+    b[0] = 0x00;
+    b[1..33].copy_from_slice(key);
+    b[33..].copy_from_slice(content);
+    keccak(&b)
+}
+
+/// Compact-SMT internal node from `buf` = left(32) ‖ right(32) (already ordered by the caller). A
+/// single empty child passes the other child straight through (the collapse that makes an isolated
+/// leaf cost one keccak instead of 256); two real children hash as `keccak(0x01 ‖ left ‖ right)`,
+/// domain-separated from a leaf by the 0x01 tag. Byte-identical to `smt_compact::combine`.
+#[cfg(feature = "compact_smt")]
+fn compact_combine(buf: &[u8; 64]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    if buf[..32].iter().all(|&b| b == 0) {
+        out.copy_from_slice(&buf[32..]); // left empty => the node is its right child
+        return out;
+    }
+    if buf[32..].iter().all(|&b| b == 0) {
+        out.copy_from_slice(&buf[..32]); // right empty => the node is its left child
+        return out;
+    }
+    let mut tagged = [0u8; 65];
+    tagged[0] = 0x01;
+    tagged[1..].copy_from_slice(buf);
+    keccak(&tagged)
 }
 
 /// blake160(data) = first 20 bytes of CKB's default blake2b-256, the secp lock's args.

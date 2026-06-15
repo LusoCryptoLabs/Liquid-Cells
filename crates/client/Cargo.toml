@@ -32,6 +32,11 @@ wire = ["dep:serde_json", "dep:hex"]
 # default (matches the deployed FORCEREFUND_LEN 8321); flips with the contract/guest features at the
 # coordinated re-bake. Pure witness-layout change, no extra deps.
 htlc_keyspace = []
+# `compact_smt` forwards the STF's compact (pass-through) SMT so `proof_from_da` reconstructs the leaf
+# and inclusion siblings under the same scheme the post-re-bake committed root uses, hence the
+# force-exit / force-refund witnesses this SDK builds verify against the compact on-chain `smt_root`.
+# OFF by default (matches the deployed depth-256 tree); flips with the guest/contract at the re-bake.
+compact_smt = ["liquid-cells-stf/compact_smt"]
 
 [dependencies]
 liquid-cells-stf = { path = "../stf" }
