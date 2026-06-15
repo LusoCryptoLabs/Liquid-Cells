@@ -20,6 +20,14 @@ liquid-cells-stf = { path = "../stf", features = ["journal"] }
 # resilient cadence. OFF by default (matches the deployed guest), staged for the coordinated re-bake.
 htlc_keyspace = ["liquid-cells-stf/htlc_keyspace"]
 
+# `htlc_sha256` forwards the STF's Fiber-compatible SHA-256 HTLC hashlock so the resilient-seal
+# validation (resilient.rs) mirrors the proven apply_ops on the claim-preimage hash. Without it the
+# mirror hashes with keccak and DROPS every valid sha256 claim (the Fiber dust-egress leg) as
+# BadPreimage on the resilient cadence, even though seal_batch/apply accept it (audit A-1). OFF by
+# default (matches the deployed guest); the re-bake bundle flips htlc_sha256 and htlc_keyspace on
+# together, so the sequencer must forward BOTH (the fifth coordination point of the bundle).
+htlc_sha256 = ["liquid-cells-stf/htlc_sha256"]
+
 # The end-to-end demo (`examples/demo.rs`) drives the sequencer with client-built,
 # client-signed intents and then recovers a balance from L1 DA on the client side, so it
 # needs the client SDK. Dev-only: it never enters the sequencer's own dependency graph.

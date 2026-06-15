@@ -13,7 +13,7 @@ This doc is the checklist for that re-bake, plus the result of verifying the bun
 | `compact_smt` | stf | yes (SMT node-hash rules) | pass-through compact SMT, ~35x fewer reconstruct keccaks |
 | `reject_high_s` | stf | yes (sig verify) | reject high-S (malleable) ECDSA sigs (THREAT-MODEL L3) |
 | `da_varint` | stf | yes (DA blob bytes) | LEB128 balance/nonce in DA records, ~30-40% smaller blobs |
-| `htlc_sha256` | stf | yes (HTLC hashlock) | sha256 (not keccak) HTLC hashlock, Fiber-compatible egress |
+| `htlc_sha256` | stf + sequencer | yes (guest HTLC hashlock); the sequencer mirror half is off-chain | sha256 (not keccak) HTLC hashlock, Fiber-compatible egress |
 | `htlc_keyspace` | stf + sequencer + ckb-contract + client | yes (guest); the contract/client halves are a deployed-format change | audit H-1: lock accumulates, claim/refund sweep-and-consume; force-refund reconstructs/sweeps the real committed balance via a 16-byte-widened witness (FORCEREFUND_LEN 8321 -> 8337) |
 | `min_fee` | stf | yes (in-proof fee floor) | reject intents with `fee < MIN_FEE_PER_LEAF` (anti zero-fee griefing) |
 | `ecrecover` | stf (primitive); integration is re-bake-time | yes (sig scheme + `*_msg` digests) | recover the signer pubkey from the signature, drop the 33-byte `from_pubkey` from each signed intent (net -32 bytes/intent) |
@@ -22,6 +22,15 @@ This doc is the checklist for that re-bake, plus the result of verifying the bun
 feature name in each crate; see `crates/stf/Cargo.toml`. The contract/client halves do not touch the
 vkey (force-refund is not the guest), but they ARE a deployed witness-format change, so they redeploy
 with the anchor at the re-bake.
+
+`htlc_sha256` ALSO has a sequencer half (found by the v2-bundle internal audit, finding A-1). The
+resilient-seal mirror (`crates/sequencer/src/resilient.rs`) re-validates each intent and hashes the
+HTLC-claim preimage; it must use the SAME hash the guest STF uses on that axis (keccak by default,
+sha256 under `htlc_sha256`), or it silently drops every valid sha256 claim, the Fiber dust-egress leg
+this feature exists to enable, as `BadPreimage` on the resilient cadence. So `crates/sequencer` now
+forwards `htlc_sha256 = ["liquid-cells-stf/htlc_sha256"]` and gates that check statement-level. At the
+re-bake the sequencer build must enable `htlc_sha256` WHENEVER it enables `htlc_keyspace` (the bundle
+flips both on together). The sequencer mirror is off-chain, so this is vkey-neutral.
 
 ## `ecrecover`: primitive staged, integration is a re-bake-time change
 

@@ -114,7 +114,13 @@ fn resilient_seal_does_not_drop_an_h1_recovery_claim() {
     let mut s = funded(1, 100_000_000);
     let bob = key(2);
     let (amount, fee) = (5_000_000u128, 1_000u128);
+    // The hashlock must use the SAME hash the active config locks with, else the claim is
+    // legitimately unclaimable: keccak by default, sha256 under htlc_sha256 (the re-bake bundle
+    // enables both). Using keccak unconditionally would build an unclaimable HTLC under the bundle.
+    #[cfg(not(feature = "htlc_sha256"))]
     let h = keccak(b"recovery");
+    #[cfg(feature = "htlc_sha256")]
+    let h = liquid_cells_stf::hash::sha256(b"recovery");
     let sk = secret(1);
     let pk = sig::pubkey(&sk);
     let ak = key_of_pubkey(&pk);
@@ -134,4 +140,38 @@ fn resilient_seal_does_not_drop_an_h1_recovery_claim() {
     s.submit_htlc_claim(claim);
     let (_job, dropped) = s.seal_resilient(3, 0).expect("resilient seal");
     assert!(dropped.is_empty(), "the H-1-recovery claim must NOT be dropped by seal_resilient");
+}
+
+#[cfg(feature = "htlc_sha256")]
+#[test]
+fn resilient_seal_settles_a_sha256_locked_claim() {
+    // Audit A-1 regression. Under htlc_sha256 the HTLC hashlock is sha256(preimage) (the
+    // Fiber-compatible egress hash, NOT keccak). seal_resilient re-validates each intent and MUST
+    // mirror the proven STF's claim check, hashing with sha256; otherwise it computes
+    // keccak(preimage) != sha256(preimage) and drops every valid sha256 claim as BadPreimage,
+    // silently breaking the Fiber dust-egress leg on the resilient cadence. The existing
+    // htlc_keyspace parity test cannot catch this (it uses a keccak hashlock), so this pins the
+    // sha256 axis on its own (no htlc_keyspace needed: an exact-amount escrow claims under deployed
+    // rules too, only the hash differs).
+    use liquid_cells_stf::{hash::sha256, htlc_lock_msg, HtlcClaim, HtlcLock, HtlcRef};
+    let mut s = funded(1, 100_000_000);
+    let bob = key(2);
+    let (amount, fee) = (5_000_000u128, 1_000u128);
+    let preimage = b"fiber-egress-secret".to_vec();
+    let h = sha256(&preimage); // a Fiber-style sha256 hashlock, not keccak
+    let sk = secret(1);
+    let pk = sig::pubkey(&sk);
+    let ak = key_of_pubkey(&pk);
+    let msg = htlc_lock_msg(CHAIN, &pool(), &ak, &bob, amount, fee, &h, 50, 0);
+    let (_p, sig) = sig::sign(&sk, &msg);
+    s.submit_htlc_lock(HtlcLock { sender_pubkey: pk, receiver_key: bob, amount, fee, hashlock: h, timeout: 50, nonce: 0, sig });
+    s.seal_batch(1, 0).expect("lock seals");
+
+    let claim = HtlcClaim {
+        htlc: HtlcRef { sender_key: ak, receiver_key: bob, amount, hashlock: h, timeout: 50, lock_nonce: 0 },
+        preimage,
+    };
+    s.submit_htlc_claim(claim);
+    let (_job, dropped) = s.seal_resilient(2, 0).expect("resilient seal");
+    assert!(dropped.is_empty(), "a valid sha256-locked claim must NOT be dropped by seal_resilient (A-1)");
 }

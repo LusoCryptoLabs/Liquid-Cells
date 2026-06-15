@@ -44,9 +44,13 @@ echo
 # `hash_count` (the keccak counter) all change the guest if enabled, so the guest's stf dependency
 # must pull default features only. Catch an accidental feature leak cheaply. (`htlc_sha256 =
 # ["dep:sha2"]` so a leak would also pull sha2.)
-GUEST_STF_LINE="$(grep -E 'liquid-cells-stf' crates/sp1-guest/Cargo.toml || true)"
-echo "guest stf dep      : $GUEST_STF_LINE"
-if echo "$GUEST_STF_LINE" | grep -qE 'journal|min_fee|compact_smt|reject_high_s|da_varint|htlc_sha256|htlc_keyspace|ecrecover|hash_count'; then
+# Capture the WHOLE `liquid-cells-stf` dependency declaration, not just its first line: TOML lets a
+# `features = [...]` list span continuation lines, and a line-oriented grep would miss a feature on a
+# later line and pass while the guest compiled it in (audit A-2). awk prints from the line that names
+# the dep through the line closing its inline table (`}`); a single-line dep yields just that line.
+GUEST_STF_BLOCK="$(awk '/liquid-cells-stf/{f=1} f{print} f&&/}/{f=0}' crates/sp1-guest/Cargo.toml || true)"
+echo "guest stf dep      : $GUEST_STF_BLOCK"
+if echo "$GUEST_STF_BLOCK" | grep -qE 'journal|min_fee|compact_smt|reject_high_s|da_varint|htlc_sha256|htlc_keyspace|ecrecover|hash_count'; then
   echo "FAIL: crates/sp1-guest enables a vkey-affecting stf feature (journal/min_fee/compact_smt/"
   echo "      reject_high_s/da_varint/htlc_sha256/htlc_keyspace/ecrecover/hash_count). The deployed vkey is for the feature-OFF guest."
   exit 1

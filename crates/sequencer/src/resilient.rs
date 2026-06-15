@@ -19,9 +19,17 @@
 
 use crate::FeePolicy;
 use liquid_cells_stf::{
-    htlc_id, htlc_lock_msg, keccak, key_of_pubkey, sig, touched_keys, transfer_msg, withdraw_msg,
-    Batch, Hash, Leaf, PoolState, StfError,
+    htlc_id, htlc_lock_msg, key_of_pubkey, sig, touched_keys, transfer_msg, withdraw_msg, Batch,
+    Hash, Leaf, PoolState, StfError,
 };
+// The HTLC-claim preimage hash MUST match the proven STF on the SAME axis it gates: keccak by
+// default, sha256 under htlc_sha256 (the Fiber-compatible hashlock). Mirroring apply_ops here is
+// what keeps seal_resilient from dropping a valid sha256 claim as BadPreimage (audit A-1). Import
+// only the hash actually in use so neither is an unused import.
+#[cfg(not(feature = "htlc_sha256"))]
+use liquid_cells_stf::keccak;
+#[cfg(feature = "htlc_sha256")]
+use liquid_cells_stf::hash::sha256;
 use std::collections::BTreeMap;
 
 /// Which signed intent was dropped, by its index in the corresponding mempool vec, and why.
@@ -190,7 +198,15 @@ pub fn validate_batch(
             if h.timeout <= epoch {
                 return Err(StfError::HtlcExpired);
             }
+            // Mirror the STF claim hashlock check (transition.rs): keccak by default, sha256 under
+            // htlc_sha256. Statement-level #[cfg] so this tracks apply_ops on either feature state
+            // (audit A-1: hashing with keccak under htlc_sha256 would drop every valid sha256 claim).
+            #[cfg(not(feature = "htlc_sha256"))]
             if keccak(&c.preimage) != h.hashlock {
+                return Err(StfError::BadPreimage);
+            }
+            #[cfg(feature = "htlc_sha256")]
+            if sha256(&c.preimage) != h.hashlock {
                 return Err(StfError::BadPreimage);
             }
             // Deployed credits `amount`; under `htlc_keyspace` sweep the whole leaf to the receiver.

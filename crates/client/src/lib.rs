@@ -413,6 +413,13 @@ impl Account {
         if leaf.balance < r.amount {
             return None; // escrow not present (or already claimed/refunded)
         }
+        #[cfg(feature = "htlc_keyspace")]
+        if leaf.balance > u64::MAX as u128 {
+            // A swept balance above one CKB cell's capacity cannot be force-refunded as a single
+            // payout: the contract rejects payout > u64::MAX (escape.rs code 81). Signal it by
+            // returning None rather than emitting a witness that can never be mined (audit A-3).
+            return None;
+        }
         let mut w = Vec::with_capacity(FORCE_REFUND_WITNESS_LEN);
         w.extend_from_slice(&self.pubkey);
         w.extend_from_slice(&r.receiver_key);
