@@ -51,6 +51,29 @@ The blob is `56 · (touched leaves)` bytes, for the `MAX_LEAVES_PER_BATCH = 1024
 ~57 KB, paid as tx fee, once per checkpoint. The contract's extra work is a single keccak
 over the blob, negligible beside the ~3.6B-cycle BN254 pairing.
 
+## Reconstruction cost (and the snapshot path)
+
+The *per-checkpoint* cost above is fixed and small. The cost that grows is **reconstruction**:
+rebuilding the tree by folding every checkpoint blob from genesis is `O(history)`, so it gets
+heavier as a pool ages. Two things bound this in practice, and a third is honest roadmap:
+
+* **When it actually bites.** Full genesis replay is the *trustless cold-recovery and force-exit*
+  path, not something an everyday tip pays. In normal use balances are served by the operator and a
+  wallet need only track its own; the heavy replay matters when a user recovers or exits with no
+  cooperation from the operator, which is exactly the case we want to keep cheap.
+* **The snapshot path bounds it to `O(snapshot + tail)`.** `Sequencer::snapshot_blob` dumps the full
+  current state as one DA blob (sized by *active leaves*, not history), and
+  [`reconstruct_from_snapshot(snapshot, snapshot_root, tail)`](../crates/client/src/lib.rs) restores
+  from it plus only the checkpoints *after* it. It carries **no new trust**: the snapshot is accepted
+  only if `reconstruct([snapshot]).root()` equals the on-chain anchor root at that seq, so a snapshot
+  from any source (the operator, a third party, or your own earlier run) that omits or forges a leaf
+  is rejected. Covered by `crates/client/tests/snapshot.rs` (equivalence to full replay + rejection
+  of a tampered snapshot). Full genesis replay remains the zero-dependency backstop.
+* **Honest status.** The snapshot is **advisory** today: integrators should not treat it as the
+  source of truth until the checkpoint-compaction work lands (Tier D / B4). Making verifiable
+  snapshots routinely available, and shrinking per-checkpoint and proof size (SMT compression), is
+  the roadmap line that makes ordinary-user reconstruction cheap as pools scale.
+
 ## Scope / open
 
 * The DA commitment + binding + independent reconstruction are done, and the standalone CLI wrapper
