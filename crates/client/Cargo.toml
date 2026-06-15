@@ -16,10 +16,18 @@ repository = { workspace = true }
 # scrapes the checkpoint chain from a CKB RPC and rebuilds your leaf from L1 alone. Off by default so
 # the SDK stays RPC-free and tests fast (the lib keeps no chain dependency).
 cli = ["dep:ureq", "dep:native-tls", "dep:serde_json", "dep:hex"]
+# `htlc_sha256` forwards the STF's Fiber-compatible SHA-256 HTLC hashlock so the swap-coordinator's
+# end-to-end test settles the pool leg the way a deployed (post-re-bake) pool would. The coordinator
+# logic itself is hash-agnostic; only that one test needs the STF to claim against sha256.
+htlc_sha256 = ["liquid-cells-stf/htlc_sha256"]
 
 [dependencies]
 liquid-cells-stf = { path = "../stf" }
 blake2b-ref = "0.3"
+# SHA-256 for the Fiber-compatible swap hashlock H = sha256(secret). The client is not the SP1
+# guest, so this is an ordinary dependency (no vkey concern); it is what lets a maker compute the
+# H both the pool leg and a Fiber Sha256 HTLC lock to.
+sha2 = "0.10"
 # native-tls (OpenSSL) honors the system CA store, so the CLI traverses TLS-intercepting egress
 # proxies that rustls' bundled roots reject; rustls is explicitly NOT used here.
 ureq = { version = "2", default-features = false, features = ["native-tls"], optional = true }

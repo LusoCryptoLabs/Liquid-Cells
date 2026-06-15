@@ -116,7 +116,18 @@ force-exit regardless of any of this.
   in the coordinated re-bake bundle (like the compact SMT and the `min_fee` floor); `sha2` is an
   optional dep absent from the deployed guest. `htlc_id` and the anchor contract never hash a
   preimage, so both are unchanged.
-* The L1 HTLC counterparty lock and the rest of the Fiber integration (a Fiber node + LP liquidity,
-  an LP/swap-coordinator mirroring Fiber's Cross-Chain Hub, and `T_fiber < T_pool` timeout mapping)
-  are off-chain engineering, buildable but out of scope for this repo. The receiver-side residual
-  above is resolved by Phase 6, not by additional code in this mode.
+* **Swap-coordinator state machine: implemented** (`crates/client/src/swap.rs`, no Fiber node
+  required). It drives both roles (`Maker` = dust holder, `Taker` = LP) through the swap lifecycle
+  with the counterparty leg abstracted behind a `CounterpartyLeg` trait (an in-memory `MockLeg` in
+  tests; a real `fnn` node behind the same trait later). The `decide` function encodes the safety:
+  the taker verifies the pool lock binds the agreed `H`/amount/timeout before paying and claims the
+  pool leg the instant the secret is revealed; the maker never reveals the secret against an unsound
+  counterparty lock and refunds the pool after `T_pool`; `SwapTerms::validate` enforces
+  `T_fiber < T_pool`. The operator-dark residual above is surfaced as an explicit `Abort`, never a
+  silent loss. Tested adversarially against the mock (happy path, mismatched-lock rejection,
+  abort/refund branches, the residual) plus an end-to-end test that settles the pool legs through the
+  real STF under `htlc_sha256` (`crates/client/tests/swap.rs`).
+* What remains is the live wiring only: a Fiber node + LP liquidity, the `CounterpartyLeg` impl over
+  `fnn` (mirroring Fiber's Cross-Chain Hub), and the CKB-epoch↔Fiber-timeout mapping. The L1 HTLC
+  counterparty lock is the standard alternative. The receiver-side residual is resolved by Phase 6,
+  not by additional code in this mode.

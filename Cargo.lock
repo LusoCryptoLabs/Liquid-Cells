@@ -527,6 +527,7 @@ dependencies = [
  "liquid-cells-stf",
  "native-tls",
  "serde_json",
+ "sha2",
  "ureq",
 ]
 

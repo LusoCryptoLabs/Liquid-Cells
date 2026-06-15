@@ -43,6 +43,8 @@ use liquid_cells_stf::{
 pub mod fees;
 pub use fees::FeeSchedule;
 
+pub mod swap;
+
 /// SMT depth (matches `liquid_cells_stf::smt` and the on-chain contract).
 const SMT_DEPTH: usize = 256;
 
