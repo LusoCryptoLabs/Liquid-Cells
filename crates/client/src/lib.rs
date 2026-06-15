@@ -40,6 +40,9 @@ use liquid_cells_stf::{
     HtlcClaim, HtlcLock, HtlcRef, HtlcRefund, Leaf, Smt, Transfer, Withdrawal,
 };
 
+pub mod fees;
+pub use fees::FeeSchedule;
+
 /// SMT depth (matches `liquid_cells_stf::smt` and the on-chain contract).
 const SMT_DEPTH: usize = 256;
 
@@ -189,6 +192,43 @@ impl Account {
         let (_pk, sig) = sig::sign(&self.secret, &msg);
         self.nonce += 1;
         Transfer { from_pubkey: self.pubkey, to_key, amount, fee, nonce, expiry, sig }
+    }
+
+    /// Build and sign a transfer whose fee follows a [`FeeSchedule`] (`max(floor, bps%)`) instead
+    /// of a flat fee, so clients can price by amount: tiny payments pay the floor, large ones a
+    /// basis-point share. Equivalent to [`transfer`](Self::transfer) with `fee =
+    /// schedule.fee_for(amount)`.
+    pub fn transfer_scheduled(
+        &mut self,
+        to_key: Hash,
+        amount: u128,
+        schedule: &FeeSchedule,
+        expiry: u64,
+    ) -> Transfer {
+        self.transfer(to_key, amount, schedule.fee_for(amount), expiry)
+    }
+
+    /// Like [`htlc_lock`](Self::htlc_lock) but with the fee priced by a [`FeeSchedule`].
+    pub fn htlc_lock_scheduled(
+        &mut self,
+        receiver_key: Hash,
+        amount: u128,
+        schedule: &FeeSchedule,
+        hashlock: Hash,
+        timeout: u64,
+    ) -> (HtlcLock, HtlcRef) {
+        self.htlc_lock(receiver_key, amount, schedule.fee_for(amount), hashlock, timeout)
+    }
+
+    /// **Fee sponsorship**: a transfer of exactly `fee` to `beneficiary_key`, with this (sponsor)
+    /// account paying no protocol fee of its own. Submit it **ordered before** the beneficiary's
+    /// payment in the same checkpoint, so the beneficiary can afford a fee larger than their
+    /// (sub-cent) payment: the platform absorbs the per-leaf floor and the user's marginal cost is
+    /// just the tip, the thing that makes micro-tips viable. Pure composition over [`transfer`], no
+    /// protocol notion of a sponsor. (A platform that wants to charge its own fee can use
+    /// [`transfer`](Self::transfer) with a non-zero fee instead.)
+    pub fn sponsor_fee(&mut self, beneficiary_key: Hash, fee: u128, expiry: u64) -> Transfer {
+        self.transfer(beneficiary_key, fee, 0, expiry)
     }
 
     /// Build N signed transfers from this account in one call, a batch payment / fan-out

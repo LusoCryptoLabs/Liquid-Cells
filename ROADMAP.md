@@ -41,8 +41,14 @@ contract upgrade is paid per coordinated release, so STF-changing items are bund
   **explicitly liveness-not-finality** (the real guarantee is force-exit), and non-repudiable so a
   dishonoured receipt is attributable evidence. 4 tests. *preserved (must be framed liveness-not-finality).*
 - ✅ **Mempool ordering / poison-intent footgun**, **done** via `Sequencer::seal_resilient` (`crates/sequencer/src/resilient.rs`): mirrors `apply_ops`, drops only invalid *signed* intents and **transitively defers** their dependents (never reorders, never strands), with the atomic `seal_batch` kept as the authority and a **parity test** pinning byte-identical output when all-valid. Closes a real liveness/censorship gap (one bad intent no longer stalls a whole checkpoint, and `ShardedSequencer` no longer amplifies it K×). A naive "sort by nonce" would have been *unsafe* (cross-account funding deps). Follow-up: journal the drops in `DurableSequencer`. *preserved (strengthens liveness).*
-- **Hybrid fee schedule `max(MIN_FEE_PER_LEAF, p%·amount)` + platform-sponsored fees** in the SDK →
-  makes sub-cent tips viable. *preserved (client/policy only).*
+- ✅ **Hybrid fee schedule + platform-sponsored fees**, **done** (`crates/client/src/fees.rs`):
+  `FeeSchedule { floor, bps }` prices a fee as `max(floor, amount·bps/10000)` (saturating), so tiny
+  payments pay the per-leaf floor and large ones a basis-point share; `Account::transfer_scheduled`
+  / `htlc_lock_scheduled` use it. `Account::sponsor_fee` is the sponsorship leg: a fee-covering
+  transfer submitted ordered before the user's payment so a platform absorbs the floor and a
+  sub-cent tip's marginal cost is just the tip. End-to-end test proves the tip *fails* unsponsored
+  (floor fee > balance) and *settles* when sponsored. Pure client composition over `Transfer`, no
+  protocol change. *preserved (client/policy only).*
 - ~~Fix the stale DEPLOY.md 293K/3.47B figures~~, **done.**
 - ~~`verify-vkey.sh` pin check in CI~~, **done** (`.github/workflows/ci.yml`).
 
