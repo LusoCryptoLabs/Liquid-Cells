@@ -15,7 +15,7 @@ orders intents and posts proofs; it cannot move, seize, or invent a balance. Con
 |---|---|---|
 | Operator **cannot steal** a balance | "No debit without a signature": a leaf only decreases via a `Transfer`/`Withdrawal` carrying the owner's secp256k1 signature, enforced inside the proven STF and re-checked on-chain | `crates/stf/src/transition.rs`, contract `cells::bind` |
 | Operator **cannot mint / inflate** | Value conservation `Σ balances + fee_acc == total`, with `total` changed only by real deposit/withdrawal cells the checkpoint consumes/creates; proven and re-summed on-chain | accounting code 57 / solvency code 58 |
-| Operator **cannot trap funds** (go dark) | After `T` epochs of silence, any user **force-exits** unilaterally against the last committed root — proven live and runnable via `lc-exit` (see [DEPLOY.md](DEPLOY.md)) | `crates/ckb-contract/src/escape.rs`, `crates/client/src/bin/lc-exit.rs` |
+| Operator **cannot trap funds** (go dark) | After `T` epochs of silence, any user **force-exits** unilaterally against the last committed root — proven live and runnable via `lc-exit` (see [DEPLOY.md](../DEPLOY.md)) | `crates/ckb-contract/src/escape.rs`, `crates/client/src/bin/lc-exit.rs` |
 | Operator **cannot withhold the data** users need to exit | Each checkpoint's proof commits `keccak(da_blob)`; the root can't advance without publishing the diff on L1 | DA binding code 59 |
 
 So a user's funds are recoverable **without the operator's cooperation**, at all times, from L1 data
@@ -29,7 +29,7 @@ escape hatch:
 - **Anchor lock continuity** (`output anchor lock == input anchor lock`) makes the genesis lock a
   permanent policy for *who may sequence*. With an always-success genesis lock, **anyone** who can
   produce a valid proof may advance the root — demonstrated live (a checkpoint advanced the root
-  **unsigned**, [DEPLOY.md](DEPLOY.md)).
+  **unsigned**, [DEPLOY.md](../DEPLOY.md)).
 - A checkpoint can never re-lock the anchor to seize sequencing (capture-proofness, red-team-tested).
 - So a censoring or stalled operator is not a single point of liveness failure: a competitor can
   sequence, and absent that, the force-exit hatch is the floor. This is the protocol's answer to

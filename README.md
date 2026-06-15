@@ -184,7 +184,10 @@ liquid-cells/
     ckb-contract/        # anchor type script: Groth16 verify + force-exit + force-refund
     ckb-contract-tests/  # ckb-testtool integration suite (+ redteam_*.rs adversarial cases)
   docs/
+    SPEC.md              # consolidated technical spec (working draft; links the per-topic docs)
     ARCHITECTURE.md      # the full trustless design
+    COMPARISON-FIBER.md  # honest Liquid Cells vs Fiber comparison (trust/liveness/exit/liquidity)
+    REPRODUCE-EXIT.md    # run lc-exit yourself: rebuild a balance + exit proof from L1 alone
     THREAT-MODEL.md      # red-team findings -> mitigations
     INTEGRATION-GENERIC.md # START HERE to reuse: the 5 primitives + recipe cookbook + invariants
     INTEGRATION-TIPPING.md # one worked instance of the generic guide (deposit/split-payment/exit)
@@ -257,7 +260,7 @@ Operator deploy/driver scripts (genesis, checkpoint submit) build the real Pudge
 | **2b-3** | Implicit cell format: deposit/withdrawal commitments recomputed from real cells + value conservation (accounting + solvency); 10/10 ckb-testtool tests incl. deposit adversarial | **done** |
 | **2b-4** | Withdrawal-path coverage (deterministic lock-hash coordination); comprehensive deposit+withdrawal checkpoint; 14/14 ckb-testtool tests | **done** |
 | **2b-5** | Proven L1 fee model: `fee_withdrawal` drawn only from accumulated fees (user balances provably untouched), fee-aware accounting + solvency pin the miner fee to the proven draw; 15/15 ckb-testtool tests | **done** |
-| **4** | **Data availability**: in-circuit `da_commitment` over touched post-state, bound on-chain to the published witness blob; independent reconstruction rebuilds the tree + a force-exit inclusion proof from L1 alone ([docs/DA.md](docs/DA.md)). 17/17 ckb-testtool + DA reconstruction test | **done** (standalone CLI = follow-up) |
+| **4** | **Data availability**: in-circuit `da_commitment` over touched post-state, bound on-chain to the published witness blob; independent reconstruction rebuilds the tree + a force-exit inclusion proof from L1 alone ([docs/DA.md](docs/DA.md)). 17/17 ckb-testtool + DA reconstruction test | **done** (standalone CLI `lc-exit` shipped; see [docs/REPRODUCE-EXIT.md](docs/REPRODUCE-EXIT.md)) |
 | **3** | **Force-exit / escape hatch**: a second anchor mode, unilateral single-leaf withdrawal vs the last committed root (SMT inclusion, no proof), payout forced to the owner's secp lock, leaf nullified, gated by an operator-silence timeout (`last_epoch` + tx `since`). 24/24 ckb-testtool (incl. 7 force-exit) ([docs/FORCE-EXIT.md](docs/FORCE-EXIT.md)) | **done** |
 | **5** | **Atomic-swap egress** for sub-61-CKB (dust): in-pool HTLC (`htlc_lock`/`claim`/`refund`), escrow keyed by all lock terms, the in-pool leg of a hash-locked swap with an L1/Fiber payment ([docs/EGRESS.md](docs/EGRESS.md)). 32 STF tests | **done** (in-pool leg) |
 | **5b** | **On-chain force-refund**: a third anchor mode, the swap *sender* unilaterally reclaims a *timed-out* HTLC escrow against the committed root (htlc_id re-derived, SMT inclusion, payout forced to the sender's secp lock), gated by `since ≥ timeout` **and** operator silence. 9 ckb-testtool tests. Closes the sender's exposure; the receiver-side residual is architectural (single anchor → Phase 6), documented honestly in [docs/EGRESS.md](docs/EGRESS.md) | **done** (live on Pudge, upgrade tx `0xf393b367…`) |
