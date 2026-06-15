@@ -215,11 +215,12 @@ fn apply_ops(
         // *accumulates* onto any pre-existing balance (and claim/refund SWEEP the whole leaf to the
         // fixed counterparty), so a hostile pre-credit/top-up can neither block the lock nor freeze
         // the in-pool escrow. Statement-level `#[cfg]` keeps the off path byte-identical (vkey
-        // unchanged). NOTE: this closes the IN-POOL path only; the on-chain force-refund
-        // (crates/ckb-contract/src/escape.rs) still reconstructs `leaf_hash(amount, 0)`, so a
-        // balance-altered escrow remains un-force-refundable under operator silence until escape.rs
-        // is updated to reconstruct/sweep the real committed balance. The two MUST ship together at
-        // the vkey re-bake; flipping this feature alone would brick force-refund of a griefed escrow.
+        // unchanged). H-1 is staged across FOUR coordinated halves, all gated by `htlc_keyspace`,
+        // that flip together at the re-bake: this guest STF, the sequencer (resilient.rs mirror), the
+        // on-chain contract (escape.rs force-refund reconstructs/sweeps the real committed balance via
+        // a 16-byte-widened witness), and the client (force_refund_witness carries that balance).
+        // Flipping only a subset is unsafe (guest-without-contract would brick force-refund of a
+        // griefed escrow), so they ship as one bundle.
         #[cfg(not(feature = "htlc_keyspace"))]
         if !slot.is_empty() {
             return Err(StfError::HtlcExists);

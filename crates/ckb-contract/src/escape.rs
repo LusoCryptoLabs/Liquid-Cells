@@ -229,13 +229,27 @@ pub(crate) fn force_refund(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
     let hashlock = &wb[81..113];
     let timeout = rd_u64(wb, 113);
     let lock_nonce = rd_u64(wb, 121);
-    let siblings = &wb[129..129 + 32 * SMT_DEPTH];
+    // Deployed: the escrow leaf holds exactly `amount` and the refund pays `amount`. Under
+    // `htlc_keyspace` the leaf can hold `amount + surplus` (a hostile top-up the STF sweeps in-pool),
+    // so the witness carries the actual committed balance and the on-chain refund reconstructs and
+    // sweeps it, keeping the escape hatch available for a griefed escrow. The SMT inclusion check
+    // below binds the witnessed balance to the committed root, so a lie about it cannot verify.
+    #[cfg(not(feature = "htlc_keyspace"))]
+    let (payout, siblings) = (amount, &wb[129..129 + 32 * SMT_DEPTH]);
+    #[cfg(feature = "htlc_keyspace")]
+    let (payout, siblings) = {
+        let actual = rd_u128(wb, 129);
+        if actual < amount {
+            return 80; // a real escrow holds at least the agreed amount
+        }
+        (actual, &wb[145..145 + 32 * SMT_DEPTH])
+    };
 
     if amount == 0 {
-        return 80; // an escrow always holds a positive amount
+        return 80; // the agreed escrow amount (bound into htlc_id) is always positive
     }
-    if amount > u64::MAX as u128 {
-        return 81; // cannot be paid out as a single capacity
+    if payout > u64::MAX as u128 {
+        return 81; // the payout cannot exceed a single CKB cell's capacity
     }
 
     // The htlc_id binds the pool's identity (baked POOL_ID for a legacy pool, the type-id for a
@@ -247,8 +261,9 @@ pub(crate) fn force_refund(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
     let sender_key = keccak(sender_pubkey);
     let id = htlc_id(&pid, &sender_key, receiver_key, amount, hashlock, timeout, lock_nonce);
 
-    // Inclusion of the escrow leaf {balance = amount, nonce = 0} at `id` vs the committed root.
-    let leaf = leaf_hash(amount, 0);
+    // Inclusion of the escrow leaf {balance = payout, nonce = 0} at `id` vs the committed root.
+    // (`payout == amount` when deployed; the actual committed balance under `htlc_keyspace`.)
+    let leaf = leaf_hash(payout, 0);
     if smt_root(&id, &leaf, siblings)[..] != prev[A_ROOT..A_ROOT + 32] {
         return 82;
     }
@@ -260,16 +275,16 @@ pub(crate) fn force_refund(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
         return 83;
     }
 
-    // Anchor continuity: seq / fee_acc / last_epoch unchanged; total -= amount.
+    // Anchor continuity: seq / fee_acc / last_epoch unchanged; total -= payout.
     if rd_u64(prev, A_SEQ) != rd_u64(new, A_SEQ)
         || rd_u128(prev, A_FEE) != rd_u128(new, A_FEE)
         || rd_u64(prev, A_LAST_EPOCH) != rd_u64(new, A_LAST_EPOCH)
-        || rd_u128(prev, A_TOTAL).checked_sub(amount) != Some(rd_u128(new, A_TOTAL))
+        || rd_u128(prev, A_TOTAL).checked_sub(payout) != Some(rd_u128(new, A_TOTAL))
     {
         return 84;
     }
 
-    // Solvency: the anchor's real capacity drops by exactly the refunded amount.
+    // Solvency: the anchor's real capacity drops by exactly the swept payout.
     let in_cap = match load_cell_capacity(0, Source::GroupInput) {
         Ok(c) => c,
         Err(_) => return 85,
@@ -278,7 +293,7 @@ pub(crate) fn force_refund(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
         Ok(c) => c,
         Err(_) => return 85,
     };
-    if in_cap.checked_sub(amount as u64) != Some(out_cap) {
+    if in_cap.checked_sub(payout as u64) != Some(out_cap) {
         return 85;
     }
 
@@ -303,8 +318,8 @@ pub(crate) fn force_refund(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
         return 86;
     }
 
-    // Payout: an output paying exactly `amount` to the *sender's* canonical secp lock.
-    if !has_exit_output(&blake160(sender_pubkey), amount as u64) {
+    // Payout: an output paying exactly the swept `payout` to the *sender's* canonical secp lock.
+    if !has_exit_output(&blake160(sender_pubkey), payout as u64) {
         return 87;
     }
     0

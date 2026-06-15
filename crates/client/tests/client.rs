@@ -197,7 +197,12 @@ fn htlc_lock_and_force_refund_witness_from_da() {
     let w = alice.force_refund_witness(&blobs, &r).unwrap();
     assert_eq!(w.len(), FORCE_REFUND_WITNESS_LEN);
     let id = htlc_id(&pool_id(), &r.sender_key, &r.receiver_key, r.amount, &r.hashlock, r.timeout, r.lock_nonce);
+    // siblings start after the fixed fields: 129 deployed, 145 under htlc_keyspace (which inserts the
+    // 16-byte actual committed balance after lock_nonce).
+    #[cfg(not(feature = "htlc_keyspace"))]
     let siblings = parse_siblings(&w[129..]);
+    #[cfg(feature = "htlc_keyspace")]
+    let siblings = parse_siblings(&w[145..]);
     assert!(verify_proof(&st.pool.root, &id, &Leaf { balance: 5000, nonce: 0 }.hash(), &siblings));
 
     // A claim the client builds round-trips through the STF (cooperative path).

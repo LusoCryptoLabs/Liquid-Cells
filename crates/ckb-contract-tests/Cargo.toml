@@ -19,6 +19,13 @@ path = "src/bin/wd_target.rs"
 ckb-testtool = "0.13"
 hex = "0.4"
 
+[features]
+# `htlc_keyspace` gates the force-refund tests to the widened (8337-byte) witness that the anchor,
+# built with the same feature, expects (audit H-1 on-chain half). Run together:
+#   (cd ../ckb-contract && cargo build --release --features htlc_keyspace)
+#   cargo test --release --features htlc_keyspace --test forcerefund
+htlc_keyspace = []
+
 # Test-only: build a real SMT tree + inclusion proof natively to exercise the force-exit
 # path (no SP1 proof involved), and blake160(pubkey) for the owner's secp lock args.
 [dev-dependencies]

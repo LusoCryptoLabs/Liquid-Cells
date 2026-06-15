@@ -27,6 +27,11 @@ fiber = ["dep:ureq", "dep:native-tls", "dep:serde_json", "dep:hex", "htlc_sha256
 # `wire` builds the canonical JSON wire format (`wire` module): the single serialize/parse definition
 # the WASM SDK and the sequencer service share, so the network encoding cannot drift between them.
 wire = ["dep:serde_json", "dep:hex"]
+# `htlc_keyspace` is the client half of audit fix H-1: `force_refund_witness` carries the actual
+# committed escrow balance (16 bytes) so the contract can sweep a balance-altered escrow. OFF by
+# default (matches the deployed FORCEREFUND_LEN 8321); flips with the contract/guest features at the
+# coordinated re-bake. Pure witness-layout change, no extra deps.
+htlc_keyspace = []
 
 [dependencies]
 liquid-cells-stf = { path = "../stf" }

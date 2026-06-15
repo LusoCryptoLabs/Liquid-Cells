@@ -75,6 +75,12 @@ struct Cfg {
     drop_payout: bool,         // no payout output at all
     bad_new_root: bool,        // output anchor root not the nullified root
     bad_total: bool,           // output anchor total doesn't drop by the amount
+    // `htlc_keyspace` only: a hostile top-up of the escrow key, and a witness that lies about the
+    // actual committed balance (must fail SMT inclusion).
+    #[allow(dead_code)]
+    topup: u128,
+    #[allow(dead_code)]
+    tamper_actual: bool,
 }
 
 fn build(cfg: Cfg) -> (Context, TransactionView) {
@@ -131,9 +137,19 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
         .unwrap();
 
     let id = htlc_id(&pool_id, &alice_key, &bob_key, amount, &hashlock, htlc_timeout, lock_nonce);
+    // `htlc_keyspace`: a third party tops up the public escrow key; the on-chain refund must sweep
+    // the whole committed balance, so the escape hatch survives the griefing the STF closed in-pool.
+    #[cfg(feature = "htlc_keyspace")]
+    if cfg.topup > 0 {
+        apply(&mut st, &Batch { current_epoch: 1, deposits: vec![Deposit { to_key: id, amount: cfg.topup }], ..Default::default() }).unwrap();
+    }
     let escrow = st.get_leaf(&id);
-    assert_eq!(escrow.balance, amount, "escrow must hold the locked amount");
     assert_eq!(escrow.nonce, 0, "escrow leaf has nonce 0");
+    // The contract sweeps the whole committed balance under `htlc_keyspace`, else exactly `amount`.
+    #[cfg(not(feature = "htlc_keyspace"))]
+    let payout = amount;
+    #[cfg(feature = "htlc_keyspace")]
+    let payout = escrow.balance;
 
     let root = st.pool.root;
     let total = st.pool.total; // unchanged by the lock, value stayed in the pool
@@ -159,17 +175,24 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     payload.extend_from_slice(&hashlock);
     payload.extend_from_slice(&htlc_timeout.to_be_bytes());
     payload.extend_from_slice(&lock_nonce.to_be_bytes());
+    // `htlc_keyspace`: the actual committed balance the contract reconstructs/sweeps (a liar fails
+    // the SMT inclusion check, since the real leaf hashes to the committed balance).
+    #[cfg(feature = "htlc_keyspace")]
+    {
+        let wit_balance = if cfg.tamper_actual { escrow.balance + 1 } else { escrow.balance };
+        payload.extend_from_slice(&wit_balance.to_be_bytes());
+    }
     for s in &siblings {
         payload.extend_from_slice(s);
     }
 
     let out_root = if cfg.bad_new_root { root.to_vec() } else { new_root.to_vec() };
-    let out_total = if cfg.bad_total { total } else { total - amount };
+    let out_total = if cfg.bad_total { total } else { total - payout };
     let prev_anchor = anchor(&root, seq, total, fee_acc, LAST_EPOCH);
     let new_anchor = anchor(&out_root, seq, out_total, fee_acc, LAST_EPOCH);
 
     let in_cap = total as u64; // anchor capacity == pool total
-    let out_cap = (total - amount) as u64;
+    let out_cap = (total - payout) as u64;
 
     let mut ctx = Context::default();
     let contract_op = ctx.deploy_cell(bin);
@@ -220,7 +243,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
         let pk = if cfg.wrong_payout { sig::pubkey(&secret(99)) } else { alice_pk };
         let exit_lock = secp_lock(&blake160(&pk));
         b = b
-            .output(CellOutput::new_builder().capacity((amount as u64).pack()).lock(exit_lock).build())
+            .output(CellOutput::new_builder().capacity((payout as u64).pack()).lock(exit_lock).build())
             .output_data(Bytes::new().pack());
     }
 
@@ -295,4 +318,28 @@ fn force_refund_unnullified_root_rejected() {
 fn force_refund_bad_total_rejected() {
     let (ctx, tx) = build(Cfg { bad_total: true, ..Default::default() });
     assert!(ctx.verify_tx(&tx, MAX_CYCLES).is_err(), "total must drop by exactly the refunded amount");
+}
+
+#[cfg(feature = "htlc_keyspace")]
+#[test]
+fn force_refund_sweeps_a_topped_up_escrow() {
+    // Audit H-1, on-chain half: a hostile top-up of the public escrow key no longer bricks
+    // force-refund. The contract reconstructs the real committed balance (amount + topup) from the
+    // widened witness and sweeps it all back to the sender, so the escape hatch survives the grief.
+    let (ctx, tx) = build(Cfg { topup: 500_000_000, ..Default::default() });
+    ctx.verify_tx(&tx, MAX_CYCLES)
+        .expect("a topped-up escrow must be force-refundable, sweeping the whole committed balance");
+}
+
+#[cfg(feature = "htlc_keyspace")]
+#[test]
+fn force_refund_lying_about_actual_balance_rejected() {
+    // The witnessed actual balance is bound to the committed root by the SMT inclusion check, so
+    // overstating it (claiming more than the escrow holds) reconstructs a leaf that is not in the
+    // tree and rejects.
+    let (ctx, tx) = build(Cfg { topup: 500_000_000, tamper_actual: true, ..Default::default() });
+    assert!(
+        ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
+        "a witness that overstates the committed balance must reject"
+    );
 }

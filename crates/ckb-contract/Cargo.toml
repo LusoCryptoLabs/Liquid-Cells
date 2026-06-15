@@ -21,6 +21,16 @@ path = "src/deposit_lock.rs"
 name = "liquid-cells-upgrade-lock"
 path = "src/upgrade_lock.rs"
 
+[features]
+# `htlc_keyspace` is the on-chain half of audit fix H-1 (paired with the STF/sequencer feature of the
+# same name). It widens the force-refund witness by 16 bytes (the actual committed escrow balance) so
+# the escape hatch can reconstruct and sweep a balance-altered escrow (a hostile top-up the STF now
+# sweeps in-pool). OFF by default so the DEPLOYED anchor is unchanged; this is a deployed-format
+# change (FORCEREFUND_LEN 8321 -> 8337), so it activates only at the coordinated re-bake/redeploy
+# alongside the guest + sequencer features. Validated under `--features htlc_keyspace` in the
+# ckb-contract-tests force-refund suite.
+htlc_keyspace = []
+
 [dependencies]
 ckb-std = "0.16"
 # The SP1 Groth16 (BN254) verifier lives in its own no_std crate so the deployed contract and the

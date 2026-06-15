@@ -62,8 +62,12 @@ const SMT_DEPTH: usize = 256;
 pub const FORCE_EXIT_WITNESS_LEN: usize = 33 + 16 + 8 + 32 * SMT_DEPTH; // 8249
 /// Force-refund witness `input_type` length: `sender_pubkey(33) ‖ receiver_key(32) ‖ amount(16)
 /// ‖ hashlock(32) ‖ timeout(8) ‖ lock_nonce(8) ‖ siblings`. Matches the contract's
-/// `FORCEREFUND_LEN`.
+/// `FORCEREFUND_LEN`. Under `htlc_keyspace` (audit H-1) the witness also carries the actual committed
+/// escrow balance (16 bytes after lock_nonce) so the contract can sweep a balance-altered escrow.
+#[cfg(not(feature = "htlc_keyspace"))]
 pub const FORCE_REFUND_WITNESS_LEN: usize = 33 + 32 + 16 + 32 + 8 + 8 + 32 * SMT_DEPTH; // 8321
+#[cfg(feature = "htlc_keyspace")]
+pub const FORCE_REFUND_WITNESS_LEN: usize = 33 + 32 + 16 + 32 + 8 + 8 + 16 + 32 * SMT_DEPTH; // 8337
 
 /// `blake160(data)` = first 20 bytes of CKB's default blake2b-256, the args of a
 /// `secp256k1_blake160` lock. A force-exit/refund payout is forced to the lock with
@@ -394,7 +398,15 @@ impl Account {
         let id =
             htlc_id(&self.pool_id, &r.sender_key, &r.receiver_key, r.amount, &r.hashlock, r.timeout, r.lock_nonce);
         let (leaf, siblings) = proof_from_da(blobs, &id)?;
+        // Deployed: the escrow holds exactly `amount`. Under `htlc_keyspace` it may hold a hostile
+        // surplus (a top-up); the witness then carries the actual committed balance so the contract
+        // reconstructs and sweeps the real leaf. Either way the escrow must hold at least `amount`.
+        #[cfg(not(feature = "htlc_keyspace"))]
         if leaf.balance != r.amount {
+            return None; // escrow not present (or already claimed/refunded)
+        }
+        #[cfg(feature = "htlc_keyspace")]
+        if leaf.balance < r.amount {
             return None; // escrow not present (or already claimed/refunded)
         }
         let mut w = Vec::with_capacity(FORCE_REFUND_WITNESS_LEN);
@@ -404,6 +416,8 @@ impl Account {
         w.extend_from_slice(&r.hashlock);
         w.extend_from_slice(&r.timeout.to_be_bytes());
         w.extend_from_slice(&r.lock_nonce.to_be_bytes());
+        #[cfg(feature = "htlc_keyspace")]
+        w.extend_from_slice(&leaf.balance.to_be_bytes()); // actual committed balance (swept by the contract)
         for s in &siblings {
             w.extend_from_slice(s);
         }

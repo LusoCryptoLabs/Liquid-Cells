@@ -127,7 +127,12 @@ const FORCEEXIT_LEN: usize = 33 + 16 + 8 + 32 * SMT_DEPTH; // 8249
 /// Force-refund witness input_type: sender_pubkey(33) ‖ receiver_key(32) ‖ amount(16) ‖
 /// hashlock(32) ‖ timeout(8) ‖ lock_nonce(8) ‖ siblings(256·32). Distinct length from
 /// checkpoint (644) and force-exit (8249), so the mode is selected unambiguously.
+#[cfg(not(feature = "htlc_keyspace"))]
 const FORCEREFUND_LEN: usize = 33 + 32 + 16 + 32 + 8 + 8 + 32 * SMT_DEPTH; // 8321
+// Under `htlc_keyspace` (audit H-1): the witness also carries the actual committed escrow balance
+// (16 bytes after lock_nonce) so force-refund can reconstruct/sweep a balance-altered escrow.
+#[cfg(feature = "htlc_keyspace")]
+const FORCEREFUND_LEN: usize = 33 + 32 + 16 + 32 + 8 + 8 + 16 + 32 * SMT_DEPTH; // 8337
 
 // anchor data offsets
 const A_ROOT: usize = 0;

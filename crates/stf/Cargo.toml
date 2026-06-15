@@ -69,14 +69,14 @@ da_varint = []
 # empty). Gated OFF for the SAME reason as the others (it changes the guest ELF, hence the vkey) and
 # staged for the coordinated post-audit re-bake. Statement-level `#[cfg]` keeps the OFF build
 # byte-identical, so the deployed vkey stays reproducible. Validated in `tests/htlc_keyspace.rs`.
-# COORDINATED RESIDUAL (must ship together at the re-bake): the on-chain force-refund
-# (crates/ckb-contract/src/escape.rs) still reconstructs `leaf_hash(amount, 0)`, so a balance-altered
-# escrow (reachable by ANY third party via a 1-unit pre-credit at the public DA-derivable htlc_id)
-# is un-force-refundable under operator silence until escape.rs is updated to reconstruct/sweep the
-# real committed balance. DO NOT flip this feature on without (1) that matching escape.rs contract
-# change AND (2) the sequencer's `htlc_keyspace` feature (resilient.rs mirrors apply_ops, else
-# seal_resilient drops the very recovery intents this fix accepts). All three flip together at the
-# re-bake.
+# COORDINATED BUNDLE (4 halves, all gated by `htlc_keyspace`, that MUST flip together at the re-bake):
+# (1) this guest STF; (2) the sequencer (resilient.rs mirrors apply_ops, else seal_resilient drops the
+# recovery intents this fix accepts); (3) the on-chain contract (crates/ckb-contract escape.rs
+# force-refund reconstructs and sweeps the real committed balance via a 16-byte-widened witness,
+# FORCEREFUND_LEN 8321 -> 8337, a deployed-format change activated at redeploy); (4) the client
+# (force_refund_witness carries that balance). Flipping a subset is unsafe (guest-without-contract
+# would brick force-refund of a griefed escrow). All four are implemented + tested; they activate
+# together at the re-bake/redeploy.
 htlc_keyspace = []
 
 [dependencies]
