@@ -101,8 +101,14 @@ already done. **Detailed scope below.**
   honest* (unlike `min_fee`, which mirrors `FeePolicy`), i.e. exactly the "becoming gated" rot to
   avoid. **Re-open only if a concrete user needs strict mid-batch-underfunded atomicity** that the SDK
   path can't give. The five-op core stays minimal.
-- **DA-blob varint compression** (balance 16B→~8B, nonce), ~30–40% off the per-checkpoint footprint.
-  *preserved (still reconstructable from L1; do **not** drop keys).*
+- ✅ **DA-blob varint compression**, *staged and tested in-tree* behind the `da_varint` feature
+  (`crates/stf/src/da.rs`: LEB128-encode balance/nonce per record, key stays a fixed 32-byte hash).
+  Measured **36% smaller** for a typical micro-payment batch (`tests/da_varint.rs`, n=64: 3584B →
+  2286B), attacking the recurring on-chain cost (the DA blob) directly. Still fully reconstructable
+  from L1 (the keys are never dropped); the anchor only checks `keccak(blob) == da_commitment` so it
+  is layout-agnostic. OFF in the deployed guest (only `encode_da_blob` is in the proven path, gated
+  statement-level so the off build is byte-identical and the vkey is untouched, asserted by
+  `verify-vkey.sh`). *preserved (still reconstructable from L1; do **not** drop keys).*
 - ✅ **High-S rejection** (closes THREAT-MODEL L3), *staged and tested in-tree* behind the
   `reject_high_s` feature (`crates/stf/src/sig.rs`: reject high-S outright instead of normalizing,
   so only the canonical low-S encoding verifies; `tests/high_s.rs` malleates a real signature to

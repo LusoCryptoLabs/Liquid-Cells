@@ -41,6 +41,14 @@ hash_count = []
 # staged for the coordinated post-audit re-bake bundle. When OFF the `#[cfg]` keeps `verify`
 # byte-identical, so the deployed vkey stays reproducible. Validated in `tests/high_s.rs`.
 reject_high_s = []
+# `da_varint` LEB128 varint-encodes the balance/nonce in each DA blob record (the 32-byte key
+# stays fixed), shrinking the recurring on-chain DA footprint ~30-40% for typical small amounts.
+# Gated OFF for the SAME reason as the others: it changes the bytes the guest commits as
+# `da_commitment`, hence the guest ELF and the vkey, so it is staged for the coordinated re-bake.
+# Only `encode_da_blob` is in the guest path and the `#[cfg]` there is statement-level, so the OFF
+# build is byte-identical and the deployed vkey stays reproducible. The anchor only checks
+# `keccak(blob) == da_commitment`, so it is layout-agnostic. Validated in `tests/da_varint.rs`.
+da_varint = []
 
 [dependencies]
 # Keccak-256: chosen over CKB-native blake2b because SP1 has a keccak precompile,

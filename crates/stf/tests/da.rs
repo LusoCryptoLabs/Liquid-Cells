@@ -121,6 +121,7 @@ fn tampered_da_blob_breaks_commitment() {
     };
     let pv = apply(&mut st, &batch).unwrap();
     let mut blob = st.da_blob(&batch);
-    blob[40] ^= 0xff; // flip a balance byte
+    let last = blob.len() - 1; // a balance/nonce byte in either DA layout (fixed or varint)
+    blob[last] ^= 0xff;
     assert_ne!(keccak(&blob), pv.da_commitment, "a tampered blob must not match the commitment");
 }
