@@ -1,0 +1,32 @@
+[package]
+name = "liquid-cells-wasm"
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/tecmeup123/Liquid-Cells"
+
+# Standalone (not in the lean root workspace): a wasm32 cdylib for the browser/JS, plus an rlib so
+# the pure serialization helpers test natively. The WHOLE point is that this wraps the SAME
+# `liquid-cells-stf` / `liquid-cells-client` the sequencer and contract run, so a JS client signs
+# over the identical byte layouts and rebuilds the identical keccak SMT, no divergent-root class of
+# bug is reintroduced in another language.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+liquid-cells-client = { path = "../client" }
+liquid-cells-stf = { path = "../stf" }
+wasm-bindgen = "0.2"
+serde_json = "1"
+hex = "0.4"
+
+# k256 -> getrandom needs its "js" backend to build for wasm32 (signing is deterministic RFC 6979,
+# so no randomness is used at runtime; this only satisfies the build).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+[profile.release]
+opt-level = "s"
+lto = true

@@ -49,6 +49,13 @@ name = "lc-swap"
 path = "src/bin/lc-swap.rs"
 required-features = ["fiber"]
 
+# WebAssembly: k256 pulls getrandom transitively, which needs its "js" backend to build for
+# wasm32. Signing is deterministic (RFC 6979), so no randomness is used at runtime; this only
+# satisfies the build so the SAME stf can run in a browser. wasm32-only, so native builds are
+# unaffected.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
 [dev-dependencies]
 hex = "0.4"
 liquid-cells-sequencer = { path = "../sequencer" }
