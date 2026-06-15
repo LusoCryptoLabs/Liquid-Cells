@@ -89,3 +89,32 @@ fn fiber_and_pool_legs_share_one_hashlock() {
     let fiber_sha256_hashlock = sha256(PRE); // Fiber HashAlgorithm::Sha256 over the same secret
     assert_eq!(pool_leg_hashlock, fiber_sha256_hashlock, "both legs bind the same H = sha256(s)");
 }
+
+#[test]
+fn live_fiber_preimage_claims_the_pool_leg() {
+    // Pins the in-pool leg to the EXACT secret of a real atomic swap executed on the Fiber testnet:
+    // a live fnn node held a Sha256 HOLD invoice with payment_hash = H below, the taker paid it, and
+    // the maker settled with PREIMAGE below (sha256(PREIMAGE) == H, enforced by fnn's settle_invoice).
+    // Here the same 32-byte PREIMAGE opens the pool HTLC locked to that same H, so revealing the
+    // secret on Fiber and on the pool are one and the same act. See docs/FIBER-INTEGRATION.md.
+    const PREIMAGE: [u8; 32] = [
+        0x09, 0x2b, 0xd7, 0x51, 0x92, 0xe4, 0x85, 0x8f, 0x5c, 0x25, 0x07, 0xff, 0x54, 0xc0, 0x21, 0x36,
+        0xb9, 0x7c, 0x22, 0xb4, 0x25, 0x0d, 0x59, 0x86, 0xc5, 0xf9, 0x54, 0x25, 0x4c, 0xc8, 0x7a, 0x45,
+    ];
+    const FIBER_PAYMENT_HASH: [u8; 32] = [
+        0x4a, 0x7c, 0x11, 0x18, 0xc0, 0x1e, 0x0f, 0x7c, 0xd4, 0x88, 0x18, 0x51, 0x80, 0xc2, 0xbc, 0xef,
+        0xa7, 0x9b, 0xf3, 0x92, 0x8e, 0xb6, 0x38, 0x19, 0x18, 0x90, 0x39, 0x82, 0x00, 0x33, 0x2f, 0x36,
+    ];
+    let hl = sha256(&PREIMAGE);
+    assert_eq!(hl, FIBER_PAYMENT_HASH, "pool leg binds the exact H the live Fiber invoice was paid against");
+
+    let mut st = funded(&[(1, 100_000_000)]);
+    let bob = key_for(2);
+    let (amount, fee) = (5_000_000u128, 1_000u128); // dust egress
+    let lock = signed_lock(1, bob, amount, fee, hl, 50, 0);
+    apply(&mut st, &Batch { current_epoch: 1, htlc_locks: vec![lock], ..Default::default() }).unwrap();
+
+    let claim = HtlcClaim { htlc: href(1, bob, amount, hl, 50, 0), preimage: PREIMAGE.to_vec() };
+    apply(&mut st, &Batch { current_epoch: 2, htlc_claims: vec![claim], ..Default::default() }).unwrap();
+    assert_eq!(st.get_leaf(&bob).balance, amount, "the live Fiber secret claims the pool leg");
+}

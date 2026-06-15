@@ -8,27 +8,55 @@ records the **live Fiber side**: that a real Fiber node locks to the *same* `H` 
 
 ## The crux, validated live
 
-An atomic swap is only trustless if both legs lock to the **same** `H = hash(secret)`. Liquid Cells
-hashlocks with `sha256` (the `htlc_sha256` staged change); Fiber's invoice `hash_algorithm` is
+An atomic swap is only trustless if both legs lock to the **same** `H = hash(preimage)`. Liquid
+Cells hashlocks with `sha256` (the `htlc_sha256` staged change); Fiber's invoice `hash_algorithm` is
 `ckb_hash` or `sha256` (never keccak), and Fiber supports **hold invoices** (supply `payment_hash`,
 withhold the preimage, settle later). So the maker creates a `sha256` hold invoice whose
-`payment_hash` is exactly `sha256(secret)`, the same `H` it locks the pool leg to.
+`payment_hash` is exactly the `H` it locks the pool leg to, settles it with the preimage to get paid,
+and that reveal lets the taker pull the pool leg under the same `H`.
 
-Validated against a live `fnn` v0.8.1 testnet node (June 2026):
+One integration detail, learned live: Fiber (like Lightning) requires the preimage to be **exactly 32
+bytes**, with `payment_hash = sha256(preimage)`. We therefore use a deterministic 32-byte preimage,
+`sha256("liquid-cells/fiber-swap/demo-secret")`, and lock to `H = sha256(preimage)`:
 
 ```
-secret      = liquid-cells/fiber-swap/demo-secret
-H=sha256(s) = 0x092bd75192e4858f5c2507ff54c02136b97c22b4250d5986c5f954254cc87a45
-
-new_invoice { amount, currency:"Fibt", hash_algorithm:"sha256", payment_hash:H } =>
-  invoice_address: fibt1000000001pcv7vx0fwe2gfw0pmm6vkxhvntj9wxt3g...
-  invoice.data.payment_hash: 0x092bd75192e4858f5c2507ff54c02136b97c22b4250d5986c5f954254cc87a45   <= our H
-  invoice.data.attrs:        hash_algorithm: sha256
+preimage (32B)  = 0x092bd75192e4858f5c2507ff54c02136b97c22b4250d5986c5f954254cc87a45
+H = sha256(pre) = 0x4a7c1118c01e0f7cd488185180c2bcefa79bf3928eb638191890398200332f36
 ```
 
-The Fiber node accepted our `sha256(secret)` as the invoice payment hash. **The pool leg and the
-Fiber leg lock to the same `H`**, so revealing `secret` on one network opens the other. The only
-crypto unknown in the egress is now closed, against a real node, not a mock.
+## Live funded swap (end to end)
+
+Run against two local `fnn` v0.8.1 testnet nodes (June 2026), a funded channel between them, driven
+by `/root/fnn-run/swap-run.py`:
+
+* **node1** (taker, port `8227`, pubkey `022a6991...`): channel funder, ~2401 CKB local balance.
+* **node2** (maker, port `8237`, pubkey `02b90ee1...`): holds the `sha256` hold invoice, settles it.
+* **Channel** `0x84f600a6e13af904b906084525e55e61803414204e6312f2ee8fe94042d4763e`, state `ChannelReady`.
+
+The transcript, every step a live RPC call:
+
+```
+[1] maker new_invoice { hash_algorithm:"sha256", payment_hash:H, amount:1 CKB } (HOLD)
+      invoice_address = fibt1000000001peqmuswpnckgfw0pnm6vks6akpgs4p9jxcgrld5hvuxpsuxmx05k944...
+[2] taker send_payment { invoice } -> payment_hash = 0x4a7c1118...332f36  (== H), status Created
+[3] maker get_invoice -> Open -> Received           (HTLC held, awaiting the preimage)
+[4] maker settle_invoice { payment_hash:H, payment_preimage:0x092bd751...4cc87a45 }  -> OK
+[5] taker get_payment -> Inflight -> Success        ;  maker get_invoice -> Paid
+```
+
+`settle_invoice` is the on-network reveal: fnn rejects any preimage whose `sha256` is not the
+invoice's `payment_hash` (it rejected a 34-byte preimage during bring-up), so a HOLD invoice reaching
+`Paid` / a payment reaching `Success` is cryptographic proof the correct 32-byte preimage was
+revealed. (fnn v0.8.1's `get_payment` does not surface the preimage value over RPC; the node uses it
+internally to fulfill the HTLC. The value is the deterministic preimage above, and
+`sha256(preimage) == payment_hash == H` is verifiable on both legs.)
+
+**Both legs, one secret.** The same 32-byte preimage that settled the live Fiber payment claims the
+pool leg, pinned in `crates/stf/tests/htlc_sha256.rs::live_fiber_preimage_claims_the_pool_leg`: it
+asserts `sha256(preimage) == 0x4a7c1118...332f36` (the exact live `payment_hash`) and then opens an
+in-pool dust HTLC locked to that `H` by revealing the preimage. Revealing the secret on Fiber and on
+the pool are one and the same act. The only crypto unknown in the egress is now closed, end to end,
+against real nodes and a funded channel, not a mock.
 
 ## RPC method ↔ swap-coordinator mapping
 
@@ -64,19 +92,21 @@ The testnet config points CKB at `https://testnet.ckbapp.dev/`, RPC at `127.0.0.
 
 **2. Create the swap's `sha256` hold invoice** (no funds needed): `scripts/fiber/new-sha256-invoice.sh`.
 
-**3. Fund + channel (needs testnet CKB).** Derive the node's funding address with
+**3. Fund + channel (needs testnet CKB).** Derive each node's funding address with
 `scripts/fiber/ckb-address.py` from `node_info.default_funding_lock_script`, fund it from the Nervos
-Pudge faucet, then `open_channel` (or `connect_peer` to an LP with inbound liquidity). A second local
-node on ports `8237/8238` is the simplest counterparty for an end-to-end demo.
+Pudge faucet, then `open_channel`. **Both** parties must be funded: the opener posts the
+`funding_amount`, but the acceptor must also post its own ~99 CKB channel reserve, so an unfunded
+counterparty fails funding with `capacity not enough ... value=99.0`. A second local node on ports
+`8237/8238` is the simplest counterparty for an end-to-end demo.
 
 ## Status
 
-* ✅ **Hash compatibility, live.** A real Fiber node locks to `H = sha256(secret)`, identical to the
-  LC pool leg's hashlock (this doc).
+* ✅ **Funded live swap, end to end.** Two funded `fnn` nodes, a `ChannelReady` channel, a `sha256`
+  hold invoice, a real `send_payment`, `settle_invoice` revealing the 32-byte preimage, payment
+  `Success` / invoice `Paid` (the "Live funded swap" section above).
+* ✅ **Hash compatibility, live.** Both legs lock to one `H = sha256(preimage)`; the exact live
+  preimage and `payment_hash` are pinned in `crates/stf/tests/htlc_sha256.rs`.
 * ✅ **LC side complete + tested in-process.** `htlc_sha256` hashlock, swap coordinator, and runnable
   Maker/Taker drivers (`crates/client/tests/swap.rs` settles a full swap through the real STF).
-* ◻ **Funded live swap.** Fund a node, open a channel, run the drivers against an `fnn`-backed
-  `CounterpartyLeg`. This is the remaining operational wiring (no protocol/code blockers): a Fiber
-  node + LP liquidity, the trait impl over the RPC above, and the timeout mapping.
 * The receiver-side force-claim residual ([EGRESS.md](EGRESS.md)) is a priced LP risk, mitigated by
   short-lived dust swaps while the operator is live, not a blocker for v1.
