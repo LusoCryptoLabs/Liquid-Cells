@@ -45,6 +45,11 @@ pub use fees::FeeSchedule;
 
 pub mod swap;
 
+/// Canonical JSON wire format for intents (shared by the WASM SDK and the sequencer service).
+/// Behind `--features wire`.
+#[cfg(feature = "wire")]
+pub mod wire;
+
 /// fnn-backed counterparty leg (the live Fiber adapter for [`swap`]). Behind `--features fiber`.
 #[cfg(feature = "fiber")]
 pub mod fiber;

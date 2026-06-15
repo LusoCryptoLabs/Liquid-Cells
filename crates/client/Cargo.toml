@@ -24,6 +24,9 @@ htlc_sha256 = ["liquid-cells-stf/htlc_sha256"]
 # drivers run against a LIVE `fnn` node instead of `MockLeg`. Pulls the same HTTP stack as `cli`, plus
 # `htlc_sha256` so the in-process pool leg claims under the Fiber-compatible sha256 hashlock.
 fiber = ["dep:ureq", "dep:native-tls", "dep:serde_json", "dep:hex", "htlc_sha256"]
+# `wire` builds the canonical JSON wire format (`wire` module): the single serialize/parse definition
+# the WASM SDK and the sequencer service share, so the network encoding cannot drift between them.
+wire = ["dep:serde_json", "dep:hex"]
 
 [dependencies]
 liquid-cells-stf = { path = "../stf" }

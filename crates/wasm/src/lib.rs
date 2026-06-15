@@ -24,37 +24,18 @@
 //! const root = reconstruct_root(JSON.stringify(daBlobsHex));                 // check vs on-chain anchor
 //! ```
 
-use liquid_cells_client::{htlc_claim as build_claim, htlc_refund as build_refund, proof_from_da, reconstruct_tree, Account};
 use liquid_cells_client::swap::swap_hashlock as sha256_hashlock;
-use liquid_cells_stf::{Hash, HtlcLock, HtlcRef, Transfer, Withdrawal};
+use liquid_cells_client::wire::{self, hexs, parse_bytes, parse_hash, parse_u128};
+use liquid_cells_client::{htlc_claim as build_claim, htlc_refund as build_refund, proof_from_da, reconstruct_tree, Account};
+use liquid_cells_stf::HtlcRef;
 use wasm_bindgen::prelude::*;
 
-// --- pure helpers (tested natively) --------------------------------------------------------------
-
-fn hexs(b: &[u8]) -> String {
-    format!("0x{}", hex::encode(b))
-}
-
-fn parse_bytes(s: &str) -> Result<Vec<u8>, String> {
-    hex::decode(s.trim_start_matches("0x")).map_err(|e| format!("invalid hex: {e}"))
-}
-
-fn parse_hash(s: &str) -> Result<Hash, String> {
-    let v = parse_bytes(s)?;
-    if v.len() != 32 {
-        return Err(format!("expected 32 bytes, got {}", v.len()));
-    }
-    let mut h = [0u8; 32];
-    h.copy_from_slice(&v);
-    Ok(h)
-}
+// The intent JSON serialize/parse lives in `liquid_cells_client::wire`, the SAME definitions the
+// sequencer service parses with, so the JS encoding and the server's decoder cannot drift. Only the
+// wasm-only glue (secret/blobs parsing, JsError wrapping) stays here.
 
 fn parse_secret(s: &str) -> Result<[u8; 32], String> {
-    parse_hash(s) // 32-byte secret key, same shape
-}
-
-fn parse_u128(s: &str) -> Result<u128, String> {
-    s.trim().parse::<u128>().map_err(|e| format!("invalid u128 '{s}': {e}"))
+    parse_hash(s) // a 32-byte secret key, same shape as a hash
 }
 
 /// Parse DA blobs from a JSON array of hex strings (oldest-first), e.g. `["0x..","0x.."]`.
@@ -66,88 +47,9 @@ fn parse_blobs(json: &str) -> Result<Vec<Vec<u8>>, String> {
         .collect()
 }
 
-fn transfer_json(t: &Transfer) -> String {
-    serde_json::json!({
-        "type": "transfer",
-        "from_pubkey": hexs(&t.from_pubkey),
-        "to_key": hexs(&t.to_key),
-        "amount": t.amount.to_string(),
-        "fee": t.fee.to_string(),
-        "nonce": t.nonce,
-        "expiry": t.expiry,
-        "sig": hexs(&t.sig),
-    })
-    .to_string()
-}
-
-fn withdrawal_json(w: &Withdrawal) -> String {
-    serde_json::json!({
-        "type": "withdrawal",
-        "from_pubkey": hexs(&w.from_pubkey),
-        "target_lock_hash": hexs(&w.target_lock_hash),
-        "amount": w.amount.to_string(),
-        "nonce": w.nonce,
-        "expiry": w.expiry,
-        "sig": hexs(&w.sig),
-    })
-    .to_string()
-}
-
-fn htlcref_value(r: &HtlcRef) -> serde_json::Value {
-    serde_json::json!({
-        "sender_key": hexs(&r.sender_key),
-        "receiver_key": hexs(&r.receiver_key),
-        "amount": r.amount.to_string(),
-        "hashlock": hexs(&r.hashlock),
-        "timeout": r.timeout,
-        "lock_nonce": r.lock_nonce,
-    })
-}
-
-fn htlclock_json(l: &HtlcLock, r: &HtlcRef) -> String {
-    serde_json::json!({
-        "type": "htlc_lock",
-        "sender_pubkey": hexs(&l.sender_pubkey),
-        "receiver_key": hexs(&l.receiver_key),
-        "amount": l.amount.to_string(),
-        "fee": l.fee.to_string(),
-        "hashlock": hexs(&l.hashlock),
-        "timeout": l.timeout,
-        "nonce": l.nonce,
-        "sig": hexs(&l.sig),
-        "htlc_ref": htlcref_value(r), // the terms the holder later claims/refunds against
-    })
-    .to_string()
-}
-
 fn parse_htlcref(json: &str) -> Result<HtlcRef, String> {
     let v: serde_json::Value = serde_json::from_str(json).map_err(|e| format!("htlc_ref json: {e}"))?;
-    let g = |k: &str| -> Result<&serde_json::Value, String> { v.get(k).ok_or(format!("htlc_ref missing '{k}'")) };
-    let gs = |k: &str| -> Result<String, String> { Ok(g(k)?.as_str().ok_or(format!("htlc_ref '{k}' not a string"))?.to_string()) };
-    let gu = |k: &str| -> Result<u64, String> { g(k)?.as_u64().ok_or(format!("htlc_ref '{k}' not a u64")) };
-    Ok(HtlcRef {
-        sender_key: parse_hash(&gs("sender_key")?)?,
-        receiver_key: parse_hash(&gs("receiver_key")?)?,
-        amount: parse_u128(&gs("amount")?)?,
-        hashlock: parse_hash(&gs("hashlock")?)?,
-        timeout: gu("timeout")?,
-        lock_nonce: gu("lock_nonce")?,
-    })
-}
-
-fn claim_json(htlc: &HtlcRef, preimage: &[u8]) -> String {
-    let c = build_claim(*htlc, preimage.to_vec());
-    serde_json::json!({
-        "type": "htlc_claim",
-        "htlc_ref": htlcref_value(&c.htlc),
-        "preimage": hexs(&c.preimage),
-    })
-    .to_string()
-}
-
-fn refund_json(htlc: &HtlcRef) -> String {
-    let r = build_refund(*htlc);
-    serde_json::json!({ "type": "htlc_refund", "htlc_ref": htlcref_value(&r.htlc) }).to_string()
+    wire::htlcref_from_value(&v)
 }
 
 fn err(e: String) -> JsError {
@@ -200,7 +102,7 @@ impl WasmAccount {
     pub fn transfer(&mut self, to_key_hex: &str, amount: &str, fee: &str, expiry: u64) -> Result<String, JsError> {
         let to = parse_hash(to_key_hex).map_err(err)?;
         let t = self.inner.transfer(to, parse_u128(amount).map_err(err)?, parse_u128(fee).map_err(err)?, expiry);
-        Ok(transfer_json(&t))
+        Ok(wire::transfer_to_value(&t).to_string())
     }
 
     /// Build and sign a withdrawal of `amount` to the on-chain `target_lock_hash_hex`, valid through
@@ -208,7 +110,7 @@ impl WasmAccount {
     pub fn withdraw(&mut self, target_lock_hash_hex: &str, amount: &str, expiry: u64) -> Result<String, JsError> {
         let target = parse_hash(target_lock_hash_hex).map_err(err)?;
         let w = self.inner.withdraw(target, parse_u128(amount).map_err(err)?, expiry);
-        Ok(withdrawal_json(&w))
+        Ok(wire::withdrawal_to_value(&w).to_string())
     }
 
     /// Build and sign an HTLC lock escrowing `amount` (+ `fee`) to `receiver_key_hex` under
@@ -226,7 +128,7 @@ impl WasmAccount {
         let hashlock = parse_hash(hashlock_hex).map_err(err)?;
         let (lock, r) =
             self.inner.htlc_lock(receiver, parse_u128(amount).map_err(err)?, parse_u128(fee).map_err(err)?, hashlock, timeout);
-        Ok(htlclock_json(&lock, &r))
+        Ok(wire::htlclock_to_value(&lock, &r).to_string())
     }
 
     /// Recover this account's `{balance, nonce}` from L1 DA (`blobs_json` = JSON array of hex,
@@ -290,7 +192,7 @@ pub fn leaf_from_da(blobs_json: &str, key_hex: &str) -> Result<String, JsError> 
 pub fn htlc_claim(htlc_ref_json: &str, preimage_hex: &str) -> Result<String, JsError> {
     let r = parse_htlcref(htlc_ref_json).map_err(err)?;
     let preimage = parse_bytes(preimage_hex).map_err(err)?;
-    Ok(claim_json(&r, &preimage))
+    Ok(wire::claim_to_value(&build_claim(r, preimage)).to_string())
 }
 
 /// Build an (unsigned) HTLC refund for a timed-out escrow `htlc_ref_json`. The sender is fixed by
@@ -298,7 +200,7 @@ pub fn htlc_claim(htlc_ref_json: &str, preimage_hex: &str) -> Result<String, JsE
 #[wasm_bindgen]
 pub fn htlc_refund(htlc_ref_json: &str) -> Result<String, JsError> {
     let r = parse_htlcref(htlc_ref_json).map_err(err)?;
-    Ok(refund_json(&r))
+    Ok(wire::refund_to_value(&build_refund(r)).to_string())
 }
 
 #[cfg(test)]
