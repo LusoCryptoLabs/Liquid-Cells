@@ -140,13 +140,21 @@ window) is **built and tested** but not yet adopted on the live deployment.
 
 ## 12. Known limitations / residuals (consolidated, honest)
 
-- **Testnet-only, unaudited.** An external audit is the gate before real value.
+- **Testnet-only, unaudited.** An external audit is the gate before real value; see
+  [AUDIT-READINESS.md](AUDIT-READINESS.md) for the internal pre-audit assessment and punch-list.
 - **Single upgrade key** until the timelock lock is adopted (§11).
-- **~7-min finality** (CPU Groth16); ~1-min (GPU/prover-network) and sub-second soft-confirmation are
-  **planned, not shipped**.
+- **~7-min finality** (CPU Groth16). Sub-second soft-confirmation receipts are **shipped** (liveness,
+  not finality); ~1-min proving (GPU/prover-network) is still planned.
 - **Force-exit:** ~30-day operator-silence window; payout lands a ≥61-CKB cell, so dust exit is the
-  weak spot. The **Fiber-leg dust egress is designed but not built** (in-pool HTLC escrow + sender
-  refund are built and tested; the Fiber integration, the LP, and receiver-side force-claim are not).
+  weak spot. The **Fiber-leg dust egress is built and live-validated on Fiber testnet** (in-pool HTLC,
+  on-chain sender force-refund, swap coordinator, and Maker/Taker LP drivers), but **not yet usable on
+  the deployed mainnet system**: it needs the SHA-256 hashlock (`htlc_sha256` feature, OFF in the
+  deployed guest), so it ships with the post-audit v2 re-bake. Receiver-side force-claim stays a
+  deliberate Phase-6 residual.
+- **A staged v2 upgrade bundle** (shallow SMT, `ecrecover`, in-proof `min_fee`, DA varint compression,
+  high-S rejection, `htlc_sha256`, `htlc_keyspace`) is **built and tested behind feature flags but OFF
+  in the deployed guest** (the pinned vkey). It deploys as one coordinated, audited re-bake; none of it
+  affects the live contract today.
 - **Plaintext DA**, no amount privacy.
 - **Operator liveness** for everyday progress (mitigated by force-exit) and **archival DA retention**
   for recovery (§6.1).

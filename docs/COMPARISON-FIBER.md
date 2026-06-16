@@ -51,7 +51,8 @@ channel. The honest, surviving form:
 
 - **Decentralization in the steady state** for two parties with a direct channel.
 - **Finality:** off-chain channel payments are effectively instant and final between the parties;
-  Liquid Cells has ~7-min checkpoint finality (soft-confirmation is planned, not shipped).
+  Liquid Cells has ~7-min checkpoint finality (soft-confirmation receipts are shipped for sub-second
+  *perceived* confirmation, but they are liveness, not finality).
 - **Dust exit / egress:** closing a channel you hold is cleaner than our ≥61-CKB exit-cell floor.
 - **A single high-volume, always-online creator with two-way flow** is better served by a direct
   channel (cheaper, more private) than by routing tips through any pool.
@@ -61,12 +62,18 @@ channel. The honest, surviving form:
 
 ## Where they compose
 
-Liquid Cells' designed path for moving a **sub-61-CKB** balance *out* of the pool is an **atomic swap
-sharing one hashlock with a Fiber leg**, i.e. Fiber is the intended egress rail.
+Liquid Cells moves a **sub-61-CKB** balance *out* of the pool via an **atomic swap sharing one
+hashlock with a Fiber leg**, so Fiber is the egress rail (not a rival).
 
-> **Status (honest):** this is **design and roadmap, not shipped.** The in-pool escrow leg (hash-lock
-> + sender-side refund) is built and tested; the Fiber integration, the liquidity-provider side, and
-> the receiver-side force-claim are **not built**. See [EGRESS.md](EGRESS.md) and ROADMAP Tier E.
+> **Status (honest):** the egress is **built and live-validated end-to-end on Fiber testnet**, but
+> **not yet usable on the deployed mainnet system.** Built and tested: the in-pool HTLC leg, the
+> sender-side on-chain force-refund, the swap coordinator, the Maker/Taker LP drivers
+> (`crates/client/{fiber,swap}.rs`, `bin/lc-swap.rs`), and a live funded swap over an `fnn` node. The
+> gate: Fiber's HTLC uses a **SHA-256** hashlock, so the pool leg must bind to SHA-256 too, which
+> needs the `htlc_sha256` STF feature. That feature is **OFF in the deployed guest** (the pinned
+> vkey uses keccak), so a real mainnet swap waits on the **post-audit v2 re-bake** (staged + tested,
+> not deployed). The **receiver-side** force-claim remains a deliberate Phase-6 residual. See
+> [EGRESS.md](EGRESS.md).
 
 So the honest framing is layered, not competitive: a pool is good at accounting for many tiny balances
 and at letting anyone receive without liquidity; Fiber is good at routed, peer-to-peer settlement and
