@@ -185,6 +185,7 @@ liquid-cells/
     ckb-contract-tests/  # ckb-testtool integration suite (+ redteam_*.rs adversarial cases)
   docs/
     SPEC.md              # consolidated technical spec (working draft; links the per-topic docs)
+    COMPLETION.md        # living path-to-mainnet tracker (findings, v2 re-bake, gates)
     ARCHITECTURE.md      # the full trustless design
     COMPARISON-FIBER.md  # honest Liquid Cells vs Fiber comparison (trust/liveness/exit/liquidity)
     REPRODUCE-EXIT.md    # run lc-exit yourself: rebuild a balance + exit proof from L1 alone
