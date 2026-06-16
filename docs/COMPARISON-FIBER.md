@@ -3,8 +3,8 @@
 > **Intent:** Fiber and Liquid Cells are **complementary**, not rivals. This doc states, plainly and
 > with concessions, why a shared pool is a good fit for long-tail microtipping, where Fiber wins, and
 > where the two compose. It is written to be attackable by a Fiber/Lightning expert without falling
-> over. Status: Liquid Cells is testnet-only and unaudited; some items below are roadmap, marked as
-> such. _Working draft._
+> over. Status: Liquid Cells is testnet-only and unaudited; items still on the roadmap are marked as
+> such below.
 
 ## TL;DR
 
