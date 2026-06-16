@@ -5,11 +5,11 @@
 > checklist. Liquid Cells is testnet-only and unaudited today.
 
 **Status legend**
-- **DONE** — shipped and on the live testnet deployment.
-- **STAGED** — built and tested behind a feature flag, but OFF in the deployed guest (the pinned
+- **DONE**: shipped and on the live testnet deployment.
+- **STAGED**: built and tested behind a feature flag, but OFF in the deployed guest (the pinned
   vkey); goes live only at the coordinated v2 re-bake.
-- **OPEN** — closeable now without an on-chain redeploy.
-- **GATED** — needs an external party (audit) or an on-chain redeploy/proving step.
+- **OPEN**: closeable now without an on-chain redeploy.
+- **GATED**: needs an external party (audit) or an on-chain redeploy/proving step.
 
 ## 0. The two non-negotiable mainnet gates
 
@@ -56,7 +56,7 @@ affect the live contract until the re-bake. See [V2-REBAKE.md](V2-REBAKE.md).
 | `reject_high_s` | close THREAT-MODEL L3 malleability | STAGED |
 
 **To close:** the coordinated re-bake (rebuild guest, regenerate vkey, regenerate proofs, redeploy
-code cell, re-verify on-chain) — GATED on proving + on-chain deploy, and best done with the audit.
+code cell, re-verify on-chain) is GATED on proving + on-chain deploy, and best done with the audit.
 
 ## 3. Off-chain hardening (no re-bake)
 
