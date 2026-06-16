@@ -22,7 +22,7 @@ evidence for the hand-written crypto, durability, a real deposit lock, and key r
 | Key recovery | **Session-key export/import** in the demo so losing browser storage no longer means losing access, with an honest note on why deterministic derivation is not possible under JoyID. | n/a | `crates/demo-ui/src/index.html` |
 | Reproducibility | **vkey consistency check** asserting the guest vkey is identical across the contract, the fixture, and the prover assertion, plus the documented full-rebuild procedure. | n/a | `scripts/verify-vkey.sh` |
 
-Suite (all green): **49 STF**, **23 sequencer**, **100 contract integration**, **10 client**, and the **5-test differential verifier** crate, including, added since this pass, the **56-case adversarial red-team**, the resilient-seal, full-drain, deposit-confirmation-gate, tipping-integration, DA-snapshot, and timelocked-upgrade-lock suites.
+Suite (all green): **80 STF**, **44 sequencer**, **105 contract integration** (which includes the **56-case adversarial red-team**), **32 client**, **12 host**, **5 differential verifier**, **3 sequencer-service**, and **5 WASM SDK** tests. These cover, among others, the resilient-seal, full-drain, deposit-confirmation-gate, tipping-integration, DA-snapshot, timelocked-upgrade-lock, soft-confirmation/cadence, fee-schedule, and Fiber atomic-swap suites.
 
 ### Why the differential verifier test matters most
 
