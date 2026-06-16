@@ -133,8 +133,8 @@ as any on-chain transaction.
 | Sequencer + client | Off-chain sequencer sealing successive checkpoints; a client SDK to sign intents and exit from L1 data | **done** |
 | Permissionless + reward + sharding | Anyone may sequence (lock continuity), a fee reward makes it self-sustaining, K independent pools for throughput | **done** |
 | **External audit** | Independent review of the state machine + contract | **gates mainnet** |
-| Egress integration | L1 HTLC counterparty + Fiber payment leg for dust swaps | planned |
-| Wallet / app integration | TS/WASM SDK + reference tipping / creator / game integrations | planned |
+| Egress integration | L1 HTLC counterparty + Fiber payment leg for dust swaps | **testnet-live; mainnet via the staged v2 re-bake** |
+| Wallet / app integration | WASM/JS SDK + HTTP sequencer service + reference tipping integration | **SDK + tipping done; more integrations in progress** |
 
 ---
 
