@@ -68,6 +68,14 @@ pub const FORCE_EXIT_WITNESS_LEN: usize = 33 + 16 + 8 + 32 * SMT_DEPTH; // 8249
 pub const FORCE_REFUND_WITNESS_LEN: usize = 33 + 32 + 16 + 32 + 8 + 8 + 32 * SMT_DEPTH; // 8321
 #[cfg(feature = "htlc_keyspace")]
 pub const FORCE_REFUND_WITNESS_LEN: usize = 33 + 32 + 16 + 32 + 8 + 8 + 16 + 32 * SMT_DEPTH; // 8337
+// Under `compact_smt` (v2 witness-size compaction) the escape witnesses are sparse (variable-length:
+// fixed fields + a 32-byte bitmap + only the non-empty siblings), so they carry a leading 1-byte mode
+// tag and the anchor dispatches by tag, not length. These MUST equal the contract's FORCE_EXIT_TAG /
+// FORCE_REFUND_TAG (`crates/ckb-contract/src/main.rs`); the escape suites validate the round-trip.
+#[cfg(feature = "compact_smt")]
+pub const FORCE_EXIT_TAG: u8 = 0x01;
+#[cfg(feature = "compact_smt")]
+pub const FORCE_REFUND_TAG: u8 = 0x02;
 
 /// `blake160(data)` = first 20 bytes of CKB's default blake2b-256, the args of a
 /// `secp256k1_blake160` lock. A force-exit/refund payout is forced to the lock with
@@ -379,14 +387,25 @@ impl Account {
         if leaf.balance == 0 {
             return None;
         }
-        let mut w = Vec::with_capacity(FORCE_EXIT_WITNESS_LEN);
+        let mut w = Vec::new();
+        // Under compact_smt the anchor dispatches the escape hatch by a 1-byte mode tag (the sparse
+        // witness is variable-length, so length no longer selects the mode); this MUST match the
+        // contract's FORCE_EXIT_TAG.
+        #[cfg(feature = "compact_smt")]
+        w.push(FORCE_EXIT_TAG);
         w.extend_from_slice(&self.pubkey);
         w.extend_from_slice(&leaf.balance.to_be_bytes());
         w.extend_from_slice(&leaf.nonce.to_be_bytes());
-        for s in &siblings {
-            w.extend_from_slice(s);
+        #[cfg(not(feature = "compact_smt"))]
+        {
+            for s in &siblings {
+                w.extend_from_slice(s);
+            }
+            debug_assert_eq!(w.len(), FORCE_EXIT_WITNESS_LEN);
         }
-        debug_assert_eq!(w.len(), FORCE_EXIT_WITNESS_LEN);
+        // Sparse: a 32-byte bitmap + only the non-empty siblings (~8 KB -> a few hundred bytes).
+        #[cfg(feature = "compact_smt")]
+        w.extend_from_slice(&liquid_cells_stf::smt_compact::sparse_encode_proof(&siblings));
         Some(w)
     }
 
@@ -420,7 +439,11 @@ impl Account {
             // returning None rather than emitting a witness that can never be mined (audit A-3).
             return None;
         }
-        let mut w = Vec::with_capacity(FORCE_REFUND_WITNESS_LEN);
+        let mut w = Vec::new();
+        // Under compact_smt: a 1-byte mode tag (matching the contract's FORCE_REFUND_TAG) precedes
+        // the sparse witness.
+        #[cfg(feature = "compact_smt")]
+        w.push(FORCE_REFUND_TAG);
         w.extend_from_slice(&self.pubkey);
         w.extend_from_slice(&r.receiver_key);
         w.extend_from_slice(&r.amount.to_be_bytes());
@@ -429,10 +452,15 @@ impl Account {
         w.extend_from_slice(&r.lock_nonce.to_be_bytes());
         #[cfg(feature = "htlc_keyspace")]
         w.extend_from_slice(&leaf.balance.to_be_bytes()); // actual committed balance (swept by the contract)
-        for s in &siblings {
-            w.extend_from_slice(s);
+        #[cfg(not(feature = "compact_smt"))]
+        {
+            for s in &siblings {
+                w.extend_from_slice(s);
+            }
+            debug_assert_eq!(w.len(), FORCE_REFUND_WITNESS_LEN);
         }
-        debug_assert_eq!(w.len(), FORCE_REFUND_WITNESS_LEN);
+        #[cfg(feature = "compact_smt")]
+        w.extend_from_slice(&liquid_cells_stf::smt_compact::sparse_encode_proof(&siblings));
         Some(w)
     }
 }

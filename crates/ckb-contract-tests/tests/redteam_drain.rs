@@ -83,13 +83,20 @@ fn build_full_drain() -> (Context, TransactionView, u64, u128) {
         smt.root()
     };
 
-    let mut payload = Vec::with_capacity(33 + 16 + 8 + 32 * 256);
+    // Deployed: pubkey ‖ balance ‖ nonce ‖ 256 full siblings. Under compact_smt: a force-exit mode
+    // tag (0x01), then the fixed fields, then the sparse proof, what the anchor's compact arm decodes.
+    let mut payload = Vec::new();
+    #[cfg(feature = "compact_smt")]
+    payload.push(0x01u8); // FORCE_EXIT_TAG
     payload.extend_from_slice(&pk);
     payload.extend_from_slice(&balance.to_be_bytes());
     payload.extend_from_slice(&leaf.nonce.to_be_bytes());
+    #[cfg(not(feature = "compact_smt"))]
     for s in &siblings {
         payload.extend_from_slice(s);
     }
+    #[cfg(feature = "compact_smt")]
+    payload.extend_from_slice(&liquid_cells_stf::smt_compact::sparse_encode_proof(&siblings));
 
     // Realistic capacities: anchor holds total + the genesis slack; draining leaves the slack.
     let in_cap = total as u64 + GENESIS_SLACK;

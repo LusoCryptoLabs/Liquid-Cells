@@ -164,11 +164,14 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
         smt.root()
     };
 
-    // Force-refund payload: sender_pubkey(33) ‖ receiver_key(32) ‖ amount(16) ‖ hashlock(32)
-    // ‖ timeout(8) ‖ lock_nonce(8) ‖ siblings(256·32).
+    // Force-refund payload. Deployed: sender_pubkey(33) ‖ receiver_key(32) ‖ amount(16) ‖ hashlock(32)
+    // ‖ timeout(8) ‖ lock_nonce(8) ‖ [actual_balance(16) under htlc_keyspace] ‖ siblings(256·32).
+    // Under compact_smt: a 1-byte mode tag, the same fixed fields, then the SPARSE proof.
     let wit_receiver = if cfg.wrong_receiver { carol_key } else { bob_key };
     let wit_amount = if cfg.tamper_amount { amount + 1 } else { amount };
-    let mut payload = Vec::with_capacity(33 + 32 + 16 + 32 + 8 + 8 + 32 * 256);
+    let mut payload = Vec::new();
+    #[cfg(feature = "compact_smt")]
+    payload.push(0x02u8); // FORCE_REFUND_TAG
     payload.extend_from_slice(&alice_pk);
     payload.extend_from_slice(&wit_receiver);
     payload.extend_from_slice(&wit_amount.to_be_bytes());
@@ -182,9 +185,12 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
         let wit_balance = if cfg.tamper_actual { escrow.balance + 1 } else { escrow.balance };
         payload.extend_from_slice(&wit_balance.to_be_bytes());
     }
+    #[cfg(not(feature = "compact_smt"))]
     for s in &siblings {
         payload.extend_from_slice(s);
     }
+    #[cfg(feature = "compact_smt")]
+    payload.extend_from_slice(&liquid_cells_stf::smt_compact::sparse_encode_proof(&siblings));
 
     let out_root = if cfg.bad_new_root { root.to_vec() } else { new_root.to_vec() };
     let out_total = if cfg.bad_total { total } else { total - payout };

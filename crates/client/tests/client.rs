@@ -39,6 +39,9 @@ fn apply_and_blob(st: &mut State, batch: &Batch) -> Vec<u8> {
     st.da_blob(batch)
 }
 
+// Parses the deployed full-256 sibling region; under compact_smt the witness carries the sparse form
+// instead (decoded via `smt_compact::sparse_decode_proof`), so this is deployed-only.
+#[cfg(not(feature = "compact_smt"))]
 fn parse_siblings(b: &[u8]) -> Vec<Hash> {
     b.chunks(32)
         .map(|c| {
@@ -49,13 +52,25 @@ fn parse_siblings(b: &[u8]) -> Vec<Hash> {
         .collect()
 }
 
-/// Re-run the contract's force-exit inclusion check on a client-built witness.
+/// Re-run the contract's force-exit inclusion check on a client-built witness. Deployed: the witness
+/// is `pubkey(33) ‖ balance(16) ‖ nonce(8) ‖ siblings(256·32)`. Under compact_smt it is
+/// `tag(1) ‖ pubkey(33) ‖ balance(16) ‖ nonce(8) ‖ sparse(bitmap+present)`, which we decode.
+#[cfg(not(feature = "compact_smt"))]
 fn force_exit_includes(w: &[u8], root: &Hash) -> bool {
     assert_eq!(w.len(), FORCE_EXIT_WITNESS_LEN);
     let key = keccak(&w[0..33]); // contract uses keccak(pubkey)
     let balance = u128::from_be_bytes(w[33..49].try_into().unwrap());
     let nonce = u64::from_be_bytes(w[49..57].try_into().unwrap());
     let siblings = parse_siblings(&w[57..]);
+    verify_proof(root, &key, &Leaf { balance, nonce }.hash(), &siblings)
+}
+#[cfg(feature = "compact_smt")]
+fn force_exit_includes(w: &[u8], root: &Hash) -> bool {
+    assert_eq!(w[0], FORCE_EXIT_TAG, "force-exit mode tag");
+    let key = keccak(&w[1..34]);
+    let balance = u128::from_be_bytes(w[34..50].try_into().unwrap());
+    let nonce = u64::from_be_bytes(w[50..58].try_into().unwrap());
+    let siblings = liquid_cells_stf::smt_compact::sparse_decode_proof(&w[58..]).expect("sparse decode");
     verify_proof(root, &key, &Leaf { balance, nonce }.hash(), &siblings)
 }
 
@@ -195,15 +210,29 @@ fn htlc_lock_and_force_refund_witness_from_da() {
     // The client builds a valid force-refund witness for its own timed-out escrow, and the
     // escrow leaf includes against the committed root (mirrors the contract's force-refund mode).
     let w = alice.force_refund_witness(&blobs, &r).unwrap();
-    assert_eq!(w.len(), FORCE_REFUND_WITNESS_LEN);
     let id = htlc_id(&pool_id(), &r.sender_key, &r.receiver_key, r.amount, &r.hashlock, r.timeout, r.lock_nonce);
-    // siblings start after the fixed fields: 129 deployed, 145 under htlc_keyspace (which inserts the
-    // 16-byte actual committed balance after lock_nonce).
-    #[cfg(not(feature = "htlc_keyspace"))]
-    let siblings = parse_siblings(&w[129..]);
-    #[cfg(feature = "htlc_keyspace")]
-    let siblings = parse_siblings(&w[145..]);
-    assert!(verify_proof(&st.pool.root, &id, &Leaf { balance: 5000, nonce: 0 }.hash(), &siblings));
+    // siblings start after the fixed fields: 129 deployed, 145 under htlc_keyspace (the 16-byte actual
+    // committed balance is inserted after lock_nonce). Under compact_smt a 1-byte mode tag precedes
+    // everything and the sibling region is the sparse form (decoded), not 256 full siblings.
+    #[cfg(not(feature = "compact_smt"))]
+    {
+        assert_eq!(w.len(), FORCE_REFUND_WITNESS_LEN);
+        #[cfg(not(feature = "htlc_keyspace"))]
+        let siblings = parse_siblings(&w[129..]);
+        #[cfg(feature = "htlc_keyspace")]
+        let siblings = parse_siblings(&w[145..]);
+        assert!(verify_proof(&st.pool.root, &id, &Leaf { balance: 5000, nonce: 0 }.hash(), &siblings));
+    }
+    #[cfg(feature = "compact_smt")]
+    {
+        assert_eq!(w[0], FORCE_REFUND_TAG, "force-refund mode tag");
+        #[cfg(not(feature = "htlc_keyspace"))]
+        let sib_off = 1 + 129;
+        #[cfg(feature = "htlc_keyspace")]
+        let sib_off = 1 + 145;
+        let siblings = liquid_cells_stf::smt_compact::sparse_decode_proof(&w[sib_off..]).expect("sparse decode");
+        assert!(verify_proof(&st.pool.root, &id, &Leaf { balance: 5000, nonce: 0 }.hash(), &siblings));
+    }
 
     // A claim the client builds round-trips through the STF (cooperative path).
     let claim = htlc_claim(r, b"client-preimage".to_vec());

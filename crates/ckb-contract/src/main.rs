@@ -27,6 +27,11 @@
 //!   force-refund witness input_type: sender_pubkey(33) ‖ receiver_key(32) ‖ amount(16)
 //!                                    ‖ hashlock(32) ‖ timeout(8) ‖ lock_nonce(8) ‖ siblings(256·32)
 //!
+//! Under the staged `compact_smt` (v2 witness-size compaction) the two escape witnesses are SPARSE
+//! (a 32-byte bitmap + only the non-empty siblings, ~a few hundred bytes), hence variable-length, so
+//! they are dispatched by a leading 1-byte mode tag (force-exit 0x01 / force-refund 0x02) rather than
+//! by length; the checkpoint stays the fixed 644-byte proof. Deployed (feature-off) is unchanged.
+//!
 //! The script, in order (cheap checks first so a tampered transaction is rejected
 //! without paying for the BN254 pairing): (1) pins `prev_*`/`new_*` in the public
 //! values to the input/output anchor cell data and checks sequence/fee continuity
@@ -122,17 +127,29 @@ const PV_LEN: usize = 288;
 // PROOF_LEN (356) is imported from liquid-cells-groth16 (the SP1 proof format), the single source
 // of truth for the verifier.
 const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 644, checkpoint witness input_type
+// Deployed: the escape witnesses are full 256-sibling and selected by their (distinct, fixed) length.
+// Under `compact_smt` they are sparse (variable-length) and selected by a leading mode tag instead
+// (see below), so these length constants are deployed-only.
 /// Force-exit witness input_type: pubkey(33) ‖ balance(16) ‖ nonce(8) ‖ siblings(256·32).
+#[cfg(not(feature = "compact_smt"))]
 const FORCEEXIT_LEN: usize = 33 + 16 + 8 + 32 * SMT_DEPTH; // 8249
 /// Force-refund witness input_type: sender_pubkey(33) ‖ receiver_key(32) ‖ amount(16) ‖
 /// hashlock(32) ‖ timeout(8) ‖ lock_nonce(8) ‖ siblings(256·32). Distinct length from
 /// checkpoint (644) and force-exit (8249), so the mode is selected unambiguously.
-#[cfg(not(feature = "htlc_keyspace"))]
+#[cfg(all(not(feature = "htlc_keyspace"), not(feature = "compact_smt")))]
 const FORCEREFUND_LEN: usize = 33 + 32 + 16 + 32 + 8 + 8 + 32 * SMT_DEPTH; // 8321
 // Under `htlc_keyspace` (audit H-1): the witness also carries the actual committed escrow balance
 // (16 bytes after lock_nonce) so force-refund can reconstruct/sweep a balance-altered escrow.
-#[cfg(feature = "htlc_keyspace")]
+#[cfg(all(feature = "htlc_keyspace", not(feature = "compact_smt")))]
 const FORCEREFUND_LEN: usize = 33 + 32 + 16 + 32 + 8 + 8 + 16 + 32 * SMT_DEPTH; // 8337
+// Under `compact_smt` (v2 witness-size compaction): the sparse escape witnesses (bitmap + only the
+// non-empty siblings) are variable-length, so they carry a leading 1-byte mode tag and the dispatch
+// selects by tag, not length. A checkpoint stays the fixed 644-byte SP1 proof. The client/tests must
+// emit the SAME tags (`liquid_cells_client` force_*_witness, ckb-contract-tests escape suites).
+#[cfg(feature = "compact_smt")]
+const FORCE_EXIT_TAG: u8 = 0x01;
+#[cfg(feature = "compact_smt")]
+const FORCE_REFUND_TAG: u8 = 0x02;
 
 // anchor data offsets
 const A_ROOT: usize = 0;
@@ -321,11 +338,33 @@ fn program_entry() -> i8 {
         Some(b) => b.raw_data(),
         None => return 42,
     };
-    match wb.len() {
-        WITNESS_LEN => checkpoint(&prev, &new, &wa, &wb),
-        FORCEEXIT_LEN => escape::force_exit(&prev, &new, &wb),
-        FORCEREFUND_LEN => escape::force_refund(&prev, &new, &wb),
-        _ => 42,
+    #[cfg(not(feature = "compact_smt"))]
+    {
+        match wb.len() {
+            WITNESS_LEN => checkpoint(&prev, &new, &wa, &wb),
+            FORCEEXIT_LEN => escape::force_exit(&prev, &new, &wb),
+            FORCEREFUND_LEN => escape::force_refund(&prev, &new, &wb),
+            _ => 42,
+        }
+    }
+    #[cfg(feature = "compact_smt")]
+    {
+        // Sparse escape witnesses are variable-length, so dispatch by the leading mode tag; the fixed
+        // 644-byte checkpoint is still selected by length (no sparse escape witness is 644 bytes:
+        // force-exit lengths are 90 + 32k, force-refund 162/178 + 32k, neither equals 644). The
+        // escape body is passed tag-stripped, so force_exit / force_refund parse from offset 0 exactly
+        // as in the deployed build.
+        if wb.len() == WITNESS_LEN {
+            checkpoint(&prev, &new, &wa, &wb)
+        } else if wb.is_empty() {
+            42
+        } else if wb[0] == FORCE_EXIT_TAG {
+            escape::force_exit(&prev, &new, &wb[1..])
+        } else if wb[0] == FORCE_REFUND_TAG {
+            escape::force_refund(&prev, &new, &wb[1..])
+        } else {
+            42
+        }
     }
 }
 

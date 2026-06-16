@@ -217,6 +217,64 @@ fn wrec(entries: &[(Hash, Hash)], depth: usize, siblings: &[Hash], idx: &mut usi
     Some(combine(&lh, &rh))
 }
 
+/// Sparse-encode a 256-long single-leaf proof (from [`Smt::proof`]) for the on-chain escape hatch:
+/// a 256-bit bitmap (bit `d` set iff `siblings[d]` is non-empty, MSB-first within each byte) followed
+/// by ONLY the non-empty siblings, in increasing-depth order. In the compact tree almost every
+/// sibling on a single-leaf path is `EMPTY_LEAF`, so this shrinks the ~8 KB full-sibling witness to
+/// `32 + 32·(non-empty count)` bytes (a few hundred for a realistic pool). The on-chain
+/// `escape::smt_root` (sparse arm) reverses this exactly: it walks all 256 depths, supplying
+/// `EMPTY_LEAF` where the bitmap bit is 0 and the next non-empty sibling where it is 1. The format is
+/// duplicated by the no_std contract (which cannot depend on this crate), so the
+/// `crates/ckb-contract-tests` force-exit/force-refund suites validate the round-trip.
+pub fn sparse_encode_proof(siblings: &[Hash]) -> Vec<u8> {
+    let mut bitmap = [0u8; 32];
+    let mut present: Vec<u8> = Vec::new();
+    for (d, s) in siblings.iter().enumerate() {
+        if *s != EMPTY_LEAF {
+            bitmap[d >> 3] |= 1 << (7 - (d & 7));
+            present.extend_from_slice(s);
+        }
+    }
+    let mut out = Vec::with_capacity(32 + present.len());
+    out.extend_from_slice(&bitmap);
+    out.extend_from_slice(&present);
+    out
+}
+
+/// Inverse of [`sparse_encode_proof`]: expand a `bitmap(32) ‖ present` sparse proof back to the full
+/// 256-long sibling vector (empty depths filled with `EMPTY_LEAF`). `None` if malformed (too short,
+/// `present` length not a multiple of 32, or bitmap popcount != present count). Lets a client
+/// re-verify a witness it built against a committed root; the on-chain contract decodes independently
+/// (`escape::smt_root_sparse`), and the `ckb-contract-tests` escape suites pin the two to agree.
+pub fn sparse_decode_proof(sparse: &[u8]) -> Option<Vec<Hash>> {
+    if sparse.len() < 32 {
+        return None;
+    }
+    let bitmap = &sparse[..32];
+    let present = &sparse[32..];
+    if present.len() % 32 != 0 {
+        return None;
+    }
+    let k = present.len() / 32;
+    let popcount: usize = bitmap.iter().map(|b| b.count_ones() as usize).sum();
+    if popcount != k {
+        return None;
+    }
+    let mut out = Vec::with_capacity(DEPTH);
+    let mut pi = 0usize;
+    for d in 0..DEPTH {
+        if (bitmap[d >> 3] >> (7 - (d & 7))) & 1 == 1 {
+            let mut s = [0u8; 32];
+            s.copy_from_slice(&present[pi * 32..pi * 32 + 32]);
+            out.push(s);
+            pi += 1;
+        } else {
+            out.push(EMPTY_LEAF);
+        }
+    }
+    Some(out)
+}
+
 /// Verify a proof produced by [`Smt::proof`]. `siblings[d]` is the sibling at depth
 /// `d` (top-down). This is the exact check the on-chain force-exit verifier runs once
 /// the compact scheme is deployed.

@@ -100,15 +100,22 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
         smt.root()
     };
 
-    // Force-exit payload: pubkey(33) ‖ balance(16 BE) ‖ nonce(8 BE) ‖ siblings(256·32).
+    // Force-exit payload. Deployed: pubkey(33) ‖ balance(16 BE) ‖ nonce(8 BE) ‖ siblings(256·32).
+    // Under compact_smt: a 1-byte mode tag, then the fixed fields, then the SPARSE proof (bitmap + the
+    // non-empty siblings only), exactly what the client emits and the anchor's compact arm decodes.
     let claimed_balance = if cfg.tamper_balance { balance + 1 } else { balance };
-    let mut payload = Vec::with_capacity(33 + 16 + 8 + 32 * 256);
+    let mut payload = Vec::new();
+    #[cfg(feature = "compact_smt")]
+    payload.push(0x01u8); // FORCE_EXIT_TAG
     payload.extend_from_slice(&exiter_pk);
     payload.extend_from_slice(&claimed_balance.to_be_bytes());
     payload.extend_from_slice(&leaf.nonce.to_be_bytes());
+    #[cfg(not(feature = "compact_smt"))]
     for s in &siblings {
         payload.extend_from_slice(s);
     }
+    #[cfg(feature = "compact_smt")]
+    payload.extend_from_slice(&liquid_cells_stf::smt_compact::sparse_encode_proof(&siblings));
 
     let out_root = if cfg.bad_new_root { root.to_vec() } else { new_root.to_vec() };
     let out_total = if cfg.bad_total { total } else { total - balance };

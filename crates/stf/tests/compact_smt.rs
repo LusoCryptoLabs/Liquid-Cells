@@ -220,6 +220,38 @@ fn deterministic_and_order_independent_vs_depth256_membership() {
     assert_eq!(c1.root(), r0, "clearing the leaf did not restore the root");
 }
 
+#[test]
+fn sparse_proof_round_trips_and_rejects_malformed() {
+    // The v2 witness-size compaction: a single-leaf compact proof (mostly EMPTY_LEAF siblings)
+    // sparse-encodes to a 32-byte bitmap + ONLY the non-empty siblings, and decodes back to the EXACT
+    // 256-long vector. This pins the on-the-wire format the on-chain escape hatch
+    // (`escape::smt_root_sparse`) decodes; the ckb-contract-tests escape suites pin the contract to it.
+    let mut r = R::new(0x00C0FFEE);
+    let (smt, _f, keys) = build(&mut r, 60);
+    let key = keys[17];
+    let content = smt.get_leaf_hash(&key);
+    let root = smt.root();
+    let full_sib = smt.proof(&key);
+    assert_eq!(full_sib.len(), 256);
+    assert!(cc::verify_proof(&root, &key, &content, &full_sib));
+
+    let sparse = cc::sparse_encode_proof(&full_sib);
+    assert!(sparse.len() < 8192, "sparse proof must be far smaller than the 8192-byte full form");
+    assert_eq!(sparse.len() % 32, 0, "32-byte bitmap + whole siblings");
+    let decoded = cc::sparse_decode_proof(&sparse).expect("decode a well-formed sparse proof");
+    assert_eq!(decoded, full_sib, "sparse round-trip must restore the exact 256-sibling vector");
+    assert!(cc::verify_proof(&root, &key, &content, &decoded));
+
+    // Malformed sparse blobs are rejected (the on-chain decoder applies the same three checks).
+    assert!(cc::sparse_decode_proof(&[0u8; 31]).is_none(), "too short for a bitmap");
+    let mut bad_len = sparse.clone();
+    bad_len.push(0); // `present` no longer a multiple of 32
+    assert!(cc::sparse_decode_proof(&bad_len).is_none(), "present not a multiple of 32");
+    let mut bad_pop = sparse.clone();
+    bad_pop[0] ^= 0xff; // set bitmap bits without adding siblings => popcount != present count
+    assert!(cc::sparse_decode_proof(&bad_pop).is_none(), "bitmap popcount must equal present count");
+}
+
 #[cfg(feature = "hash_count")]
 #[test]
 fn compact_reconstruction_costs_far_fewer_keccaks_than_depth256() {

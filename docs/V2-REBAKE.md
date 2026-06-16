@@ -45,10 +45,20 @@ the compact re-bake. So `escape::smt_root` now has a `#[cfg(feature = "compact_s
 verify against the compact `smt_root`). These halves are off-chain-verifier + witness, NOT the guest,
 so they are **vkey-neutral**; they redeploy with the anchor at the re-bake. Validated by running the
 force-exit/force-refund suites under `--features compact_smt` (the test tree builds compact too) and
-under `--features "htlc_keyspace compact_smt"` (both deployed-format changes compose). NOTE: the
-single-leaf escape witness is still 256 siblings (mostly empty under compact); compacting that *size*
-(a sparse bitmap + only the non-empty siblings, ~8KB -> a few hundred bytes) is a follow-on that also
-re-shapes the witness-length dispatch, staged separately.
+under `--features "htlc_keyspace compact_smt"` (both deployed-format changes compose).
+
+The single-leaf escape witness is also SIZE-compacted under `compact_smt` (v2 witness-size
+compaction): instead of 256 full siblings (~8 KB, almost all `EMPTY_LEAF` zeros under the compact
+tree) it carries a 32-byte bitmap + ONLY the non-empty siblings (~log2(pool) of them, so ~a few
+hundred bytes, roughly 25-35x smaller). Because that makes the escape witnesses variable-length, they
+are dispatched by a leading 1-byte mode tag (`FORCE_EXIT_TAG` 0x01 / `FORCE_REFUND_TAG` 0x02) instead
+of by length; a checkpoint stays the fixed 644-byte SP1 proof (no sparse escape witness is 644 bytes).
+The sparse format is shared via `smt_compact::sparse_encode_proof` / `sparse_decode_proof` (client +
+ckb-contract-tests) and decoded independently on-chain by `escape::smt_root_sparse`; the
+forceexit/forcerefund suites (under `compact_smt`) plus an stf `sparse_proof_round_trips_and_rejects_malformed`
+unit test pin the encode/decode to agree, and the deployed length-dispatch red-team (ATTACK H) is
+gated to the deployed build (tag-dispatch replaces it). The client/tests/contract all hardcode the
+same two tag bytes (validated end-to-end by the escape suites).
 
 ## `ecrecover`: primitive staged, integration is a re-bake-time change
 

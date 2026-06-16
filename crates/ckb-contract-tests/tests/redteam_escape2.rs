@@ -100,13 +100,18 @@ fn build_refund(
 ) -> (Context, TransactionView) {
     let bin: Bytes = std::fs::read(CONTRACT_BIN).expect("build first").into();
     let mut payload = Vec::new();
+    #[cfg(feature = "compact_smt")]
+    payload.push(0x02u8); // FORCE_REFUND_TAG
     payload.extend_from_slice(&s.alice_pk);
     payload.extend_from_slice(&s.bob_key);
     payload.extend_from_slice(&s.amount.to_be_bytes());
     payload.extend_from_slice(&s.hashlock);
     payload.extend_from_slice(&s.htlc_timeout.to_be_bytes());
     payload.extend_from_slice(&s.lock_nonce.to_be_bytes());
+    #[cfg(not(feature = "compact_smt"))]
     for sib in &s.siblings { payload.extend_from_slice(sib); }
+    #[cfg(feature = "compact_smt")]
+    payload.extend_from_slice(&liquid_cells_stf::smt_compact::sparse_encode_proof(&s.siblings));
 
     let prev_anchor = anchor(prev_root, s.seq, s.total, s.fee_acc, LAST_EPOCH);
     let new_anchor = anchor(out_root, s.seq, out_total, s.fee_acc, LAST_EPOCH);
@@ -223,13 +228,18 @@ fn attack_refund_wrong_pool_args_rejected() {
     // Rebuild with 32-byte type args != keccak("sp1-pool"); contract derives pool_id from args.
     let bin: Bytes = std::fs::read(CONTRACT_BIN).expect("build first").into();
     let mut payload = Vec::new();
+    #[cfg(feature = "compact_smt")]
+    payload.push(0x02u8); // FORCE_REFUND_TAG
     payload.extend_from_slice(&s.alice_pk);
     payload.extend_from_slice(&s.bob_key);
     payload.extend_from_slice(&s.amount.to_be_bytes());
     payload.extend_from_slice(&s.hashlock);
     payload.extend_from_slice(&s.htlc_timeout.to_be_bytes());
     payload.extend_from_slice(&s.lock_nonce.to_be_bytes());
+    #[cfg(not(feature = "compact_smt"))]
     for sib in &s.siblings { payload.extend_from_slice(sib); }
+    #[cfg(feature = "compact_smt")]
+    payload.extend_from_slice(&liquid_cells_stf::smt_compact::sparse_encode_proof(&s.siblings));
 
     let prev_anchor = anchor(&s.root.to_vec(), s.seq, s.total, s.fee_acc, LAST_EPOCH);
     let new_anchor = anchor(&s.new_root.to_vec(), s.seq, s.total - s.amount, s.fee_acc, LAST_EPOCH);

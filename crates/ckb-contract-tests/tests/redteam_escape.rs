@@ -126,13 +126,20 @@ fn build_exit(
 ) -> (Context, TransactionView) {
     let bin: Bytes = std::fs::read(CONTRACT_BIN).expect("build crates/ckb-contract first").into();
 
-    let mut payload = Vec::with_capacity(33 + 16 + 8 + 32 * 256);
+    // Deployed: pubkey ‖ balance ‖ nonce ‖ 256 full siblings. Under compact_smt: FORCE_EXIT_TAG, the
+    // fixed fields, then the sparse proof (what the anchor's compact arm decodes).
+    let mut payload = Vec::new();
+    #[cfg(feature = "compact_smt")]
+    payload.push(0x01u8); // FORCE_EXIT_TAG
     payload.extend_from_slice(wit_pk);
     payload.extend_from_slice(&wit_balance.to_be_bytes());
     payload.extend_from_slice(&wit_nonce.to_be_bytes());
+    #[cfg(not(feature = "compact_smt"))]
     for sib in siblings {
         payload.extend_from_slice(sib);
     }
+    #[cfg(feature = "compact_smt")]
+    payload.extend_from_slice(&liquid_cells_stf::smt_compact::sparse_encode_proof(siblings));
 
     let prev_anchor = anchor(&s.root, s.seq, s.total, s.fee_acc, LAST_EPOCH);
     let new_anchor = anchor(out_root, s.seq, out_total, s.fee_acc, LAST_EPOCH);
@@ -370,11 +377,15 @@ fn attack_replay_against_nullified_root_rejected() {
         "replaying an exit against the nullified root must reject (leaf no longer holds balance)");
 }
 
-// ATTACK H: MODE CONFUSION. A force-exit witness padded to the checkpoint length (644) or
-// the force-refund length (8321) would dispatch to the wrong handler. Build a force-exit
-// payload but truncate/pad to FORCEREFUND_LEN (8321) and see it gets routed to force_refund
-// (which will fail its own checks) rather than force_exit. This confirms length-based dispatch
-// can't be abused to skip checks. We pad to 8321 and expect reject.
+// ATTACK H: MODE CONFUSION via LENGTH. A force-exit witness padded to the checkpoint length (644) or
+// the force-refund length (8321) would dispatch to the wrong handler. Build a force-exit payload but
+// pad to FORCEREFUND_LEN (8321) and see it gets routed to force_refund (which fails its own checks)
+// rather than force_exit. This confirms LENGTH-based dispatch can't be abused to skip checks.
+// Deployed-only: under compact_smt the escape modes are dispatched by a 1-byte tag (not length), so a
+// pad is just a malformed sparse proof; a wrong tag routes to the other handler, whose own inclusion
+// check against the committed root then rejects the misparsed body. The compact valid-routing is
+// pinned by the forceexit/forcerefund suites running under --features compact_smt.
+#[cfg(not(feature = "compact_smt"))]
 #[test]
 fn attack_length_pad_to_refund_mode_rejected() {
     let s = scenario();
@@ -428,10 +439,15 @@ fn attack_capture_via_force_exit_rejected() {
     let exit_lock = secp_lock(&blake160(&s.exiter_pk));
     let bin: Bytes = std::fs::read(CONTRACT_BIN).expect("build first").into();
     let mut payload = Vec::new();
+    #[cfg(feature = "compact_smt")]
+    payload.push(0x01u8); // FORCE_EXIT_TAG
     payload.extend_from_slice(&s.exiter_pk);
     payload.extend_from_slice(&s.balance.to_be_bytes());
     payload.extend_from_slice(&s.nonce.to_be_bytes());
+    #[cfg(not(feature = "compact_smt"))]
     for sib in &s.siblings { payload.extend_from_slice(sib); }
+    #[cfg(feature = "compact_smt")]
+    payload.extend_from_slice(&liquid_cells_stf::smt_compact::sparse_encode_proof(&s.siblings));
     let prev_anchor = anchor(&s.root, s.seq, s.total, s.fee_acc, LAST_EPOCH);
     let new_anchor = anchor(&s.new_root.to_vec(), s.seq, s.total - s.balance, s.fee_acc, LAST_EPOCH);
     let mut ctx = Context::default();

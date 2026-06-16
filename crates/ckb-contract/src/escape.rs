@@ -26,23 +26,15 @@ fn leaf_hash(balance: u128, nonce: u64) -> [u8; 32] {
     keccak(&enc)
 }
 
-/// Reconstruct the SMT root from a single-leaf inclusion path, bottom-up, the exact walk
-/// `liquid_cells_stf::smt::verify_proof` (deployed) / `smt_compact::verify_proof` (staged) performs.
-/// `siblings` is 256 × 32 bytes top-down.
-///
-/// The deployed depth-256 keccak tree places the leaf CONTENT at the bottom directly and hashes an
-/// internal node as `keccak(left ‖ right)`. The staged `compact_smt` tree (the v2 re-bake bundle)
-/// changes both: the bottom node binds the key (`keccak(0x00 ‖ key ‖ content)`) so a pass-through
-/// collapse cannot relocate it, and a node with one empty child IS the other child (no hash), else
-/// `keccak(0x01 ‖ left ‖ right)`. The on-chain escape hatch MUST match whichever scheme produced the
-/// committed root, or a force-exit / force-refund proof built from the compact committed root would
-/// not verify here and the escape hatch would brick under the compact re-bake. Gated statement-level,
-/// so the deployed (feature-off) path is byte-identical.
+/// Reconstruct the DEPLOYED depth-256 keccak SMT root from a single-leaf inclusion path, bottom-up,
+/// the exact walk `liquid_cells_stf::smt::verify_proof` performs. `siblings` is 256 × 32 bytes
+/// top-down. The leaf CONTENT sits at the bottom directly and an internal node is `keccak(left ‖
+/// right)`. Under `compact_smt` the committed root uses the compact (key-binding, pass-through) scheme
+/// and the witness is sparse, so the escape hatch reconstructs via [`smt_root_sparse`] instead and
+/// this deployed walk is unused, hence gated off (the off build is byte-identical to today's deploy).
+#[cfg(not(feature = "compact_smt"))]
 fn smt_root(key: &[u8; 32], leaf: &[u8; 32], siblings: &[u8]) -> [u8; 32] {
-    #[cfg(not(feature = "compact_smt"))]
     let mut cur = *leaf;
-    #[cfg(feature = "compact_smt")]
-    let mut cur = compact_leaf_node(key, leaf);
     let mut depth = SMT_DEPTH;
     while depth > 0 {
         depth -= 1;
@@ -55,14 +47,7 @@ fn smt_root(key: &[u8; 32], leaf: &[u8; 32], siblings: &[u8]) -> [u8; 32] {
             buf[..32].copy_from_slice(sib);
             buf[32..].copy_from_slice(&cur);
         }
-        #[cfg(not(feature = "compact_smt"))]
-        {
-            cur = keccak(&buf);
-        }
-        #[cfg(feature = "compact_smt")]
-        {
-            cur = compact_combine(&buf);
-        }
+        cur = keccak(&buf);
     }
     cur
 }
@@ -100,6 +85,79 @@ fn compact_combine(buf: &[u8; 64]) -> [u8; 32] {
     tagged[0] = 0x01;
     tagged[1..].copy_from_slice(buf);
     keccak(&tagged)
+}
+
+/// Reconstruct the compact-SMT root from a SPARSE single-leaf proof (the v2 witness-size compaction):
+/// a 256-bit `bitmap` (bit `d` set iff the depth-`d` sibling is non-empty, MSB-first within each byte)
+/// and `present` = ONLY the non-empty siblings, in increasing-depth order. This is the
+/// `liquid_cells_stf::smt_compact::sparse_encode_proof` format. Walks all 256 depths bottom-up,
+/// supplying `EMPTY_LEAF` where the bitmap bit is 0 and consuming `present` from the back (the first
+/// set bit going down is the deepest, hence the last-listed). `None` on a malformed proof (present not
+/// a multiple of 32, or bitmap popcount != present count), which the caller maps to a rejection code.
+#[cfg(feature = "compact_smt")]
+fn smt_root_sparse(key: &[u8; 32], leaf: &[u8; 32], bitmap: &[u8; 32], present: &[u8]) -> Option<[u8; 32]> {
+    if present.len() % 32 != 0 {
+        return None;
+    }
+    let k = present.len() / 32;
+    let mut popcount = 0usize;
+    for &byte in bitmap.iter() {
+        popcount += byte.count_ones() as usize;
+    }
+    if popcount != k {
+        return None; // the bitmap and the present-list must agree on the non-empty count
+    }
+    let mut pi = k; // consume `present` from the back
+    let mut cur = compact_leaf_node(key, leaf);
+    let mut depth = SMT_DEPTH;
+    while depth > 0 {
+        depth -= 1;
+        let mut sib = [0u8; 32];
+        if (bitmap[depth >> 3] >> (7 - (depth & 7))) & 1 == 1 {
+            if pi == 0 {
+                return None; // more set bits than siblings (defensive; popcount guards this)
+            }
+            pi -= 1;
+            sib.copy_from_slice(&present[pi * 32..pi * 32 + 32]);
+        }
+        let mut buf = [0u8; 64];
+        if bit(key, depth) == 0 {
+            buf[..32].copy_from_slice(&cur);
+            buf[32..].copy_from_slice(&sib);
+        } else {
+            buf[..32].copy_from_slice(&sib);
+            buf[32..].copy_from_slice(&cur);
+        }
+        cur = compact_combine(&buf);
+    }
+    if pi != 0 {
+        return None; // leftover siblings => malformed
+    }
+    Some(cur)
+}
+
+/// True iff reconstructing the SMT root from the witness `sib_region` for `leaf` at `key` equals the
+/// 32-byte committed `expected_root`. `sib_region` is the witness's sibling area: under the deployed
+/// tree it is exactly 256·32 full siblings (walked by `smt_root`); under `compact_smt` it is the
+/// sparse `bitmap(32) ‖ present` form (expanded by `smt_root_sparse`). Centralizes the deployed/compact
+/// split so both escape modes share one inclusion check.
+fn root_matches(key: &[u8; 32], leaf: &[u8; 32], sib_region: &[u8], expected_root: &[u8]) -> bool {
+    #[cfg(not(feature = "compact_smt"))]
+    {
+        &smt_root(key, leaf, sib_region)[..] == expected_root
+    }
+    #[cfg(feature = "compact_smt")]
+    {
+        if sib_region.len() < 32 {
+            return false;
+        }
+        let mut bitmap = [0u8; 32];
+        bitmap.copy_from_slice(&sib_region[..32]);
+        match smt_root_sparse(key, leaf, &bitmap, &sib_region[32..]) {
+            Some(r) => &r[..] == expected_root,
+            None => false,
+        }
+    }
 }
 
 /// blake160(data) = first 20 bytes of CKB's default blake2b-256, the secp lock's args.
@@ -144,10 +202,18 @@ fn has_exit_output(b160: &[u8; 20], amount: u64) -> bool {
 /// forced to the owner's own secp lock, the leaf is nullified (balance→0, nonce kept), and
 /// the anchor capacity/total drop by exactly the exited balance.
 pub(crate) fn force_exit(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
+    // Under compact_smt the witness is sparse (variable-length) and dispatched by a mode tag, not by
+    // length, so guard the minimum (fixed fields + the 32-byte bitmap) before slicing. Deployed: the
+    // witness length is exactly FORCEEXIT_LEN (the dispatch guarantees it), so no guard is needed.
+    #[cfg(feature = "compact_smt")]
+    if wb.len() < 57 + 32 {
+        return 60;
+    }
     let pubkey = &wb[0..33];
     let balance = rd_u128(wb, 33);
     let nonce = rd_u64(wb, 49);
-    let siblings = &wb[57..57 + 32 * SMT_DEPTH];
+    // Sibling area: the full 256·32 deployed form, or the sparse bitmap+present under compact_smt.
+    let sib_region = &wb[57..];
     if balance == 0 {
         return 60; // nothing to exit
     }
@@ -158,12 +224,12 @@ pub(crate) fn force_exit(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
     let key = keccak(pubkey);
     // Inclusion of {balance, nonce} against the committed (input) root.
     let leaf = leaf_hash(balance, nonce);
-    if smt_root(&key, &leaf, siblings)[..] != prev[A_ROOT..A_ROOT + 32] {
+    if !root_matches(&key, &leaf, sib_region, &prev[A_ROOT..A_ROOT + 32]) {
         return 62;
     }
     // Nullified root: balance→0, nonce kept (replay-safe), same siblings ⇒ output root.
     let new_leaf = leaf_hash(0, nonce);
-    if smt_root(&key, &new_leaf, siblings)[..] != new[A_ROOT..A_ROOT + 32] {
+    if !root_matches(&key, &new_leaf, sib_region, &new[A_ROOT..A_ROOT + 32]) {
         return 63;
     }
 
@@ -277,7 +343,19 @@ fn htlc_id(
 /// live. See docs/EGRESS.md.
 pub(crate) fn force_refund(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
     // sender_pubkey(33) ‖ receiver_key(32) ‖ amount(16) ‖ hashlock(32) ‖ timeout(8) ‖
-    // lock_nonce(8) ‖ siblings(256·32)
+    // lock_nonce(8) ‖ [actual_balance(16) under htlc_keyspace] ‖ siblings(256·32 deployed / sparse compact)
+    // Under compact_smt the witness is sparse (variable-length) and tag-dispatched, so guard the
+    // minimum (fixed prefix + the 32-byte bitmap) before slicing. Deployed length is FORCEREFUND_LEN.
+    #[cfg(feature = "compact_smt")]
+    {
+        #[cfg(not(feature = "htlc_keyspace"))]
+        let min = 129 + 32;
+        #[cfg(feature = "htlc_keyspace")]
+        let min = 145 + 32;
+        if wb.len() < min {
+            return 80;
+        }
+    }
     let sender_pubkey = &wb[0..33];
     let receiver_key = &wb[33..65];
     let amount = rd_u128(wb, 65);
@@ -289,15 +367,17 @@ pub(crate) fn force_refund(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
     // so the witness carries the actual committed balance and the on-chain refund reconstructs and
     // sweeps it, keeping the escape hatch available for a griefed escrow. The SMT inclusion check
     // below binds the witnessed balance to the committed root, so a lie about it cannot verify.
+    // `siblings` is the witness's sibling area from the field offset onward: exactly 256·32 full
+    // siblings when deployed, or the sparse bitmap+present form under compact_smt (root_matches splits).
     #[cfg(not(feature = "htlc_keyspace"))]
-    let (payout, siblings) = (amount, &wb[129..129 + 32 * SMT_DEPTH]);
+    let (payout, siblings) = (amount, &wb[129..]);
     #[cfg(feature = "htlc_keyspace")]
     let (payout, siblings) = {
         let actual = rd_u128(wb, 129);
         if actual < amount {
             return 80; // a real escrow holds at least the agreed amount
         }
-        (actual, &wb[145..145 + 32 * SMT_DEPTH])
+        (actual, &wb[145..])
     };
 
     if amount == 0 {
@@ -319,14 +399,14 @@ pub(crate) fn force_refund(prev: &[u8], new: &[u8], wb: &[u8]) -> i8 {
     // Inclusion of the escrow leaf {balance = payout, nonce = 0} at `id` vs the committed root.
     // (`payout == amount` when deployed; the actual committed balance under `htlc_keyspace`.)
     let leaf = leaf_hash(payout, 0);
-    if smt_root(&id, &leaf, siblings)[..] != prev[A_ROOT..A_ROOT + 32] {
+    if !root_matches(&id, &leaf, siblings, &prev[A_ROOT..A_ROOT + 32]) {
         return 82;
     }
     // Nullified: the escrow → empty {0, 0}; same siblings ⇒ the output root. A returning
     // operator that re-syncs to this root sees the escrow consumed (no double-refund), and
     // the same `htlc_id` cannot recur (it binds the sender's account nonce at lock time).
     let new_leaf = leaf_hash(0, 0);
-    if smt_root(&id, &new_leaf, siblings)[..] != new[A_ROOT..A_ROOT + 32] {
+    if !root_matches(&id, &new_leaf, siblings, &new[A_ROOT..A_ROOT + 32]) {
         return 83;
     }
 
