@@ -188,6 +188,7 @@ liquid-cells/
     ARCHITECTURE.md      # the full trustless design
     COMPARISON-FIBER.md  # honest Liquid Cells vs Fiber comparison (trust/liveness/exit/liquidity)
     REPRODUCE-EXIT.md    # run lc-exit yourself: rebuild a balance + exit proof from L1 alone
+    OPERATING.md         # operator runbook: auto-restart, host-death failover, recovery, monitoring
     THREAT-MODEL.md      # red-team findings -> mitigations
     INTEGRATION-GENERIC.md # START HERE to reuse: the 5 primitives + recipe cookbook + invariants
     INTEGRATION-TIPPING.md # one worked instance of the generic guide (deposit/split-payment/exit)
