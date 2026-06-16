@@ -1,10 +1,10 @@
-# Liquid Cells: Technical Specification (working draft)
+# Liquid Cells: Technical Specification
 
-> **Status: working draft / scaffold.** Liquid Cells is **testnet-only, unaudited** software with no
-> real value at stake (deployed on the Nervos **Pudge** testnet). This document consolidates the
-> per-topic docs into one spec. Sections marked _expand_ are stubs that point at the authoritative
-> detail doc; the normative constants, trust model, data-availability, and non-custody sections are
-> complete and verified against the code. Developed by **Luso Crypto Labs**.
+> **Status:** consolidated reference for the **live Pudge testnet** system; **testnet-only,
+> unaudited**, no real value at stake. It unifies the per-topic docs into one spec: the constants,
+> trust model, data-availability, and non-custody sections are normative and verified against the
+> code, and sections marked _expand_ defer their full derivation to the linked authoritative doc.
+> Developed by **Luso Crypto Labs**.
 
 ## 0. How to read this
 
@@ -186,6 +186,6 @@ See [PRIOR-ART.md](PRIOR-ART.md) and the Fiber comparison in
 
 ---
 
-_This is a working draft. Open items: full STF per-op semantics (§4), the on-chain verification
-binding in detail (§5), and the sequencing/capture-proof argument (§8) still defer to their detail
-docs and should be promoted into normative text here._
+_Full derivations for the STF per-op semantics (§4), the on-chain verification binding (§5), and the
+sequencing/capture-proof argument (§8) live in their linked detail docs (ARCHITECTURE.md,
+ONCHAIN-VERIFY.md, SEQUENCING.md). This spec is the consolidated, normative index over them._

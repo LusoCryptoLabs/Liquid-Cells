@@ -97,6 +97,6 @@ for everyday progress; archival DA retention for recovery. Full list in
 
 ---
 
-_Working draft. The four-model table and the hub-symmetry argument are the load-bearing parts and are
-intended to stay; expand with concrete numbers (per-tip cost, snapshot/reconstruction cost) once the
-benchmark and a Fiber-side cost reference exist._
+_Open extension: add concrete numbers (per-tip cost, snapshot/reconstruction cost) once the benchmark
+and a Fiber-side cost reference exist. The four-model table and the hub-symmetry argument are the
+load-bearing parts and stay as-is._

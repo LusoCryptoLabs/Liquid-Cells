@@ -1,6 +1,6 @@
 # Operating a Liquid Cells pool (operator runbook)
 
-> **Status: working draft.** Runbook for running a pool's **operator** (sequencer + prover): auto
+> **Status:** runbook for running a pool's **operator** (sequencer + prover): auto
 > restart, crash/host loss recovery, failover, monitoring. Markers: **[built]** = a mechanism the
 > protocol/code provides; **[ops]** = standard infra you configure; **[roadmap]** = automation not yet
 > in tree. Liquid Cells is testnet-only and unaudited.

@@ -81,11 +81,11 @@ code cell, re-verify on-chain) is GATED on proving + on-chain deploy, and best d
 
 | Doc | State |
 |---|---|
-| SPEC.md | working draft (has `_expand_` stubs to promote) |
-| COMPARISON-FIBER.md | working draft (load-bearing parts final) |
-| OPERATING.md | working draft |
-| FEES.md | working draft |
-| V2-REBAKE.md | working draft |
+| SPEC.md | final (consolidated index; deep detail in linked docs) |
+| COMPARISON-FIBER.md | final |
+| OPERATING.md | final |
+| FEES.md | working draft (owned by the protocol docs) |
+| V2-REBAKE.md | working draft (owned by the protocol docs) |
 
 ## 6. Critical path to mainnet (the short version)
 
