@@ -16,7 +16,7 @@
 | Item | Status | Who can close |
 |---|---|---|
 | **External security audit** | GATED | third-party firm + budget (out of our hands) |
-| **C-1: upgrade-key lockdown** (adopt the built `liquid-cells-upgrade-lock` with `delay_epochs > 180` + a multisig governance lock) | GATED | operator-authorized redeploy of the live code cell's lock on-chain. The lock is **built + tested**; only adoption remains. See [UPGRADE-TIMELOCK.md](UPGRADE-TIMELOCK.md). |
+| **C-1: upgrade-key lockdown** (adopt the built `liquid-cells-upgrade-lock` with `delay_epochs > 180` + a multisig governance lock) | GATED | operator-authorized redeploy of the live code cell's lock on-chain. The lock is **built + tested** (and now enforces `delay > 180`, code 89); the governance multisig is **spec'd** ([GOVERNANCE-MULTISIG.md](GOVERNANCE-MULTISIG.md), solo 2-of-3) but the **key ceremony + adoption remain**. Solo custody = key theft/loss hardening, NOT user trust-minimization. See [UPGRADE-TIMELOCK.md](UPGRADE-TIMELOCK.md). |
 
 Nothing below makes the system value-ready until these two land.
 

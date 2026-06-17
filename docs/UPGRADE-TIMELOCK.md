@@ -37,8 +37,12 @@ Why it's sound (tested in `crates/ckb-contract-tests/tests/upgrade_lock.rs`):
 Adopt it by redeploying the anchor **code cell** with `lock = liquid-cells-upgrade-lock` (args =
 `governance_lock_hash ‖ delay`), keeping the same type-id (so every pool's `codeHash` is unchanged and
 no pool migration is needed). For the strongest story, set `governance_lock_hash` to a **multisig**;
-the timelock supplies the user-exit-window, the multisig removes single-key control. Pick `delay`
-comfortably above the force-exit timeout so users always have time to exit within the window.
+the timelock supplies the user-exit-window, the multisig removes single-key control. The concrete
+construction (the CKB `secp256k1_blake160_multisig_all` lock + its `S|R|M|N|pkh` script, `args =
+blake160(script)`, `governance_lock_hash = blake2b256(packed Script)`), a solo-operator 2-of-3 custody
+model, the key ceremony, and the announce->wait->execute runbook are specified in
+[GOVERNANCE-MULTISIG.md](GOVERNANCE-MULTISIG.md). Pick `delay` comfortably above the force-exit timeout
+(the lock now enforces `delay > 180`, code 89) so users always have time to exit within the window.
 
 ## Honest scope
 - This is implemented + adversarially tested in-repo; **deploying it is a separate, operator-authorized
