@@ -29,11 +29,11 @@ Nothing below makes the system value-ready until these two land.
 | H-2 | High | Escape modes steal unswept deposits | **STAGED** (canonical-shape escape fix + force-refund co-fix) |
 | M-1 | Medium | Unauth `/submit` deposit mint | **DONE** (deposits off `/submit`; operator-only ingest) |
 | M-2 | Medium | Escape-mode no input/output bound | **STAGED** (same canonical-shape fix as H-2) |
-| M-3 | Medium | Zero-fee floor disabled by default | **OPEN** (needs a calibrated default `FeePolicy`; economic call) |
+| M-3 | Medium | Zero-fee floor disabled by default | **DONE** off-chain (production binary defaults `--min-fee 1`, enforced at `/submit`); provable backstop is the staged `min_fee` (re-bake) |
 | L-1/L-2 | Low | Legacy empty-args pool isolation | accepted residual; type-id pools (live) mitigate |
 | L-3 | Low | Sub-61-CKB dust not unilaterally exitable | inherent cell-model limit; cooperative Fiber egress mitigates |
 | L-4 | Low | Swap timeout overflow | **DONE** (`saturating_add` reject-on-overflow) |
-| L-5 | Low | Service DoS (body/mempool/loop) | **partly DONE** (body cap + 413); mempool bound + read timeout **OPEN** (demo-grade) |
+| L-5 | Low | Service DoS (body/mempool/loop) | **DONE** (body cap + 413 + Content-Length pre-check; mempool bound -> 429); per-connection slow-loris read = production async front, not this demo |
 | I-1..I-4 | Info | Sound-core review + hardening notes | accepted / defense-in-depth |
 
 > The assessment's "short path to audit" = land H-1 and H-2/M-2 (staged), M-1 (done), L-5 service
@@ -49,7 +49,7 @@ affect the live contract until the re-bake. See [V2-REBAKE.md](V2-REBAKE.md).
 | `htlc_keyspace` | H-1 fix (escrow/account keyspace separation) | STAGED |
 | canonical escape shape | H-2/M-2 fix (no input/output siphon) | STAGED |
 | `htlc_sha256` | Fiber-compatible hashlock (unlocks live mainnet dust egress) | STAGED |
-| `compact_smt` | ~35x fewer proving keccaks | STAGED |
+| `compact_smt` | ~35x fewer proving keccaks; + escape-hatch correctness arm + sparse witness (~8KB -> a few hundred bytes) | STAGED (all 3 halves: guest tree + on-chain `escape::smt_root` + client) |
 | `ecrecover` | cycle save + drop pubkey from witness | STAGED |
 | `min_fee` | in-proof fee floor (provable M-3 backstop) | STAGED |
 | `da_varint` | ~36% smaller DA footprint | STAGED |
@@ -57,6 +57,18 @@ affect the live contract until the re-bake. See [V2-REBAKE.md](V2-REBAKE.md).
 
 **To close:** the coordinated re-bake (rebuild guest, regenerate vkey, regenerate proofs, redeploy
 code cell, re-verify on-chain) is GATED on proving + on-chain deploy, and best done with the audit.
+Two bundle items are staged-but-deliberately-finished-at-the-re-bake (the re-bake re-bakes the vkey
+anyway): the `ecrecover` INTEGRATION (the primitive is staged; the pubkey-free `*_msg` rewiring lands
+at re-bake) and the `min_fee` ACTIVATION (finalize the floor value + apply it to the remaining
+zero-fee client APIs). See [V2-REBAKE.md](V2-REBAKE.md).
+
+**v2-bundle internal audit (2026-06):** a focused adversarial pass over the staged surface confirmed
+the core sound and fixed 3 findings (all vkey-neutral, see [AUDIT-READINESS.md](AUDIT-READINESS.md) §6):
+V2-1 the sequencer resilient-seal mirror hashed HTLC claims with keccak under `htlc_sha256` (would
+drop valid sha256 claims at the re-bake) -> gated to match the STF; V2-2 the verify-vkey guard was
+line-oriented; V2-3 a client force-refund-witness ergonomics gap. It also surfaced and closed a real
+gap: `compact_smt` had been staged only in the guest, so the on-chain escape hatch would have bricked
+at the re-bake -> the `escape::smt_root` compact arm + client forwarding now close it.
 
 ## 3. Off-chain hardening (no re-bake)
 
@@ -64,9 +76,9 @@ code cell, re-verify on-chain) is GATED on proving + on-chain deploy, and best d
 |---|---|---|
 | M-1 deposit ingest | DONE | operator-only path + opt-in faucet |
 | L-4 swap overflow | DONE | saturating_add |
-| L-5 body cap / 413 | DONE | giant-body OOM closed |
-| L-5 mempool bound (429) + read timeout | OPEN | small, safe; the service is demo-grade and single-threaded by design |
-| M-3 default fee floor | OPEN | set a calibrated `FeePolicy` in the production driver (not in `genesis()`, which tests rely on); document the floor |
+| L-5 body cap / 413 | DONE | giant-body OOM closed; + a Content-Length pre-check rejects an over-cap declared body before reading it |
+| L-5 mempool bound (429) | DONE | `Service::submit` caps pending intents at `MAX_PENDING` (10k); spam past it returns 429. Per-connection slow-loris read is `tiny_http`'s connection layer (a production async front, not this demo); the controllable surface (body + mempool) is now bounded |
+| M-3 default fee floor | DONE | the production binary defaults to a non-zero fee-admission floor (`--min-fee`, default 1), enforced at `/submit` admission (underpayer rejected with 402); `genesis()` stays at 0 for tests. Matches the staged provable `min_fee`. Operator raises it to cover real per-leaf cost |
 
 ## 4. Roadmap remainder (improvements, not gates)
 
@@ -92,7 +104,11 @@ code cell, re-verify on-chain) is GATED on proving + on-chain deploy, and best d
 1. **Land the v2 re-bake** (section 2): closes H-1, H-2/M-2 on-chain and unlocks live Fiber dust egress.
 2. **External audit** (gate 0) of the re-baked contract + STF + verifier.
 3. **C-1 upgrade-key lockdown** (gate 0): adopt the timelock + multisig before any value.
-4. **Close the OPEN off-chain items** (M-3 default floor, L-5 mempool bound) before networked exposure.
-5. Operationalize HA + a default fee floor; then value-ready.
+4. ~~Close the OPEN off-chain items (M-3 default floor, L-5 mempool bound)~~ **DONE** (section 3).
+5. Operationalize HA; then value-ready.
 
 Everything else (Tier D scale, ~1-min proving) is post-launch optimization and does not gate mainnet.
+
+**Net: with M-3 and L-5 closed, there is no remaining off-chain engineering closeable without the
+audit or an on-chain redeploy. The path to value is now exactly the two gates (external audit + C-1
+lockdown) plus the one coordinated v2 re-bake, none of which can be done locally.**

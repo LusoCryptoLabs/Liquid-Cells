@@ -23,6 +23,13 @@ use tiny_http::{Header, Method, Response, Server};
 /// body OOM-ing the single-process service.
 const MAX_BODY: u64 = 64 * 1024;
 
+/// Default operator fee-admission floor (M-3): reject `/submit` intents paying below this. `1` rejects
+/// only literal zero-fee griefing (the disabled-by-default finding) while admitting any paying intent,
+/// and it matches the staged provable floor `liquid_cells_stf::MIN_FEE_PER_LEAF`. An operator raises
+/// it with `--min-fee N` to cover the real per-leaf DA + proving + L1 cost, or `--min-fee 0` to
+/// disable. This is the LIVE economic backstop until the `min_fee` re-bake makes the floor unforgeable.
+const DEFAULT_MIN_FEE: u128 = 1;
+
 fn arg(name: &str) -> Option<String> {
     let a: Vec<String> = std::env::args().collect();
     a.iter().position(|x| x == name).and_then(|i| a.get(i + 1).cloned())
@@ -68,11 +75,18 @@ fn main() {
     // Deposits are operator-authorized (an on-chain deposit cell), never client-submittable. The
     // /admin/deposit faucet endpoint is exposed only with this explicit opt-in (off by default).
     let allow_deposits = flag("--allow-deposits");
+    // M-3: the production driver defaults to a non-zero fee-admission floor (genesis() itself stays at
+    // 0 for tests). `--min-fee N` overrides it; 0 disables.
+    let min_fee: u128 = arg("--min-fee").and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_MIN_FEE);
 
     let mut svc = Service::genesis(pool_id, chain_id);
+    svc.set_fee_floor(min_fee);
     let server = Server::http(format!("0.0.0.0:{port}")).unwrap_or_else(|e| panic!("bind :{port}: {e}"));
     println!("lc-sequencer-service on http://127.0.0.1:{port}");
-    println!("pool_id 0x{}  chain_id 0x{:x}  admin_deposits={allow_deposits}", hex::encode(pool_id), chain_id);
+    println!(
+        "pool_id 0x{}  chain_id 0x{:x}  admin_deposits={allow_deposits}  min_fee={min_fee}  max_pending={}",
+        hex::encode(pool_id), chain_id, liquid_cells_sequencer_service::MAX_PENDING
+    );
 
     let header = || Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
 
@@ -80,6 +94,20 @@ fn main() {
         let method = req.method().clone();
         let url = req.url().to_string();
         let path = url.split('?').next().unwrap_or("").to_string();
+
+        // L-5: reject an over-cap declared Content-Length BEFORE reading the body, so a giant body is
+        // refused without consuming it. (The read below is still capped in case the header lies.)
+        let declared = req
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("Content-Length"))
+            .and_then(|h| h.value.as_str().parse::<u64>().ok());
+        if declared.is_some_and(|n| n > MAX_BODY) {
+            println!("{method} {path} -> 413 (declared body too large)");
+            let payload = json!({ "error": "request body too large" }).to_string();
+            let _ = req.respond(Response::from_string(payload).with_status_code(413).with_header(header()));
+            continue;
+        }
 
         // Read the body with a hard cap so a giant body cannot OOM the process.
         let mut body = String::new();
@@ -117,7 +145,17 @@ fn main() {
         let (code, payload) = match &result {
             Ok(v) => (200, v.to_string()),
             Err(e) => {
-                let code = if e.starts_with("no route") { 404 } else if e.starts_with("forbidden") { 403 } else { 400 };
+                let code = if e.starts_with("no route") {
+                    404
+                } else if e.starts_with("forbidden") {
+                    403
+                } else if e.starts_with("overloaded") {
+                    429 // L-5: mempool full
+                } else if e.starts_with("underpaid") {
+                    402 // M-3: fee below the admission floor
+                } else {
+                    400
+                };
                 (code, json!({ "error": e }).to_string())
             }
         };

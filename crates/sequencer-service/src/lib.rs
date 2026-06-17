@@ -12,9 +12,15 @@
 //! submit -> seal -> query -> reconstruct flow is unit-tested with no socket.
 
 use liquid_cells_client::wire::{self, hexs, Intent};
-use liquid_cells_sequencer::Sequencer;
+use liquid_cells_sequencer::{FeePolicy, Sequencer};
 use liquid_cells_stf::Hash;
 use serde_json::{json, Value};
+
+/// Cap on un-sealed (pending) intents (L-5). `/submit` rejects past this with an over-capacity signal
+/// (the HTTP front maps it to 429), so an anonymous client cannot grow the mempool without bound
+/// between seals and OOM the single-process service. Generous: a sealed batch is at most
+/// `MAX_LEAVES_PER_BATCH` (1024) leaves, and a seal drains the mempool, so this is ~10 batches of slack.
+pub const MAX_PENDING: usize = 10_000;
 
 /// A running sequencer service: the sequencer, the pool identity (for `/info`), and every DA blob
 /// it has published (so `/da` lets a client reconstruct and force-exit from L1 alone).
@@ -47,11 +53,25 @@ impl Service {
     /// state/DA). Deposits enter only via [`admin_deposit`](Self::admin_deposit), the operator's
     /// confirmed-L1 ingestion path.
     pub fn submit(&mut self, body: &str) -> Result<Value, String> {
+        // L-5: bound the mempool so spam between seals cannot grow memory without limit.
+        if self.seq.pending() >= MAX_PENDING {
+            return Err(format!(
+                "overloaded: mempool full ({} pending, cap {MAX_PENDING}); retry after a seal",
+                self.seq.pending()
+            ));
+        }
+        let policy = self.seq.fee_policy();
         let kind = match wire::intent_from_json(body)? {
             Intent::Deposit(_) => {
                 return Err("deposits are not accepted over /submit; they are authorized by an on-chain deposit cell".to_string())
             }
+            // M-3: reject underpaying fee-bearing intents at the operator boundary (admission), so a
+            // zero-fee griefing flood never enters the mempool. Policy, not proof; the atomic seal
+            // re-validates, and the matching provable floor is the staged `min_fee` (re-bake).
             Intent::Transfer(t) => {
+                if !policy.admits(t.fee) {
+                    return Err(format!("underpaid: fee {} is below the {} floor", t.fee, policy.min_fee_per_intent));
+                }
                 self.seq.submit_transfer(t);
                 "transfer"
             }
@@ -60,6 +80,9 @@ impl Service {
                 "withdrawal"
             }
             Intent::HtlcLock(l) => {
+                if !policy.admits(l.fee) {
+                    return Err(format!("underpaid: fee {} is below the {} floor", l.fee, policy.min_fee_per_intent));
+                }
                 self.seq.submit_htlc_lock(l);
                 "htlc_lock"
             }
@@ -73,6 +96,14 @@ impl Service {
             }
         };
         Ok(json!({ "ok": true, "accepted": kind, "pending": self.seq.pending() }))
+    }
+
+    /// Install the operator's fee-admission floor (M-3): `/submit` then rejects any transfer / HTLC-lock
+    /// paying below `min_fee`. `0` disables it (admits everything). The production binary defaults this
+    /// to a non-zero anti-zero-fee floor; `Service::genesis` leaves it at `0` so unit tests are
+    /// unaffected. See [`liquid_cells_sequencer::FeePolicy`].
+    pub fn set_fee_floor(&mut self, min_fee: u128) {
+        self.seq.set_fee_policy(FeePolicy::new(min_fee));
     }
 
     /// Operator-only deposit ingestion (NOT the public `/submit` path). In production this is called
@@ -118,6 +149,8 @@ impl Service {
             "fee_acc": self.seq.fee_acc().to_string(),
             "last_epoch": self.seq.last_epoch(),
             "pending": self.seq.pending(),
+            "max_pending": MAX_PENDING,
+            "min_fee": self.seq.fee_policy().min_fee_per_intent.to_string(),
             "checkpoints": self.da_history.len(),
         })
     }
@@ -184,6 +217,45 @@ mod tests {
         assert!(svc.submit("not json").is_err());
         assert!(svc.submit(r#"{"type":"nope"}"#).is_err());
         assert!(svc.leaf("0xzz").is_err());
+    }
+
+    #[test]
+    fn fee_floor_rejects_underpayers_at_admission() {
+        // M-3: with a floor installed, a below-floor transfer is rejected at /submit (never enters the
+        // mempool), while one paying the floor is admitted. genesis() leaves the floor at 0 (tests).
+        let mut svc = Service::genesis(pool_id(), CHAIN);
+        assert_eq!(svc.info()["min_fee"], "0", "genesis admits everything");
+        let mut alice = Account::new(pool_id(), CHAIN, [7u8; 32]);
+        let bob = Account::new(pool_id(), CHAIN, [9u8; 32]);
+
+        svc.set_fee_floor(1);
+        assert_eq!(svc.info()["min_fee"], "1");
+        // fee 0 -> rejected at admission, mempool stays empty.
+        let zero = alice.transfer(bob.key(), 100, 0, 100);
+        let err = svc.submit(&wire::transfer_to_value(&zero).to_string()).unwrap_err();
+        assert!(err.starts_with("underpaid"), "zero-fee transfer rejected: {err}");
+        assert_eq!(svc.info()["pending"], 0, "underpayer never entered the mempool");
+        // fee 1 -> admitted.
+        let paid = alice.transfer(bob.key(), 100, 1, 101);
+        svc.submit(&wire::transfer_to_value(&paid).to_string()).unwrap();
+        assert_eq!(svc.info()["pending"], 1);
+    }
+
+    #[test]
+    fn mempool_is_bounded_against_spam() {
+        // L-5: pending is capped; a flood past MAX_PENDING is rejected with an overloaded signal.
+        let mut svc = Service::genesis(pool_id(), CHAIN);
+        let mut alice = Account::new(pool_id(), CHAIN, [7u8; 32]);
+        let bob = Account::new(pool_id(), CHAIN, [9u8; 32]);
+        // The mempool does not validate at submit, so one well-formed intent re-submitted just queues
+        // duplicates, which is exactly the spam shape we are bounding (and avoids 10k signatures).
+        let body = wire::transfer_to_value(&alice.transfer(bob.key(), 1, 0, 1_000_000)).to_string();
+        for _ in 0..MAX_PENDING {
+            svc.submit(&body).unwrap();
+        }
+        assert_eq!(svc.info()["pending"], MAX_PENDING);
+        let err = svc.submit(&body).unwrap_err();
+        assert!(err.starts_with("overloaded"), "spam past the cap is rejected: {err}");
     }
 
     #[test]
