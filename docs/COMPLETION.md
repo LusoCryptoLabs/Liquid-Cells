@@ -26,9 +26,9 @@ Nothing below makes the system value-ready until these two land.
 |---|---|---|---|
 | C-1 | Critical | Single-key upgrade, no timelock | **GATED** (lock built; adopt on-chain before value) |
 | H-1 | High | HTLC escrow keyspace-freeze | **STAGED** (`htlc_keyspace` fix, behind flag, tested) |
-| H-2 | High | Escape modes steal unswept deposits | **STAGED** (canonical-shape escape fix + force-refund co-fix) |
+| H-2 | High | Escape modes steal unswept deposits | **DONE in code** (deposit-lock checkpoint-mode gate: an escape-mode anchor input cannot release a deposit cell). NOTE: the LIVE Pudge deposit lock predates the fix, so it must be redeployed at the re-bake (V2-REBAKE step 7). |
 | M-1 | Medium | Unauth `/submit` deposit mint | **DONE** (deposits off `/submit`; operator-only ingest) |
-| M-2 | Medium | Escape-mode no input/output bound | **STAGED** (same canonical-shape fix as H-2) |
+| M-2 | Medium | Escape-mode no input/output bound | **Residual, documented** (see note). `escape.rs` bounds the anchor in/out + the payout but does NOT bound non-anchor inputs; the only concrete vector (the deposit lock) is closed by the H-2 gate. |
 | M-3 | Medium | Zero-fee floor disabled by default | **DONE** off-chain (production binary defaults `--min-fee 1`, enforced at `/submit`); provable backstop is the staged `min_fee` (re-bake) |
 | L-1/L-2 | Low | Legacy empty-args pool isolation | accepted residual; type-id pools (live) mitigate |
 | L-3 | Low | Sub-61-CKB dust not unilaterally exitable | inherent cell-model limit; cooperative Fiber egress mitigates |
@@ -36,24 +36,43 @@ Nothing below makes the system value-ready until these two land.
 | L-5 | Low | Service DoS (body/mempool/loop) | **DONE** (body cap + 413 + Content-Length pre-check; mempool bound -> 429); per-connection slow-loris read = production async front, not this demo |
 | I-1..I-4 | Info | Sound-core review + hardening notes | accepted / defense-in-depth |
 
-> The assessment's "short path to audit" = land H-1 and H-2/M-2 (staged), M-1 (done), L-5 service
-> hardening (partly done). Those fixes exist; H-1/H-2/M-2 go live with the re-bake (section 2).
+> The assessment's "short path to audit" = H-1 (staged, goes live at the re-bake), H-2 (done in code,
+> deposit-lock gate; redeploy the live lock at the re-bake), M-1 + L-5 + M-3 (done), M-2 (documented
+> residual below).
+
+> **M-2 residual (escape-mode non-anchor-input bound), and why it is NOT a hard bound.** `escape.rs`
+> `force_exit`/`force_refund` validate the anchor's own capacity delta (`in_cap - balance == out_cap`)
+> and force the payout to the owner's secp lock, but place no constraint on EXTRA non-anchor inputs.
+> The concrete theft vector (siphoning a deposit cell during the silence window) is closed by the
+> deposit-lock checkpoint-mode gate (H-2): a deposit lock will not release into an escape-mode tx, and
+> a normal secp-locked cell needs its owner's signature, so neither can be siphoned. A strict
+> "reject any non-anchor input" bound was considered and deliberately NOT added: an escape tx needs a
+> non-anchor input to pay the CKB miner fee (the anchor cannot fund it without breaking solvency), so a
+> strict bound would force a 0-fee escape tx that default CKB nodes will not relay, crippling the very
+> escape hatch it aims to harden. The residual is therefore: any FUTURE anchor-keyed lock must
+> self-gate on checkpoint mode exactly as the deposit lock does. Carried as an explicit external-audit
+> item.
 
 ## 2. v2 re-bake bundle (STAGED, ships as one coordinated, audited redeploy)
 
 All built and tested behind feature flags, all OFF in the deployed guest (vkey `0x00213af5...`). None
 affect the live contract until the re-bake. See [V2-REBAKE.md](V2-REBAKE.md).
 
-| Feature | Purpose | Status |
+This re-bake ships the FIVE security/representation features (committee finding A); `ecrecover` and
+`min_fee` are deferred to a later, separately-reviewed re-bake.
+
+| Feature | Purpose | In this re-bake? |
 |---|---|---|
-| `htlc_keyspace` | H-1 fix (escrow/account keyspace separation) | STAGED |
-| canonical escape shape | H-2/M-2 fix (no input/output siphon) | STAGED |
-| `htlc_sha256` | Fiber-compatible hashlock (unlocks live mainnet dust egress) | STAGED |
-| `compact_smt` | ~35x fewer proving keccaks; + escape-hatch correctness arm + sparse witness (~8KB -> a few hundred bytes) | STAGED (all 3 halves: guest tree + on-chain `escape::smt_root` + client) |
-| `ecrecover` | cycle save + drop pubkey from witness | STAGED |
-| `min_fee` | in-proof fee floor (provable M-3 backstop) | STAGED |
-| `da_varint` | ~36% smaller DA footprint | STAGED |
-| `reject_high_s` | close THREAT-MODEL L3 malleability | STAGED |
+| `htlc_keyspace` | H-1 fix (escrow/account keyspace separation) | YES, STAGED |
+| `htlc_sha256` | Fiber-compatible hashlock (unlocks live mainnet dust egress) | YES, STAGED |
+| `compact_smt` | ~35x fewer proving keccaks; + escape-hatch correctness arm + sparse witness (~8KB -> a few hundred bytes) | YES, STAGED (all 3 halves: guest tree + on-chain `escape::smt_root` + client) |
+| `da_varint` | ~36% smaller DA footprint | YES, STAGED |
+| `reject_high_s` | close THREAT-MODEL L3 malleability | YES, STAGED |
+| `ecrecover` | wire optimization (drop pubkey from witness, -32 B/intent); NOT a security fix | NO, DEFERRED (integration un-pre-staged + un-audited) |
+| `min_fee` | in-proof fee floor; M-3 already held operationally by the sequencer `FeePolicy` | NO, DEFERRED (placeholder floor + unresolved zero-fee client legs) |
+
+(H-2 is NOT a bundle feature: it is the deployed deposit-lock checkpoint-mode gate; redeploy the live
+deposit-lock cell at the re-bake, V2-REBAKE step 7. The composed five-feature bundle is a green CI gate.)
 
 **To close:** the coordinated re-bake (rebuild guest, regenerate vkey, regenerate proofs, redeploy
 code cell, re-verify on-chain) is GATED on proving + on-chain deploy, and best done with the audit.

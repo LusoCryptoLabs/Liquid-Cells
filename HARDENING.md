@@ -142,7 +142,7 @@ The guest verifying key `0x00213af5…c1e8` binds the on-chain verifier to exact
 in three places (contract `VKEY_HASH`, `fixtures/vkey.txt`, `prove_one.rs EXPECTED_VKEY`);
 `scripts/verify-vkey.sh` asserts they agree and prints the full-rebuild check. Build inputs that must
 match to reproduce the vkey byte-for-byte: **succinct rustc 1.94.0** (cargo-prove's toolchain, == the
-`ghcr.io/succinctlabs/sp1:v6.2.4` image), **sp1-zkvm / sp1-sdk 6.2.4** (the committed lock), the guest's
+`ghcr.io/succinctlabs/sp1:v6.2.4` image), **sp1-zkvm / sp1-sdk 6.2.3** (the committed crate version, distinct from the v6.2.4 cargo-prove image), the guest's
 **`journal` feature off** (default, the journal-only codec helpers are gated out so they never enter
 the proven ELF), and the **absolute build path** (`$HOME/liquid-cells`, since SP1 embeds the source path
 in the ELF). The full rebuild has been run and **reproduces `0x00213af5…` exactly**. Any STF change

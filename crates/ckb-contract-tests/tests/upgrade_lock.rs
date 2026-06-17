@@ -11,7 +11,10 @@ use ckb_testtool::context::Context;
 const MAX_CYCLES: u64 = 100_000_000;
 const LOCK_BIN: &str =
     "../ckb-contract/target/riscv64imac-unknown-none-elf/release/liquid-cells-upgrade-lock";
-const DELAY: u64 = 100;
+// Must EXCEED the force-exit window (FORCE_EXIT_TIMEOUT_EPOCHS = 180); the lock rejects delay <= 180
+// (code 89) so the user-exit window always exceeds the operator-silence window.
+const DELAY: u64 = 200;
+const FORCE_EXIT_TIMEOUT_EPOCHS: u64 = 180;
 
 fn blake2b256(data: &[u8]) -> [u8; 32] {
     let mut h = ckb_testtool::ckb_hash::new_blake2b();
@@ -31,10 +34,11 @@ fn abs_epoch(n: u64) -> u64 {
 
 #[derive(Default, Clone)]
 struct Cfg {
-    since: Option<u64>,    // override the announcement input's since (default: rel_epoch(DELAY))
+    since: Option<u64>,    // override the announcement input's since (default: rel_epoch(delay))
     wrong_commitment: bool, // announcement commits to other-than-the-new-code's data hash
     non_gov_announcement: bool, // announcement not locked by governance
     no_new_code: bool,     // no output carries the code cell's type
+    delay_override: Option<u64>, // override the lock's args delay (default: DELAY)
 }
 
 fn build(cfg: Cfg) -> (Context, TransactionView) {
@@ -43,12 +47,13 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
     let lock_op = ctx.deploy_cell(lock_bin);
     let as_op = ctx.deploy_cell(ALWAYS_SUCCESS.clone());
 
+    let delay = cfg.delay_override.unwrap_or(DELAY);
     // governance lock, the code cell's type-id, and the upgrade lock (args = gov_hash ‖ delay).
     let gov = ctx.build_script(&as_op, Bytes::from(b"governance".to_vec())).unwrap();
     let gov_hash = gov.calc_script_hash();
     let type_id = ctx.build_script(&as_op, Bytes::from(b"type-id".to_vec())).unwrap();
     let mut args = gov_hash.as_slice().to_vec();
-    args.extend_from_slice(&DELAY.to_be_bytes());
+    args.extend_from_slice(&delay.to_be_bytes());
     let upgrade_lock = ctx.build_script(&lock_op, Bytes::from(args)).unwrap();
 
     // the NEW code cell (output) and its data hash (what an honest announcement commits to).
@@ -77,7 +82,7 @@ fn build(cfg: Cfg) -> (Context, TransactionView) {
         .input(
             CellInput::new_builder()
                 .previous_output(announce)
-                .since(cfg.since.unwrap_or_else(|| rel_epoch(DELAY)).pack())
+                .since(cfg.since.unwrap_or_else(|| rel_epoch(delay)).pack())
                 .build(),
         )
         .output(CellOutput::new_builder().capacity(1100u64.pack()).lock(ctx.build_script(&as_op, Bytes::new()).unwrap()).type_(Some(new_code_type).pack()).build())
@@ -127,4 +132,31 @@ fn non_governance_announcement_rejected() {
 fn upgrade_without_replacement_code_cell_rejected() {
     let (ctx, tx) = build(Cfg { no_new_code: true, ..Default::default() });
     assert!(ctx.verify_tx(&tx, MAX_CYCLES).is_err(), "no replacement code cell of the type-id must reject");
+}
+
+#[test]
+fn delay_at_or_below_force_exit_window_rejected() {
+    // The lock must refuse a delay <= FORCE_EXIT_TIMEOUT_EPOCHS (code 89), even with an otherwise-valid,
+    // matured, governance announcement: a too-short delay would let an upgrade land before a user could
+    // force-exit. Try exactly the window (180) and well below it (100), each with a since that DOES
+    // satisfy that short delay, so the ONLY reason to reject is the delay floor.
+    for d in [FORCE_EXIT_TIMEOUT_EPOCHS, 100] {
+        let (ctx, tx) = build(Cfg {
+            delay_override: Some(d),
+            since: Some(rel_epoch(d)),
+            ..Default::default()
+        });
+        assert!(
+            ctx.verify_tx(&tx, MAX_CYCLES).is_err(),
+            "delay {d} (<= the {FORCE_EXIT_TIMEOUT_EPOCHS} force-exit window) must reject"
+        );
+    }
+}
+
+#[test]
+fn delay_just_above_force_exit_window_accepted() {
+    // The boundary the other side: delay = window + 1 is the minimum acceptable delay.
+    let d = FORCE_EXIT_TIMEOUT_EPOCHS + 1;
+    let (ctx, tx) = build(Cfg { delay_override: Some(d), since: Some(rel_epoch(d)), ..Default::default() });
+    ctx.verify_tx(&tx, MAX_CYCLES).expect("delay one epoch above the force-exit window must verify");
 }

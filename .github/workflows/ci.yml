@@ -1,9 +1,11 @@
 name: CI
 
-# Cheap-tier CI: proves the three vkey pin sites agree, and runs the full test +
-# adversarial red-team suites (STF / sequencer + the anchor contract in CKB-VM) on
-# every push and PR. Deliberately does NOT do the heavy guest-ELF rebuild (which needs
-# the sideloaded succinct toolchain + a pinned build path); that is a pre-mainnet add.
+# Cheap-tier CI: proves all nine vkey pin sites agree, runs the full test + adversarial
+# red-team suites (STF / sequencer + the anchor contract in CKB-VM), and runs the WHOLE
+# reduced re-bake bundle composed together (so the irreversible-vkey go-evidence is a
+# reproduced CI artifact, not a one-time documented run, committee finding E). Deliberately
+# does NOT do the heavy guest-ELF rebuild (which needs the sideloaded succinct toolchain +
+# a pinned build path); that is a pre-mainnet add.
 
 on:
   push:
@@ -23,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Assert contract VKEY_HASH == fixtures/vkey.txt == prove_one EXPECTED_VKEY
+      - name: Assert all 9 vkey pin sites agree (contract VKEY_HASH + 4 host bins + 4 fixtures)
         run: bash scripts/verify-vkey.sh
 
   stf-sequencer-tests:
@@ -45,6 +47,11 @@ jobs:
         run: cargo test -p liquid-cells-stf --features da_varint
       - name: Test the staged SHA-256 HTLC hashlock (Fiber-compat; vkey-affecting; OFF in the guest)
         run: cargo test -p liquid-cells-stf --features htlc_sha256
+      - name: Re-bake go-evidence -- the WHOLE reduced bundle composes (fuzz + red-team under all 5 at once)
+        # The exact security feature-set the v2 re-bake will turn ON together (ecrecover + min_fee are
+        # deferred to a later, separately-reviewed re-bake). Re-runs fuzz.rs + redteam.rs (the
+        # no-debit-without-sig / value-conservation / shadow-ledger checks) under the composed bundle.
+        run: cargo test -p liquid-cells-stf --features "compact_smt reject_high_s da_varint htlc_sha256 htlc_keyspace"
       - name: Build the lc-exit DA-reconstruction CLI (feature-gated, RPC)
         run: cargo build -p liquid-cells-client --features cli
       - name: Run the generic payment-pool example (the dev "hello world")
@@ -67,3 +74,9 @@ jobs:
       - name: Run the contract + redteam_*.rs suites through CKB-VM
         working-directory: crates/ckb-contract-tests
         run: cargo test
+      - name: Re-bake go-evidence -- build the anchor under the deployed-format bundle features
+        working-directory: crates/ckb-contract
+        run: cargo build --release --features "htlc_keyspace compact_smt"
+      - name: Run the escape + redteam suites under the deployed-format bundle (htlc_keyspace + compact_smt)
+        working-directory: crates/ckb-contract-tests
+        run: cargo test --features "htlc_keyspace compact_smt"

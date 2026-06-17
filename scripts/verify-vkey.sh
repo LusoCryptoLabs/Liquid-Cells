@@ -1,39 +1,62 @@
 #!/usr/bin/env bash
 # Reproducibility check for the SP1 guest verifying key.
 #
-# The vkey (0x00213af5…c1e8) binds the on-chain verifier to EXACTLY this STF. It is pinned in
-# three places that must never drift:
-#   * crates/ckb-contract/src/main.rs   static VKEY_HASH  (baked into the deployed code cell)
-#   * fixtures/vkey.txt                                   (the value the prover emitted)
-#   * crates/sp1-host/src/bin/prove_one.rs EXPECTED_VKEY  (asserted on every proof)
+# The vkey (0x00213af5…c1e8) binds the on-chain verifier to EXACTLY this STF. The SAME literal is
+# pinned in NINE places that must never drift, and a re-bake must re-pin every one of them:
+#   on-chain (safety):
+#     * crates/ckb-contract/src/main.rs   static VKEY_HASH       (baked into the deployed code cell)
+#   prover/sequencer host bins (liveness: each asserts the guest vkey == this before proving, so a
+#   missed re-pin PANICS the prover / the live sequencer loop):
+#     * crates/sp1-host/src/bin/prove_one.rs     EXPECTED_VKEY
+#     * crates/sp1-host/src/bin/prove_typeid.rs  EXPECTED_VKEY
+#     * crates/sp1-host/src/bin/vkeycheck.rs      EXPECTED
+#     * crates/sp1-host/src/bin/sequence.rs       EXPECTED_VKEY
+#   fixtures the prover emitted (one per fixture family):
+#     * fixtures/vkey.txt  (the canonical value)  + fixtures/{genesis,wd,dw}/vkey.txt
 #
-# This script asserts all three agree (catches the "changed the STF, forgot to re-bake" bug
-# cheaply). The full reproducibility check (rebuild the guest ELF and recompute the vkey from
-# it) is heavier and needs the SP1 toolchain; the command is printed at the end.
+# This script asserts ALL of them agree with the canonical fixtures/vkey.txt (catches the "changed the
+# STF / re-baked, forgot to re-pin a site" bug cheaply, committee finding C). The full reproducibility
+# check (rebuild the guest ELF and recompute the vkey) is heavier and needs the SP1 toolchain; the
+# command is printed at the end.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 FIX="$(tr -d '[:space:]' < fixtures/vkey.txt)"
-EXPECT="$(grep -oE '0x[0-9a-f]{64}' crates/sp1-host/src/bin/prove_one.rs | head -1)"
-# Reconstruct VKEY_HASH from the contract's byte-array literal (the two lines between the
-# `static VKEY_HASH` declaration and its closing `];`).
-BAKED="0x$(awk '/static VKEY_HASH/{f=1;next} f&&/\];/{exit} f{print}' crates/ckb-contract/src/main.rs \
-  | grep -oE '0x[0-9a-f]{2}' | sed 's/0x//' | tr -d '\n')"
-
-echo "fixtures/vkey.txt  : $FIX"
-echo "prove_one EXPECTED : $EXPECT"
-echo "contract VKEY_HASH : $BAKED"
+echo "canonical (fixtures/vkey.txt): $FIX"
 echo
 
 fail=0
-[ "$FIX" = "$EXPECT" ] || { echo "MISMATCH: fixtures/vkey.txt != prove_one EXPECTED_VKEY"; fail=1; }
-[ "$FIX" = "$BAKED" ]  || { echo "MISMATCH: fixtures/vkey.txt != contract VKEY_HASH"; fail=1; }
+
+# Host bins: each bakes/asserts the vkey as a `0x…64hex` string literal. Extract the first such literal.
+for f in crates/sp1-host/src/bin/prove_one.rs \
+         crates/sp1-host/src/bin/prove_typeid.rs \
+         crates/sp1-host/src/bin/vkeycheck.rs \
+         crates/sp1-host/src/bin/sequence.rs; do
+  v="$(grep -oE '0x[0-9a-f]{64}' "$f" | head -1 || true)"
+  printf '  %-44s : %s\n' "$f" "${v:-<none>}"
+  [ "$v" = "$FIX" ] || { echo "MISMATCH: $f vkey literal != fixtures/vkey.txt"; fail=1; }
+done
+
+# Extra fixture vkey files (each checkpoint-family fixture pins the same vkey).
+for f in fixtures/genesis/vkey.txt fixtures/wd/vkey.txt fixtures/dw/vkey.txt; do
+  v="$(tr -d '[:space:]' < "$f")"
+  printf '  %-44s : %s\n' "$f" "$v"
+  [ "$v" = "$FIX" ] || { echo "MISMATCH: $f != fixtures/vkey.txt"; fail=1; }
+done
+
+# The on-chain pin: reconstruct VKEY_HASH from the contract's byte-array literal (the lines between
+# the `static VKEY_HASH` declaration and its closing `];`).
+BAKED="0x$(awk '/static VKEY_HASH/{f=1;next} f&&/\];/{exit} f{print}' crates/ckb-contract/src/main.rs \
+  | grep -oE '0x[0-9a-f]{2}' | sed 's/0x//' | tr -d '\n')"
+printf '  %-44s : %s\n' "crates/ckb-contract/src/main.rs VKEY_HASH" "$BAKED"
+[ "$BAKED" = "$FIX" ] || { echo "MISMATCH: contract VKEY_HASH != fixtures/vkey.txt"; fail=1; }
+
 if [ "$fail" -ne 0 ]; then
-  echo "FAIL: the vkey pin sites disagree. The STF and the deployed verifier are out of sync."
+  echo "FAIL: the vkey pin sites disagree. The STF and the deployed verifier / prover / fixtures are out of sync."
   exit 1
 fi
-
-echo "OK: all three vkey pin sites agree."
+echo
+echo "OK: all vkey pin sites agree (contract VKEY_HASH + 4 host bins + 4 fixture files)."
 echo
 
 # The guest ELF (hence the vkey) must compile the STF with NO vkey-affecting features. `journal`
@@ -64,7 +87,8 @@ echo "OK: guest compiles the STF with journal + min_fee + compact_smt + reject_h
 echo
 echo "Pinned build inputs (ALL must match to reproduce the vkey byte-for-byte):"
 echo "  succinct rustc   1.94.0   (cargo-prove's toolchain; == the ghcr.io/succinctlabs/sp1:v6.2.4 image)"
-echo "  sp1-zkvm/sdk     6.2.4    (crates/sp1-guest, crates/sp1-host)"
+echo "  sp1-zkvm/sdk     6.2.3    (the committed crate version in crates/sp1-guest, crates/sp1-host;"
+echo "                   note: this is the CRATE dep, distinct from the v6.2.4 cargo-prove image above)"
 echo "  guest features   journal + min_fee + compact_smt + reject_high_s + da_varint + htlc_sha256 + htlc_keyspace + ecrecover + hash_count OFF (default)"
 echo "  build path       \$HOME/liquid-cells   (SP1 embeds the absolute source path in the guest ELF,"
 echo "                   so the rebuild must run from the SAME path the deploy used, with HOME=/root)"

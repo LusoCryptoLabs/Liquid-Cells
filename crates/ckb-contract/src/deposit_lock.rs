@@ -46,13 +46,16 @@ ckb_std::default_alloc!();
 
 #[path = "atomics.rs"]
 mod atomics;
+#[path = "protocol.rs"]
+mod protocol;
 
 const ARGS_LEN: usize = 72; // pool_type_hash(32) ‖ refund_lock_hash(32) ‖ timeout_epoch(8 BE)
-/// The anchor's checkpoint-mode witness `input_type` length (PROOF_LEN 356 + PV_LEN 288), matching
-/// `WITNESS_LEN` in the anchor type script. ONLY a checkpoint may sweep a deposit (it credits the
-/// depositor via `fold_cells`); the escape modes (force-exit 8249 / force-refund 8321) also consume
-/// the anchor but never credit deposits, so they must not unlock a deposit cell.
-const CHECKPOINT_WITNESS_LEN: usize = 644;
+/// The anchor's checkpoint-mode witness `input_type` length (PROOF_LEN 356 + PV_LEN 288), the SAME
+/// shared `protocol::CHECKPOINT_WITNESS_LEN` the anchor type script asserts its `WITNESS_LEN` equals,
+/// so this gate cannot drift from the anchor's actual checkpoint length. ONLY a checkpoint may sweep a
+/// deposit (it credits the depositor via `fold_cells`); the escape modes (force-exit / force-refund)
+/// also consume the anchor but never credit deposits, so they must not unlock a deposit cell.
+const CHECKPOINT_WITNESS_LEN: usize = protocol::CHECKPOINT_WITNESS_LEN;
 
 /// Extract the epoch number from a CKB `since` flagged **absolute epoch** (`0x20` top byte).
 /// Whole-epoch granularity (the index/length fraction is ignored). `None` if not absolute-epoch.

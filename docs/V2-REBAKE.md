@@ -6,6 +6,23 @@ change the proven program, hence the vkey, so they cannot ship piecemeal: they a
 in one coordinated re-bake (rebuild the guest, recompute the vkey, re-pin it, redeploy the anchor).
 This doc is the checklist for that re-bake, plus the result of verifying the bundle as a whole.
 
+## Bundle scope for THIS re-bake (committee finding A)
+
+The re-bake-readiness committee ruled that **`ecrecover` and `min_fee` are DROPPED from this re-bake**
+and deferred to a later, separately-reviewed one. Both are documented below as "integration is
+re-bake-time" / "activation is re-bake-time", i.e. they are *un-pre-staged code that would be first
+written AT the bake* and so would bake an irreversible vkey over a program that never sat on a green,
+twice-audited `main`. `ecrecover` is a pure wire-size optimization (-32 bytes/intent, not a security
+fix) and `min_fee` is audit M-3 (LOW, already enforced operationally by the sequencer `FeePolicy`),
+so neither is load-bearing for this re-bake's security goals.
+
+**This re-bake ships exactly the five features whose every byte has been on green `main` and through
+both internal audits:** `compact_smt + reject_high_s + da_varint + htlc_sha256 + htlc_keyspace`
+(carrying H-1, the Fiber-compatible egress, and the compact representation). They compose green
+together (CI gate "re-bake go-evidence", `scripts`/`.github/workflows/ci.yml`). If `ecrecover` or
+`min_fee` must ship later, land each as a normal reviewed PR with the FULL integration on green main,
+re-run both internal audit passes on the integrated form, then bake, never authored at bake time.
+
 ## The staged features
 
 | Feature | Crate(s) | Changes the vkey? | What it does |
@@ -15,8 +32,8 @@ This doc is the checklist for that re-bake, plus the result of verifying the bun
 | `da_varint` | stf | yes (DA blob bytes) | LEB128 balance/nonce in DA records, ~30-40% smaller blobs |
 | `htlc_sha256` | stf + sequencer | yes (guest HTLC hashlock); the sequencer mirror half is off-chain | sha256 (not keccak) HTLC hashlock, Fiber-compatible egress |
 | `htlc_keyspace` | stf + sequencer + ckb-contract + client | yes (guest); the contract/client halves are a deployed-format change | audit H-1: lock accumulates, claim/refund sweep-and-consume; force-refund reconstructs/sweeps the real committed balance via a 16-byte-widened witness (FORCEREFUND_LEN 8321 -> 8337) |
-| `min_fee` | stf | yes (in-proof fee floor) | reject intents with `fee < MIN_FEE_PER_LEAF` (anti zero-fee griefing) |
-| `ecrecover` | stf (primitive); integration is re-bake-time | yes (sig scheme + `*_msg` digests) | recover the signer pubkey from the signature, drop the 33-byte `from_pubkey` from each signed intent (net -32 bytes/intent) |
+| `min_fee` | stf | yes (in-proof fee floor) | reject intents with `fee < MIN_FEE_PER_LEAF` (anti zero-fee griefing). **DEFERRED from this re-bake** (placeholder floor + unresolved zero-fee client legs; M-3 already held by the sequencer `FeePolicy`) |
+| `ecrecover` | stf (primitive); integration is re-bake-time | yes (sig scheme + `*_msg` digests) | recover the signer pubkey from the signature, drop the 33-byte `from_pubkey` (net -32 bytes/intent). **DEFERRED from this re-bake** (integration un-pre-staged + un-audited; a wire optimization, not a security fix) |
 
 `htlc_keyspace` is itself a 4-part bundle (guest + sequencer + contract + client) gated by the SAME
 feature name in each crate; see `crates/stf/Cargo.toml`. The contract/client halves do not touch the
@@ -133,29 +150,54 @@ flag flip**.
 
 ## Re-bake execution steps
 
-1. Wire in `ecrecover` (the primitive is staged + tested in `sig.rs`; the re-bake does the
-   integration: pubkey-free `*_msg` digests, drop `from_pubkey` and use `sig::recover` in
-   `apply`/`codec`/`touched_keys`, client signs with `sign_recoverable`) and confirm the suite is
-   green with it on.
-2. Complete the `min_fee` activation checklist above.
-3. Build the guest with ALL bundle features ON (the re-bake config), in the pinned toolchain
-   (rustc 1.96.0 / SP1 6.2.x, build path `$HOME/liquid-cells`), and recompute the vkey.
-4. Re-pin the new vkey in all three sites (scripts/verify-vkey.sh checks they agree):
-   `crates/ckb-contract/src/main.rs` `VKEY_HASH`, `fixtures/vkey.txt`,
-   `crates/sp1-host/src/bin/prove_one.rs` `EXPECTED_VKEY` (and the other host bins that bake it).
-5. Re-generate the Groth16 fixtures against the new guest.
-6. Build the anchor with BOTH deployed-format features `--features "htlc_keyspace compact_smt"` (the
-   widened force-refund witness AND the compact escape-hatch SMT scheme) and run the contract suite
-   with the matching features:
-   `cd crates/ckb-contract && cargo build --release --features "htlc_keyspace compact_smt"` then
-   `cd ../ckb-contract-tests && cargo test --release --features "htlc_keyspace compact_smt"`.
-   (Forgetting `compact_smt` here would deploy an anchor whose escape hatch reconstructs the live
-   depth-256 root while the guest commits compact roots, bricking force-exit/force-refund.) Likewise
-   the sequencer runs with `--features "htlc_keyspace htlc_sha256"` and the client with
-   `--features "htlc_keyspace compact_smt"` so its escape witnesses match.
-7. Redeploy the anchor code cell (new code hash) under the timelocked upgrade lock; refresh the
-   deposit-lock binding (`pool_type_hash`) and any genesis/anchor references.
-8. Update DEPLOY.md with the new vkey, code hash, and dep outpoints.
+0. **Confirm bundle scope.** This re-bake ships exactly `compact_smt + reject_high_s + da_varint +
+   htlc_sha256 + htlc_keyspace` (see "Bundle scope for THIS re-bake" above). `ecrecover` and `min_fee`
+   are NOT in it. Confirm the CI "re-bake go-evidence" jobs are green on the exact commit being baked
+   (the composed STF bundle + the anchor under `htlc_keyspace compact_smt`).
+1. **Build the guest** with those five features ON, in the EXACT pinned toolchain that reproduced the
+   feature-OFF vkey: **succinct rustc 1.94.0** (cargo-prove's toolchain, == the
+   `ghcr.io/succinctlabs/sp1:v6.2.4` image) with the **`sp1-zkvm` / `sp1-sdk` 6.2.3 crate** version
+   committed in the guest/host crates (the image tag v6.2.4 and the crate dep 6.2.3 are distinct and
+   both matter), from build path `$HOME/liquid-cells` with `HOME=/root` (SP1 bakes the absolute source
+   path into the ELF). Recompute the vkey.
+2. **Confirm the NEW vkey reproduces:** re-run the guest-ELF rebuild a second time (clean) and confirm
+   it yields the same vkey byte-for-byte before trusting it. A non-reproducing vkey means the build
+   environment is not actually pinned and MUST be fixed before deploying.
+3. **Re-pin the new vkey in ALL nine sites** and run `scripts/verify-vkey.sh` (it now checks every
+   one): `crates/ckb-contract/src/main.rs` `VKEY_HASH`; the four host bins `prove_one.rs` /
+   `prove_typeid.rs` / `vkeycheck.rs` / `sequence.rs` `EXPECTED_VKEY`; and the four fixture files
+   `fixtures/vkey.txt` + `fixtures/{genesis,wd,dw}/vkey.txt`. A missed host-bin re-pin passes the old
+   guard but panics the prover / the live sequencer loop on the first post-rebake checkpoint.
+4. **Regenerate the Groth16 fixtures** against the new guest.
+5. **Build + test each crate under its matching features** as the pre-deploy gate:
+   anchor `cargo build --release --features "htlc_keyspace compact_smt"` then ckb-contract-tests
+   `cargo test --release --features "htlc_keyspace compact_smt"`; sequencer
+   `--features "htlc_keyspace htlc_sha256"`; client `--features "htlc_keyspace compact_smt"`.
+   (Forgetting `compact_smt` on the anchor deploys an escape hatch that reconstructs depth-256 roots
+   while the guest commits compact roots, bricking force-exit/force-refund.)
+6. **Pre-flight the new anchor binary against the REAL consensus cycle limit** (~3.50B), not
+   ckb-testtool's 5B self-limit, via `ckb-debugger`, AND verify a checkpoint + a force-exit + a
+   force-refund on a THROWAWAY type-id'd test pool before touching a real pool (the cycle overrun at
+   3.81B > 3.50B already happened once and was hidden by the testtool limit).
+7. **Redeploy the anchor** code cell (new code hash, in-place type-id upgrade). Refresh the
+   deposit-lock binding (`pool_type_hash`) and any genesis/anchor references. **Also rebuild + redeploy
+   the deposit-lock code cell:** the LIVE Pudge deposit lock predates the H-2 checkpoint-mode-gate fix,
+   so until it is redeployed (and `sweep_in_force_exit_mode_rejected` re-verified live) the live lock
+   can still be siphoned by an escape-mode tx.
+8. **Update DEPLOY.md** with the new vkey, code hashes, and dep outpoints.
+
+## Rollback / abort (committee finding G)
+
+The anchor upgrade is an in-place type-id spend that consumes the old code cell, so there is no
+implicit undo. Before executing:
+- **Archive** the current code-cell bytes + outpoint (anchor AND deposit-lock) so a recovery upgrade
+  can redeploy the known-good prior binary.
+- **Pre-flight** (step 6) on a throwaway pool against the real consensus cycle limit and all four
+  anchor modes (genesis / checkpoint / force-exit / force-refund) under the deployed-format features.
+- If the redeployed binary verifies wrong on-chain (a forgotten feature bricks the escape hatch, or a
+  cycle overrun), **recovery is a second in-place upgrade** back to the archived binary. This is
+  exactly why the C-1 upgrade-key lockdown MUST come AFTER the re-bake is live and validated: locking
+  first would force the recovery upgrade through the ~30-day timelock.
 
 ## Notes
 

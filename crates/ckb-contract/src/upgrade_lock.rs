@@ -18,7 +18,10 @@
 //!     `delay` epochs after the announcement cell was created. Relative since is measured from the
 //!     cell's own block, so the delay cannot be backdated.
 //!
-//! `args` (40 bytes): `governance_lock_hash(32) ‖ delay_epochs(8 BE)`.
+//! `args` (40 bytes): `governance_lock_hash(32) ‖ delay_epochs(8 BE)`. `delay_epochs` MUST exceed
+//! `FORCE_EXIT_TIMEOUT_EPOCHS` (the force-exit window), enforced by the lock itself (code 89), so the
+//! user-exit window always exceeds the operator-silence window and an upgrade can never outrun a
+//! force-exit.
 #![no_std]
 #![no_main]
 
@@ -34,6 +37,8 @@ ckb_std::default_alloc!();
 
 #[path = "atomics.rs"]
 mod atomics;
+#[path = "protocol.rs"]
+mod protocol;
 
 const ARGS_LEN: usize = 40; // governance_lock_hash(32) ‖ delay_epochs(8 BE)
 
@@ -60,6 +65,12 @@ fn program_entry() -> i8 {
     let mut db = [0u8; 8];
     db.copy_from_slice(&args[32..40]);
     let delay = u64::from_be_bytes(db);
+    // Safety floor: the upgrade delay must EXCEED the force-exit window, so a user can always force-exit
+    // before any announced upgrade lands (the "escape a malicious upgrade" guarantee). Enforced at the
+    // lock itself, so no deployer can configure a lock whose delay is too short to be exitable.
+    if delay <= protocol::FORCE_EXIT_TIMEOUT_EPOCHS {
+        return 89;
+    }
 
     // The code cell being upgraded is identified by its type (the type-id, preserved across
     // upgrades). The new code cell is the OUTPUT carrying that same type.

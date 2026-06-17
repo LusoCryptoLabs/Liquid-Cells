@@ -76,6 +76,7 @@ ckb_std::default_alloc!();
 mod atomics;
 mod cells; // checkpoint cell folding + public-value binding
 mod escape; // force-exit / force-refund (the unilateral escape hatch)
+mod protocol; // cross-binary constants shared with the deposit / upgrade locks (no drift)
 
 // ---- baked policy ----
 /// SP1 v6 Groth16 universal verifying key (identical to the g16ckb / bridge VK).
@@ -111,7 +112,7 @@ static SECP_CODE_HASH: [u8; 32] = [
 /// Operator-silence window: a leaf can only be force-exited once `last_epoch + TIMEOUT`
 /// epochs have passed with no checkpoint (~30 days at ~4h/epoch). While the operator keeps
 /// checkpointing, `last_epoch` advances and the window never opens.
-const FORCE_EXIT_TIMEOUT_EPOCHS: u64 = 180;
+const FORCE_EXIT_TIMEOUT_EPOCHS: u64 = protocol::FORCE_EXIT_TIMEOUT_EPOCHS;
 const SMT_DEPTH: usize = 256;
 
 /// The empty sparse-Merkle-tree root (depth-256, keccak), the genesis pool root. Must
@@ -127,6 +128,10 @@ const PV_LEN: usize = 288;
 // PROOF_LEN (356) is imported from liquid-cells-groth16 (the SP1 proof format), the single source
 // of truth for the verifier.
 const WITNESS_LEN: usize = PROOF_LEN + PV_LEN; // 644, checkpoint witness input_type
+// The deposit lock gates its sweep on exactly this length (`protocol::CHECKPOINT_WITNESS_LEN`).
+// Assert at compile time that the anchor's derived checkpoint witness length matches the shared
+// constant, so the anchor and the separately-built deposit lock can never drift (committee finding H).
+const _: () = assert!(WITNESS_LEN == protocol::CHECKPOINT_WITNESS_LEN);
 // Deployed: the escape witnesses are full 256-sibling and selected by their (distinct, fixed) length.
 // Under `compact_smt` they are sparse (variable-length) and selected by a leading mode tag instead
 // (see below), so these length constants are deployed-only.
