@@ -14,7 +14,7 @@
 //!   --rpc        CKB JSON-RPC + indexer endpoint (default: https://testnet.ckb.dev)
 
 use liquid_cells_client::{proof_from_da, reconstruct_tree, Account, FORCE_EXIT_WITNESS_LEN};
-use liquid_cells_stf::{key_of_pubkey, sig, Hash, Leaf};
+use liquid_cells_stf::{htlc_id, key_of_pubkey, sig, Hash, HtlcRef, Leaf};
 use serde_json::{json, Value};
 
 /// blake160(data) = first 20 bytes of CKB's default blake2b-256 (the secp lock's args).
@@ -105,48 +105,60 @@ fn main() {
         }
     };
 
-    // 1. live anchor cell (its data root is the ground truth to check our reconstruction against)
-    let cells = rpc(&ag, &rpc_url, "get_cells", json!([{"script": script, "script_type": "type"}, "asc", "0x10", null]));
-    let objs = cells["objects"].as_array().cloned().unwrap_or_default();
-    if objs.is_empty() {
-        eprintln!("error: no live anchor cell for that type script (wrong code_hash/args, or pool spent?)");
-        std::process::exit(1);
-    }
-    let live = &objs[objs.len() - 1];
-    let onchain_data = hexdec(live["output_data"].as_str().unwrap());
-    let onchain_root = h32(&onchain_data[0..32]);
-    let onchain_seq = u64::from_be_bytes(onchain_data[32..40].try_into().unwrap());
-    println!("live anchor : {}:{}", live["out_point"]["tx_hash"].as_str().unwrap(), live["out_point"]["index"].as_str().unwrap());
-    println!("on-chain    : root=0x{} seq={onchain_seq}", hex::encode(onchain_root));
-
-    // 2. every checkpoint tx touching this anchor type, oldest-first (genesis first)
-    let txs = rpc(&ag, &rpc_url, "get_transactions", json!([{"script": script, "script_type": "type"}, "asc", "0x200", null]));
-    let mut ordered: Vec<String> = Vec::new();
-    for o in txs["objects"].as_array().cloned().unwrap_or_default() {
-        let h = o["tx_hash"].as_str().unwrap().to_string();
-        if ordered.last() != Some(&h) {
-            ordered.push(h);
+    // 1-4. The DA blobs + the anchor root. With `--blob <file>` reconstruct from a provided DA blob
+    // (skip the RPC), needed to isolate ONE pool's tree when several pools share a legacy type script;
+    // else scrape the checkpoint chain from the indexer and verify the rebuilt root matches the anchor.
+    let (blobs, _onchain_root, ok): (Vec<Vec<u8>>, Hash, bool) = if let Some(bf) = arg("--blob") {
+        let b = std::fs::read(&bf).expect("read --blob file");
+        let blobs = vec![b];
+        let r = reconstruct_tree(&blobs).expect("reconstruct: malformed DA blob").root();
+        println!("blob mode   : reconstructed root=0x{} from {bf}", hex::encode(r));
+        (blobs, r, true)
+    } else {
+        // 1. live anchor cell (its data root is the ground truth to check our reconstruction against)
+        let cells = rpc(&ag, &rpc_url, "get_cells", json!([{"script": script, "script_type": "type"}, "asc", "0x10", null]));
+        let objs = cells["objects"].as_array().cloned().unwrap_or_default();
+        if objs.is_empty() {
+            eprintln!("error: no live anchor cell for that type script (wrong code_hash/args, or pool spent?)");
+            std::process::exit(1);
         }
-    }
+        let live = &objs[objs.len() - 1];
+        let onchain_data = hexdec(live["output_data"].as_str().unwrap());
+        let onchain_root = h32(&onchain_data[0..32]);
+        let onchain_seq = u64::from_be_bytes(onchain_data[32..40].try_into().unwrap());
+        println!("live anchor : {}:{}", live["out_point"]["tx_hash"].as_str().unwrap(), live["out_point"]["index"].as_str().unwrap());
+        println!("on-chain    : root=0x{} seq={onchain_seq}", hex::encode(onchain_root));
 
-    // 3. pull each checkpoint's DA blob from witness[0].output_type (genesis has none -> skipped)
-    let mut blobs: Vec<Vec<u8>> = Vec::new();
-    for tx_hash in &ordered {
-        let t = rpc(&ag, &rpc_url, "get_transaction", json!([tx_hash]));
-        let ws = t["transaction"]["witnesses"].as_array().cloned().unwrap_or_default();
-        if let Some(w0) = ws.first().and_then(|w| w.as_str()) {
-            if let Some(blob) = witness_output_type(&hexdec(w0)) {
-                blobs.push(blob);
+        // 2. every checkpoint tx touching this anchor type, oldest-first (genesis first)
+        let txs = rpc(&ag, &rpc_url, "get_transactions", json!([{"script": script, "script_type": "type"}, "asc", "0x200", null]));
+        let mut ordered: Vec<String> = Vec::new();
+        for o in txs["objects"].as_array().cloned().unwrap_or_default() {
+            let h = o["tx_hash"].as_str().unwrap().to_string();
+            if ordered.last() != Some(&h) {
+                ordered.push(h);
             }
         }
-    }
-    println!("checkpoints : {} tx(s), {} DA blob(s) folded", ordered.len(), blobs.len());
 
-    // 4. reconstruct from L1 alone and verify the root matches the live anchor
-    let smt = reconstruct_tree(&blobs).expect("reconstruct: malformed DA blob");
-    let recon_root = smt.root();
-    let ok = recon_root == onchain_root;
-    println!("reconstructed: root=0x{}  [{}]", hex::encode(recon_root), if ok { "MATCH" } else { "MISMATCH, DA withholding/corruption!" });
+        // 3. pull each checkpoint's DA blob from witness[0].output_type (genesis has none -> skipped)
+        let mut blobs: Vec<Vec<u8>> = Vec::new();
+        for tx_hash in &ordered {
+            let t = rpc(&ag, &rpc_url, "get_transaction", json!([tx_hash]));
+            let ws = t["transaction"]["witnesses"].as_array().cloned().unwrap_or_default();
+            if let Some(w0) = ws.first().and_then(|w| w.as_str()) {
+                if let Some(blob) = witness_output_type(&hexdec(w0)) {
+                    blobs.push(blob);
+                }
+            }
+        }
+        println!("checkpoints : {} tx(s), {} DA blob(s) folded", ordered.len(), blobs.len());
+
+        // 4. reconstruct from L1 alone and verify the root matches the live anchor
+        let smt = reconstruct_tree(&blobs).expect("reconstruct: malformed DA blob");
+        let recon_root = smt.root();
+        let ok = recon_root == onchain_root;
+        println!("reconstructed: root=0x{}  [{}]", hex::encode(recon_root), if ok { "MATCH" } else { "MISMATCH, DA withholding/corruption!" });
+        (blobs, onchain_root, ok)
+    };
 
     // 5. your leaf + inclusion proof + the force-exit witness
     let (leaf, _siblings) = proof_from_da(&blobs, &key).expect("proof_from_da");
@@ -182,6 +194,47 @@ fn main() {
                 );
             }
             None => println!("(zero balance, nothing to exit)"),
+        }
+    }
+
+    // 6. (force-REFUND) with `--htlc-ref <json>` + `--secret <sender>`: build a sender-reclaim witness
+    // for a TIMED-OUT escrow. The lock terms re-derive `htlc_id`; the escrow leaf {amount,0} nullifies
+    // to {0,0}. `--args` is the pool's type-id == its `pool_id` (htlc_id binds it).
+    if let (Some(refpath), Some(sk)) = (arg("--htlc-ref"), secret) {
+        let rj: Value = serde_json::from_str(
+            &std::fs::read_to_string(&refpath).expect("read htlc_ref"),
+        )
+        .expect("htlc_ref json");
+        let sender_pk = sig::pubkey(&sk);
+        let sender_key = key_of_pubkey(&sender_pk);
+        let receiver_key = h32(&hexdec(rj["receiverKey"].as_str().unwrap()));
+        let amount: u128 = rj["amount"].as_str().unwrap().parse().unwrap();
+        let hashlock = h32(&hexdec(rj["hashlock"].as_str().unwrap()));
+        let timeout = rj["timeout"].as_u64().unwrap();
+        let lock_nonce = rj["lockNonce"].as_u64().unwrap();
+        // type-id pool: pool_id == anchor type args; legacy (empty-args) pool: pass --pool-id (baked POOL_ID).
+        let pool_id = arg("--pool-id").map(|p| h32(&hexdec(&p))).unwrap_or_else(|| h32(&hexdec(&args)));
+        let href = HtlcRef { sender_key, receiver_key, amount, hashlock, timeout, lock_nonce };
+        let id = htlc_id(&pool_id, &sender_key, &receiver_key, amount, &hashlock, timeout, lock_nonce);
+        let (escrow, _) = proof_from_da(&blobs, &id).expect("escrow leaf not found at htlc_id");
+        match Account::new(pool_id, 0x0043_4b42, sk).force_refund_witness(&blobs, &href) {
+            Some(w) => {
+                let mut smt2 = reconstruct_tree(&blobs).expect("reconstruct");
+                smt2.set_leaf_hash(id, Leaf { balance: 0, nonce: 0 }.hash());
+                let nullified_root = smt2.root();
+                let b160 = blake160(&sender_pk);
+                println!("force-refund witness ({} bytes) htlc_id=0x{} escrow_balance={}", w.len(), hex::encode(id), escrow.balance);
+                println!(
+                    "FORCEREFUND_JOB={}",
+                    json!({
+                        "witness": format!("0x{}", hex::encode(&w)),
+                        "nullifiedRoot": format!("0x{}", hex::encode(nullified_root)),
+                        "payoutB160": format!("0x{}", hex::encode(b160)),
+                        "amount": escrow.balance.to_string(),
+                    })
+                );
+            }
+            None => println!("(no escrow at that htlc_id, or already resolved)"),
         }
     }
     if !ok {

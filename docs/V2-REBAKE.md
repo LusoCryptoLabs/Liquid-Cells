@@ -309,8 +309,34 @@ needs the FULL set of codec-affecting features it touches:
 - anchor = `htlc_keyspace` + `compact_smt`.
 
 Each standalone workspace that enables `htlc_sha256` also needs the SP1 `sha2` patch + lock pin
-(finding 2). NOT exercised live: force-refund (needs an HTLC-lock checkpoint then a refund after a
-short htlc_timeout; the silence gate is already open on this pool since `last_epoch=0`).
+(finding 2).
+
+### Force-refund (HTLC escape hatch) validated live (2026-06-18)
+
+The second escape hatch was also exercised live, completing the on-chain validation of both. A throwaway
+legacy bundle pool was stood up with an HTLC escrow (sender deposits, then locks an escrow to a receiver
+with a low `timeout`), via the host's transient `htlc` mode + a genesis checkpoint, then the SENDER
+reclaimed the timed-out escrow:
+- HTLC escrow committed by checkpoint `0x50351d94…` (root `0x473450cd…`, seq 1; the 70 CKB escrow leaf).
+- Refund witness built off-chain by the bundle `lc-exit --blob` (reconstruct the pool tree from its own
+  DA blob, re-derive `htlc_id`, emit the 210-byte sparse compact force-refund witness, tag `0x02`).
+- **Force-refund tx `0x400374cbbbabf44d0feabd34ebe8da3325b84502905271094efb13613f70b9e1` (committed
+  block 21461297):** the live CKB-VM verified the compact-SMT inclusion of the escrow, the dual gate
+  (`since >= timeout` AND `since >= last_epoch + 180`), nullified the escrow leaf, and forced the 70 CKB
+  payout to the SENDER's secp lock. No proof, no operator, no receiver.
+
+Two practical notes from the live run:
+- **Dust floor (THREAT-MODEL C1, confirmed live).** A force-refund (or force-exit) payout is a single
+  secp cell, so the swept amount must be >= ~61 CKB (CKB's occupied-capacity minimum); a 50 CKB escrow
+  was rejected at the CKB layer (`InsufficientCellCapacity`), 70 CKB cleared it. Sub-61-CKB dust cannot
+  egress as a single escape payout, the documented residual.
+- A 32-byte-args anchor is a CKB **type-id** (`args == blake2b256(first_input)`, contract code 73), NOT
+  an arbitrary `pool_id`; a separable throwaway pool that keeps the baked `pool_id` must therefore use
+  the LEGACY empty-args form and isolate its DA via `lc-exit --blob` (several legacy pools share a type
+  script). `lc-exit` gained `--blob` / `--pool-id` / `--htlc-ref` (force-refund) for exactly this.
+
+So all four+ anchor modes (genesis / checkpoint / force-exit / force-refund) plus every off-chain
+consumer are now validated live under the bundle. The production re-bake remains audit-gated.
 
 ## Rollback / abort (committee finding G)
 
