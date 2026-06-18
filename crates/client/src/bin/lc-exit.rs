@@ -14,8 +14,19 @@
 //!   --rpc        CKB JSON-RPC + indexer endpoint (default: https://testnet.ckb.dev)
 
 use liquid_cells_client::{proof_from_da, reconstruct_tree, Account, FORCE_EXIT_WITNESS_LEN};
-use liquid_cells_stf::{key_of_pubkey, sig, Hash};
+use liquid_cells_stf::{key_of_pubkey, sig, Hash, Leaf};
 use serde_json::{json, Value};
+
+/// blake160(data) = first 20 bytes of CKB's default blake2b-256 (the secp lock's args).
+fn blake160(data: &[u8]) -> [u8; 20] {
+    let mut h = blake2b_ref::Blake2bBuilder::new(32).personal(b"ckb-default-hash").build();
+    h.update(data);
+    let mut out = [0u8; 32];
+    h.finalize(&mut out);
+    let mut r = [0u8; 20];
+    r.copy_from_slice(&out[..20]);
+    r
+}
 
 const DEFAULT_RPC: &str = "https://testnet.ckb.dev";
 const DEFAULT_CODE_HASH: &str = "0x83158549bb5b2241997d1e8bb5e24b432a78e74473c8601cea276411bca99f1e";
@@ -144,10 +155,31 @@ fn main() {
     if let Some(sk) = secret {
         match Account::new([0u8; 32], 0, sk).force_exit_witness(&blobs) {
             Some(w) => {
+                // Deployed (depth-256) witness is the fixed FORCE_EXIT_WITNESS_LEN; under `compact_smt`
+                // it is SPARSE (a 1-byte tag + bitmap + only the non-empty siblings), so its length is
+                // variable and a fixed-length assert is wrong (v2 re-bake finding).
+                #[cfg(not(feature = "compact_smt"))]
                 assert_eq!(w.len(), FORCE_EXIT_WITNESS_LEN);
                 println!("force-exit witness ({} bytes): 0x{}", w.len(), hex::encode(&w));
                 println!("=> submit a force-exit tx consuming the live anchor with this as witness[0].input_type,");
                 println!("   paying {} shannons to your secp256k1_blake160 lock (args=blake160(pubkey)).", leaf.balance);
+                // The output (nullified) anchor root: same tree with this leaf emptied (balance->0,
+                // nonce kept), computed via the canonical STF so the submitter need not reimplement it.
+                let mut smt2 = reconstruct_tree(&blobs).expect("reconstruct");
+                smt2.set_leaf_hash(key, Leaf { balance: 0, nonce: leaf.nonce }.hash());
+                let nullified_root = smt2.root();
+                let pubkey = sig::pubkey(&sk);
+                let b160 = blake160(&pubkey);
+                println!(
+                    "FORCEEXIT_JOB={}",
+                    json!({
+                        "witness": format!("0x{}", hex::encode(&w)),
+                        "nullifiedRoot": format!("0x{}", hex::encode(nullified_root)),
+                        "payoutB160": format!("0x{}", hex::encode(b160)),
+                        "balance": leaf.balance.to_string(),
+                        "nonce": leaf.nonce,
+                    })
+                );
             }
             None => println!("(zero balance, nothing to exit)"),
         }

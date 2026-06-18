@@ -37,6 +37,12 @@ htlc_keyspace = []
 # force-exit / force-refund witnesses this SDK builds verify against the compact on-chain `smt_root`.
 # OFF by default (matches the deployed depth-256 tree); flips with the guest/contract at the re-bake.
 compact_smt = ["liquid-cells-stf/compact_smt"]
+# `da_varint` forwards the STF's varint DA-record layout so `reconstruct` PARSES a re-baked pool's DA
+# blobs (LEB128 balance/nonce) correctly. Without it the client reads bundle DA with the fixed-width
+# layout and rebuilds a wrong leaf/root, so a force-exit witness it emits would not verify. The codec
+# is feature-coupled (v2 re-bake finding): a client recovering from a bundle pool needs compact_smt
+# AND da_varint. OFF by default (matches the deployed fixed-width DA); flips at the re-bake.
+da_varint = ["liquid-cells-stf/da_varint"]
 
 [dependencies]
 liquid-cells-stf = { path = "../stf" }

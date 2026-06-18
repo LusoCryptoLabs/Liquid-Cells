@@ -275,9 +275,42 @@ before it, code 70), and (b) the live CKB-VM's ark-bn254 verifier accepts a real
 (5 features ON, new vkey) and advances a compact pool. The deploy scripts used live on the Windows
 side at `D:\cellswap\cellswap-complete`: `lc-bundle-deploy.mjs` / `lc-bundle-genesis.mjs` /
 `lc-bundle-checkpoint.mjs` (the demo `lc-anchor.bin` + live pools were untouched; this is a separate
-throwaway type-id). NOT exercised: force-exit / force-refund live, and the sequencer / client / wasm
-builds under the bundle (the corrections above remain their prerequisites). The real re-bake is
-audit-gated; this dry-run only validated the mechanics.
+throwaway type-id). The real re-bake is audit-gated; this dry-run only validated the mechanics.
+
+### Escape hatch + off-chain consumers validated under the bundle (2026-06-18)
+
+After the checkpoint, the trustless escape hatch and every off-chain STF consumer were validated under
+the bundle, closing finding 1 (codec coupling) end to end.
+
+- **Force-exit LIVE on-chain.** The bundle `lc-exit` (client built with `compact_smt` + `da_varint`)
+  scraped the pool's checkpoint chain, folded the L1 DA, and rebuilt the leaf trustlessly
+  (reconstructed root == on-chain `0x2aac2b52…`, balance 99.99899 CKB), then emitted the SPARSE compact
+  force-exit witness (122 bytes). A force-exit tx (`0x71415c46c7c354d934a034b1978176bcbe4487fa00a5c8881a7947127890834a`,
+  committed block 21460701) spent the checkpoint anchor with that witness as `witness[0].input_type`:
+  the live CKB-VM verified the compact-SMT inclusion + the operator-silence gate (no proof), nullified
+  the leaf (new anchor root `0x0691e05e…`), and forced the 99.99899 CKB payout to the owner's secp lock
+  (`args=blake160(pubkey)`). The escape hatch works on a bundle pool, no operator, no proof, L1 + key.
+- **client / sequencer / wasm build green under the bundle, with gaps fixed.** Each is a separate STF
+  consumer that must build with the codec-affecting features, and the runbook's earlier per-crate
+  feature lists were INCOMPLETE (this extends finding 1). Gaps found + fixed (all OFF by default, the
+  deployed stack is unchanged): the **client** had no `da_varint` forward (added; without it it cannot
+  parse a bundle pool's varint DA); the **sequencer** forwarded only `htlc_keyspace`+`htlc_sha256`,
+  missing `compact_smt`+`da_varint`+`reject_high_s` (added; 45 tests green under all five); the **wasm**
+  SDK got a `bundle` feature forwarding `compact_smt`+`da_varint` to client+stf (node smoke test green;
+  the in-browser empty root now reconstructs as the compact `0x00..00`). `lc-exit`'s
+  force-exit-witness length assert was also made compact-aware (the sparse witness is variable-length).
+
+**Corrected per-crate build matrix for the re-bake (supersedes step 5's list).** Every STF consumer
+needs the FULL set of codec-affecting features it touches:
+- guest = all five;
+- prover host (`crates/sp1-host`) + sequencer = all five (they produce the guest input / DA blob);
+- client + wasm = `compact_smt` + `da_varint` for reconstruction (plus `htlc_sha256` + `htlc_keyspace`
+  if they build/claim HTLCs);
+- anchor = `htlc_keyspace` + `compact_smt`.
+
+Each standalone workspace that enables `htlc_sha256` also needs the SP1 `sha2` patch + lock pin
+(finding 2). NOT exercised live: force-refund (needs an HTLC-lock checkpoint then a refund after a
+short htlc_timeout; the silence gate is already open on this pool since `last_epoch=0`).
 
 ## Rollback / abort (committee finding G)
 

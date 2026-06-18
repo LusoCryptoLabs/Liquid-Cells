@@ -15,6 +15,17 @@ repository = "https://github.com/tecmeup123/Liquid-Cells"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# `bundle` aligns the browser SDK with the re-baked guest's codec (compact_smt SMT + da_varint DA), so
+# in-browser reconstruction rebuilds the right root. The codec is feature-coupled (v2 re-bake finding):
+# without it the WASM SDK reads a bundle pool's DA with the deployed layout and rebuilds a wrong root.
+# OFF by default so the deployed wasm matches the deployed (feature-off) stack; flip at the coordinated
+# re-bake (build.sh: add `--features bundle`). Validated to build + pass the node smoke test under it.
+bundle = [
+    "liquid-cells-client/compact_smt", "liquid-cells-client/da_varint",
+    "liquid-cells-stf/compact_smt", "liquid-cells-stf/da_varint",
+]
+
 [dependencies]
 liquid-cells-client = { path = "../client", features = ["wire"] }
 liquid-cells-stf = { path = "../stf" }

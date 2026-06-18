@@ -28,6 +28,15 @@ htlc_keyspace = ["liquid-cells-stf/htlc_keyspace"]
 # together, so the sequencer must forward BOTH (the fifth coordination point of the bundle).
 htlc_sha256 = ["liquid-cells-stf/htlc_sha256"]
 
+# The sequencer SEALS batches into the guest input + DA blob the re-baked guest reads, so it must build
+# the STF with the SAME codec-affecting features as the guest or its output diverges (v2 re-bake
+# finding: the runbook's earlier "htlc_keyspace htlc_sha256" list was incomplete). `compact_smt` (sparse
+# witness siblings), `da_varint` (varint DA records) and `reject_high_s` (sig rule) all change what the
+# sequencer produces/validates; forward them too. OFF by default; flip with the bundle at the re-bake.
+compact_smt = ["liquid-cells-stf/compact_smt"]
+da_varint = ["liquid-cells-stf/da_varint"]
+reject_high_s = ["liquid-cells-stf/reject_high_s"]
+
 # The end-to-end demo (`examples/demo.rs`) drives the sequencer with client-built,
 # client-signed intents and then recovers a balance from L1 DA on the client side, so it
 # needs the client SDK. Dev-only: it never enters the sequencer's own dependency graph.
