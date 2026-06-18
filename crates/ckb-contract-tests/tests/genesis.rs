@@ -13,11 +13,17 @@ const MAX_CYCLES: u64 = 5_000_000_000;
 const CONTRACT_BIN: &str =
     "../ckb-contract/target/riscv64imac-unknown-none-elf/release/liquid-cells-anchor";
 
-/// The empty SMT root (must match the contract's `EMPTY_ROOT` / stf genesis root).
+/// The empty SMT root (must match the contract's `EMPTY_ROOT` / stf genesis root). Under
+/// `compact_smt` the STF empty tree roots to the zero constant, NOT the depth-256 keccak fold, so
+/// this must track the feature or it would mirror a wrong contract constant and pass while a real
+/// compact-pool genesis is rejected on-chain (the exact gap this cfg closes).
+#[cfg(not(feature = "compact_smt"))]
 const EMPTY_ROOT: [u8; 32] = [
     0xa7, 0xff, 0x9e, 0x28, 0xff, 0xd3, 0xde, 0xf4, 0x43, 0xd3, 0x24, 0x54, 0x76, 0x88, 0xc2, 0xc4,
     0xeb, 0x98, 0xed, 0xf7, 0xda, 0x75, 0x7d, 0x6b, 0xfa, 0x22, 0xbf, 0xf5, 0x5b, 0x9c, 0xe2, 0x4a,
 ];
+#[cfg(feature = "compact_smt")]
+const EMPTY_ROOT: [u8; 32] = [0u8; 32];
 
 
 fn build(data: Vec<u8>) -> (Context, TransactionView) {

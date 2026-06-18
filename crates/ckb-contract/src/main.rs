@@ -115,12 +115,19 @@ static SECP_CODE_HASH: [u8; 32] = [
 const FORCE_EXIT_TIMEOUT_EPOCHS: u64 = protocol::FORCE_EXIT_TIMEOUT_EPOCHS;
 const SMT_DEPTH: usize = 256;
 
-/// The empty sparse-Merkle-tree root (depth-256, keccak), the genesis pool root. Must
-/// equal `liquid_cells_stf::smt::Smt::new().root()` (pinned by `crates/stf/tests/genesis.rs`).
+/// The empty sparse-Merkle-tree root, the genesis pool root. Must equal the STF's empty root
+/// (`liquid_cells_stf::smt::Smt::new().root()`, pinned by `crates/stf/tests/genesis.rs`). Under
+/// `compact_smt` the STF's empty tree roots to `EMPTY_LEAF` (`[0u8; 32]`, see
+/// `smt_compact::Smt::root`), NOT the depth-256 keccak fold, so a compact re-bake MUST bake the
+/// zero root here or `genesis()` (which pins the new anchor root to this) rejects every valid
+/// compact-pool genesis. Selected by feature so the deployed (feature-off) contract is unchanged.
+#[cfg(not(feature = "compact_smt"))]
 static EMPTY_ROOT: [u8; 32] = [
     0xa7, 0xff, 0x9e, 0x28, 0xff, 0xd3, 0xde, 0xf4, 0x43, 0xd3, 0x24, 0x54, 0x76, 0x88, 0xc2, 0xc4,
     0xeb, 0x98, 0xed, 0xf7, 0xda, 0x75, 0x7d, 0x6b, 0xfa, 0x22, 0xbf, 0xf5, 0x5b, 0x9c, 0xe2, 0x4a,
 ];
+#[cfg(feature = "compact_smt")]
+static EMPTY_ROOT: [u8; 32] = [0u8; 32];
 
 // ---- layouts ----
 const ANCHOR_LEN: usize = 80; // root(32) seq(8) total(16) fee_acc(16) last_epoch(8)

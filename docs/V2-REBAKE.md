@@ -241,9 +241,24 @@ Corrections to fold into the steps:
    16 bytes short). Fixed to append the escrow balance; the fix is cfg-gated, so it is invisible when
    the bundle is OFF.
 
-Not yet exercised by this dry-run: the LIVE Pudge throwaway-pool deploy (step 6's on-chain leg) and
-the sequencer / client / wasm builds under the bundle (the corrections above are the prerequisites
-for them).
+6. **The contract `EMPTY_ROOT` is not `compact_smt`-aware: genesis of a compact pool is bricked
+   (corrects step 7; found by attempting the live deploy).** Under `compact_smt` the STF's empty
+   tree roots to `EMPTY_LEAF` = `[0u8; 32]` (`smt_compact::Smt::root`), NOT the depth-256 keccak
+   fold `0xa7ff9e28`. But the anchor baked `EMPTY_ROOT` (which `genesis()` pins the new anchor root
+   to, code 70) had no `compact_smt` variant, so a real compact-pool genesis would be rejected
+   on-chain (or its first checkpoint's `prev_root` would not match a `0xa7ff9e28` genesis anchor).
+   The off-chain genesis test did NOT catch this: `tests/genesis.rs` hardcoded the same `0xa7ff9e28`
+   with no feature variant, so it mirrored the wrong contract constant and stayed green. Fixed both
+   to bake `[0u8; 32]` under `compact_smt` (cfg-gated, so the deployed feature-off contract is
+   unchanged); the genesis test now actually exercises the compact empty root. `lc-genesis.mjs`
+   (the live deploy script) likewise hardcodes `0xa7ff9e28` and must use the zero root for a compact
+   pool.
+
+Live deploy status: the LIVE Pudge throwaway-pool deploy (step 6/7 on-chain leg) was started and
+immediately surfaced finding 6 above (a genesis-bricking bug), now fixed. The remaining live legs
+(deploy the bundle anchor code cell, create the genesis anchor with the zero root, prove + submit a
+checkpoint) plus the sequencer / client / wasm builds under the bundle are not yet exercised. The
+deployer key on Pudge is funded (~163k CKB).
 
 ## Rollback / abort (committee finding G)
 
