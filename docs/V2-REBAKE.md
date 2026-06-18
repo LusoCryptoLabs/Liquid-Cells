@@ -186,6 +186,65 @@ flag flip**.
    can still be siphoned by an escape-mode tx.
 8. **Update DEPLOY.md** with the new vkey, code hashes, and dep outpoints.
 
+## Dry-run results (executed 2026-06-17, testnet)
+
+A full testnet dry-run of this re-bake was run end-to-end: build the bundle guest, regenerate the
+Groth16 fixtures, re-pin the vkey, rebuild the anchor, run the whole `ckb-contract-tests` suite. It
+validated the chain and surfaced five concrete corrections to the steps above. With the corrections
+applied the bundle works end-to-end.
+
+- **New (dry-run) vkey: `0x005ecccf7ccec70d25badc97aa62812f208997f15b3ca9db0f8f56c3c76dfae6`**,
+  reproduced byte-for-byte across a clean rebuild (step 2 satisfied).
+- The anchor suite is GREEN under `--features "htlc_keyspace compact_smt"` (106 tests; all four
+  modes: genesis / checkpoint / deposit+withdrawal binding / force-exit + force-refund).
+- Checkpoint verified on CKB-VM at **80,352,804 cycles** (~2.3% of the 3.50B consensus limit).
+
+Corrections to fold into the steps:
+
+1. **The prover host is feature-coupled to the guest (corrects steps 4-5; most important finding).**
+   The guest input/output codec changes with the bundle (`compact_smt` makes the witness siblings
+   sparse, `da_varint` changes the DA blob), so the prover that ENCODES the guest input and DECODES
+   its committed output, `crates/sp1-host` (`liquid-cells-host`, `prove_one`, `prove_typeid`,
+   `lc-sequence`), must be built with the SAME five features as the guest. A default-feature host
+   feeds the re-baked guest input it cannot parse: the guest commits EMPTY public values, and every
+   downstream check fails confusingly (the in-process SP1 verify panics `UnexpectedExitCode(1)`;
+   `decode pv` hits `Eof`). The same holds for every off-chain STF consumer that builds guest input
+   or reconstructs leaves/witnesses from L1 DA: `crates/sequencer`, `crates/sequencer-service`,
+   `crates/client`, `crates/wasm`. Build ALL of them with the bundle, not just the guest.
+
+2. **`htlc_sha256` needs the SP1 `sha2` patch in EVERY standalone workspace that enables it (corrects
+   step 1).** `htlc_sha256` pulls `sha2`; the STF pins `sha2 = "=0.10.8"` while `sp1-zkvm` 6.2.4
+   transitively wants `0.10.9`, an unresolvable conflict until you add the SP1 `sha2` fork to that
+   crate's `[patch.crates-io]` and re-resolve the lock. Each standalone `[workspace]` (guest, host,
+   sequencer-service, client, wasm) has its OWN lockfile and needs:
+   `sha2 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", package = "sha2", tag = "patch-sha2-0.10.8-sp1-6.2.0" }`
+   plus `cargo update -p sha2 --precise 0.10.8`. The fork is native-safe (its precompile is gated to
+   the zkvm target).
+
+3. **Derive the contract `VKEY_HASH` array programmatically; do not hand-split the hex (corrects step
+   3).** Hand-splitting the 64-hex vkey into the `[u8; 32]` array silently corrupted it (a one-nibble
+   shift from byte 11). The symptom is subtle: every POSITIVE checkpoint proof fails to verify
+   on-chain while every tamper/negative test still passes, so a partial run looks fine. Generate the
+   array from `fixtures/vkey.txt` (`python3 -c "print(', '.join('0x%02x'%x for x in bytes.fromhex(open('fixtures/vkey.txt').read().strip()[2:])))"`)
+   and run `scripts/verify-vkey.sh`: its array-reconstruction check compares the contract bytes to
+   `fixtures/vkey.txt` and catches this before any build.
+
+4. **The cycle-margin worry is obsolete (corrects step 6).** The anchor verifier migrated to
+   `ark-bn254` (`crates/groth16`); the measured checkpoint cost is ~80M cycles, not the old
+   substrate-bn ~3.47B that needed the `e(alpha,beta)` precompute to fit. The 3.81B-over-3.50B
+   overrun cannot recur with this verifier. Still pre-flight on a throwaway pool, but the margin is
+   now ~98%, not ~1%.
+
+5. **Test-helper fix (already on main, bundle-OFF-safe).** `tests/redteam_escape2.rs` `build_refund`
+   was missing the `#[cfg(feature = "htlc_keyspace")]` `actual_balance` field that `forcerefund.rs`
+   carries, so `sanity_valid_refund_passes` failed under the composed bundle (the refund witness was
+   16 bytes short). Fixed to append the escrow balance; the fix is cfg-gated, so it is invisible when
+   the bundle is OFF.
+
+Not yet exercised by this dry-run: the LIVE Pudge throwaway-pool deploy (step 6's on-chain leg) and
+the sequencer / client / wasm builds under the bundle (the corrections above are the prerequisites
+for them).
+
 ## Rollback / abort (committee finding G)
 
 The anchor upgrade is an in-place type-id spend that consumes the old code cell, so there is no

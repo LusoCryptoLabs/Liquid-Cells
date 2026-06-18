@@ -108,6 +108,12 @@ fn build_refund(
     payload.extend_from_slice(&s.hashlock);
     payload.extend_from_slice(&s.htlc_timeout.to_be_bytes());
     payload.extend_from_slice(&s.lock_nonce.to_be_bytes());
+    // `htlc_keyspace`: the actual committed escrow balance the contract reconstructs/sweeps. The
+    // escrow leaf in `refund_scenario` holds exactly `amount` (the fee went to fee_acc), so the
+    // canonical refund must witness it; without this field the witness is 16 bytes short and the
+    // contract (built with the same feature) rejects a valid refund. Mirrors forcerefund.rs.
+    #[cfg(feature = "htlc_keyspace")]
+    payload.extend_from_slice(&s.amount.to_be_bytes());
     #[cfg(not(feature = "compact_smt"))]
     for sib in &s.siblings { payload.extend_from_slice(sib); }
     #[cfg(feature = "compact_smt")]
