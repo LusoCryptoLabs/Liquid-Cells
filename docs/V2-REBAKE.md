@@ -254,11 +254,30 @@ Corrections to fold into the steps:
    (the live deploy script) likewise hardcodes `0xa7ff9e28` and must use the zero root for a compact
    pool.
 
-Live deploy status: the LIVE Pudge throwaway-pool deploy (step 6/7 on-chain leg) was started and
-immediately surfaced finding 6 above (a genesis-bricking bug), now fixed. The remaining live legs
-(deploy the bundle anchor code cell, create the genesis anchor with the zero root, prove + submit a
-checkpoint) plus the sequencer / client / wasm builds under the bundle are not yet exercised. The
-deployer key on Pudge is funded (~163k CKB).
+### Live deploy DONE (Pudge throwaway pool, 2026-06-18)
+
+The full live throwaway-pool deploy was executed end to end on Pudge with the bundle build (guest +
+host + anchor under the 5 features, vkey `0x005ecccf…dfae6`), validating the whole re-bake chain on
+the real CKB-VM, including finding 6's fix on-chain:
+
+| Live artifact (throwaway, testnet only) | Value |
+|---|---|
+| Bundle anchor `codeHash` (fresh type-id) | `0x3a8f90a18b29def27880a4474ec109b062d598677d14d45808be29674bc16610` |
+| Bundle anchor code-dep | `0xed70ebff37c19ef532d9f94573556d293945c266e77a3dc1cbfaca131c720c2c:0` |
+| Bundle program vkey | `0x005ecccf7ccec70d25badc97aa62812f208997f15b3ca9db0f8f56c3c76dfae6` |
+| Genesis anchor (compact empty root `0x00..00`, seq 0) | `0xe0b534a810f15697552c82ec9c833a8eaa3aa09389590c6efa34ad00c9c67ed1:0` |
+| Bootstrap deposit cell | `0xe0b534a8…:1` (100 CKB, to_key `0xaa61b794…`) |
+| **Checkpoint tx (seq 0 -> 1), bundle proof verified on live CKB-VM** | `0x19c5c340aee362ca0c90f30693828355c92695607ca9fadccd50d30d1c0d7a21` (committed, block 21460500) |
+| Anchor after checkpoint (live) | `0x19c5c340…:0` (root `0x2aac2b52…`, seq 1, total 9999900000) |
+
+What this proves on-chain: (a) the genesis branch accepts the compact `[0;32]` root (finding 6 fix;
+before it, code 70), and (b) the live CKB-VM's ark-bn254 verifier accepts a real bundle Groth16 proof
+(5 features ON, new vkey) and advances a compact pool. The deploy scripts used live on the Windows
+side at `D:\cellswap\cellswap-complete`: `lc-bundle-deploy.mjs` / `lc-bundle-genesis.mjs` /
+`lc-bundle-checkpoint.mjs` (the demo `lc-anchor.bin` + live pools were untouched; this is a separate
+throwaway type-id). NOT exercised: force-exit / force-refund live, and the sequencer / client / wasm
+builds under the bundle (the corrections above remain their prerequisites). The real re-bake is
+audit-gated; this dry-run only validated the mechanics.
 
 ## Rollback / abort (committee finding G)
 
