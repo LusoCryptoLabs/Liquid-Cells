@@ -41,7 +41,7 @@ Leaf { balance: u128 (shannons), nonce: u64 }
 ### Pool state (anchor cell data)
 
 ```
-PoolState { pool_id: 32B, chain_id: u64, seq: u64, root: 32B, total: u128, fee_acc: u128 }
+PoolState { pool_id: 32B, chain_id: u64, seq: u64, root: 32B, total: u128, fee_acc: u128, last_epoch: u64 }
 ```
 
 Invariant, maintained by every transition:
@@ -119,9 +119,12 @@ PublicValues {
   pool_id, chain_id,
   prev_root, prev_seq, new_root, new_seq,
   deposits_commitment, withdrawals_commitment,
-  prev_total, new_total, fee_delta, current_epoch
+  prev_total, new_total, fee_delta, current_epoch,
+  fee_withdrawal, da_commitment
 }
 ```
+
+All 14 fields, 288 bytes total (`PublicValues::encode()`).
 
 The anchor **type script** accepts a checkpoint tx iff **all** hold:
 

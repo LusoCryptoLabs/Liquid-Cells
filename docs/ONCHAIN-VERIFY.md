@@ -6,8 +6,10 @@ values to on-chain facts. Reference artifacts for the verifier live in
 [`../fixtures/reference/`](../fixtures/reference/); a real proof + inputs triple
 lives in [`../fixtures/`](../fixtures/) (regenerate with `scripts/groth16.sh`).
 
-SP1 circuit version: **v6.1.0**. Program vkey (baked policy):
-`0x00fda595b6c0b6e64af334fbe7ecfc029ec314c08cfc06261533d29b84ace165`.
+> Live constants: vkey `0x00213af5...c1e8`, PublicValues 288 bytes. See DEPLOY.md / SPEC.md for every deployed hash.
+
+SP1 circuit version: **SP1 crate 6.2.3 (build image v6.2.4)**. Program vkey (baked policy):
+`0x00213af5b4cc8922754e5b8ee7e610de703d4cb17fabb0a187c95c37fe67c1e8`.
 
 ---
 
@@ -52,13 +54,13 @@ embedded in `Groth16Verifier.sol` / `groth16_vk.bin`. The script runs the standa
 pairing check `e(A,B) == e(alpha,beta) · e(vk_x, gamma) · e(C, delta)` where
 `vk_x = IC[0] + Σ inputs[i]·IC[i+1]`.
 
-> `publicValues` here is exactly our `PublicValues::encode()` (240 bytes). The proof
+> `publicValues` here is exactly our `PublicValues::encode()` (288 bytes). The proof
 > binds it via the SHA-256 digest, so any change to a single public value invalidates
 > the proof.
 
 ## 2. Pin the public values to chain facts
 
-After the proof verifies, decode `publicValues` (240 bytes, see `codec::PublicValues`)
+After the proof verifies, decode `publicValues` (288 bytes, see `codec::PublicValues`)
 and enforce, this is the part that makes the rollup *mean* something:
 
 | Public value | Pinned to |
@@ -79,9 +81,9 @@ domain tag). The script recomputes them from the real cells and checks equality,
 the proof cannot claim deposits/withdrawals that the transaction does not actually
 move.
 
-## 3. Open items for Phase 2b
+## 3. Phase 2b (done, shipped + live on Pudge)
 
-* Reuse vs. re-port the g16ckb BN254 verifier into a `ckb-contract` type script.
-* Wire `sha256` (for the digest) and `keccak` (for the commitments) in CKB-VM.
-* Confirm BN254 field-element endianness between SP1's encoding and the CKB verifier.
-* Test against `fixtures/` (real proof + public values + vkey).
+* DONE: g16ckb BN254 verifier re-ported into the `ckb-contract` type script.
+* DONE: `sha256` (for the digest) and `keccak` (for the commitments) wired in CKB-VM.
+* DONE: BN254 field-element endianness confirmed between SP1's encoding and the CKB verifier.
+* DONE: tested against `fixtures/` (real proof + public values + vkey).

@@ -18,11 +18,11 @@ evidence for the hand-written crypto, durability, a real deposit lock, and key r
 | Verifier correctness | **Differential test** of the live ark-bn254 Groth16 verifier against the independent pre-port substrate-bn implementation, over real proofs and a fuzzed corpus. Asserts `accept(ark) == accept(bn)` for the live cp1 proof, every fixture, all 2848 single-bit proof flips, all 2304 public-value flips, and 2500 random multi-byte mutations. Zero disagreements. | 5 | `crates/verifier-difftest` |
 | STF safety | **Deterministic fuzzer**: seeded randomized mixed batches checked against an independent shadow ledger after every batch, pinning value conservation, no-debit-without-signature, shadow agreement, determinism, and no-panic-on-malformed across thousands of ops. | 4 | `crates/stf/tests/fuzz.rs` |
 | Sequencer durability | **Write-ahead replay journal** (event-sourced, crash-tolerant). `DurableSequencer` logs every intent and seal; `recover()` replays through the identical STF to reconstruct a byte-identical sequencer (root, seq, total, fee_acc, leaves, and pending mempool). Tolerates a torn trailing frame. | 5 | `crates/sequencer/src/journal.rs` |
-| Deposit safety | **Deposit lock**: a deposit cell's CKB can move only into a pool checkpoint (sweep, credits the depositor) or refund to the depositor after a timeout. Never to a third party, closing the always-success window. | 6 | `crates/ckb-contract/src/deposit_lock.rs` |
+| Deposit safety | **Deposit lock**: a deposit cell's CKB can move only into a pool checkpoint (sweep, credits the depositor) or refund to the depositor after a timeout. Never to a third party, closing the always-success window. | 23 | `crates/ckb-contract/src/deposit_lock.rs` |
 | Key recovery | **Session-key export/import** in the demo so losing browser storage no longer means losing access, with an honest note on why deterministic derivation is not possible under JoyID. | n/a | `crates/demo-ui/src/index.html` |
 | Reproducibility | **vkey consistency check** asserting the guest vkey is identical across the contract, the fixture, and the prover assertion, plus the documented full-rebuild procedure. | n/a | `scripts/verify-vkey.sh` |
 
-Suite (all green): **80 STF**, **44 sequencer**, **105 contract integration**, **32 client**, **12 host**, **5 differential verifier**, **3 sequencer-service**, and **5 WASM SDK** tests. The **56-case adversarial red-team** is counted within those totals and spans both layers: **43** in CKB-VM (`crates/ckb-contract-tests/tests/redteam_*.rs`) plus **13** in-process against the STF (`crates/stf/tests/redteam.rs`). Coverage also includes the resilient-seal, full-drain, deposit-confirmation-gate, tipping-integration, DA-snapshot, timelocked-upgrade-lock, soft-confirmation/cadence, fee-schedule, and Fiber atomic-swap suites.
+Suite (all green): **80 STF**, **44 sequencer**, **111 contract integration**, **32 client**, **12 host**, **5 differential verifier**, **5 sequencer-service**, and **5 WASM SDK** tests. These are static test-function counts (`#[test]` and `#[tokio::test]`); the default `cargo test` run executes fewer in crates with feature-gated tests. The **56-case adversarial red-team** is counted within those totals and spans both layers: **43** in CKB-VM (`crates/ckb-contract-tests/tests/redteam_*.rs`) plus **13** in-process against the STF (`crates/stf/tests/redteam.rs`). Coverage also includes the resilient-seal, full-drain, deposit-confirmation-gate, tipping-integration, DA-snapshot, timelocked-upgrade-lock, soft-confirmation/cadence, fee-schedule, and Fiber atomic-swap suites.
 
 ### Why the differential verifier test matters most
 
@@ -67,7 +67,7 @@ formality): the buildable path, ranked by leverage. Items marked done were close
   on-chain `anchor_type_id() == args` check passed). See [DEPLOY.md](DEPLOY.md).
 - [x] Prove the cross-pool guarantee at the contract level: a deposit bound to one pool's type
   hash is refused by a *different* pool's checkpoint (`SweepWithForeignPool` /
-  `sweep_into_a_foreign_pool_rejected` in `crates/ckb-contract-tests/tests/deposit_lock.rs`, 7
+  `sweep_into_a_foreign_pool_rejected` in `crates/ckb-contract-tests/tests/deposit_lock.rs`, 10
   deposit-lock tests). This makes "binding to a type-id'd anchor closes the cross-pool sweep
   caveat" a tested fact rather than prose.
 - [x] Advance the type-id'd pool with a proved checkpoint and route the deposit lock to its unique
@@ -139,8 +139,8 @@ larger batches amortize the fixed proof cost better, so the fee model and the ba
 ## Reproducibility and pinning
 
 The guest verifying key `0x00213af5…c1e8` binds the on-chain verifier to exactly this STF. It is pinned
-in three places (contract `VKEY_HASH`, `fixtures/vkey.txt`, `prove_one.rs EXPECTED_VKEY`);
-`scripts/verify-vkey.sh` asserts they agree and prints the full-rebuild check. Build inputs that must
+in nine places (contract `VKEY_HASH` + 4 host bins + 4 fixtures);
+`scripts/verify-vkey.sh` and CI assert they agree and print the full-rebuild check. Build inputs that must
 match to reproduce the vkey byte-for-byte: **succinct rustc 1.94.0** (cargo-prove's toolchain, == the
 `ghcr.io/succinctlabs/sp1:v6.2.4` image), **sp1-zkvm / sp1-sdk 6.2.3** (the committed crate version, distinct from the v6.2.4 cargo-prove image), the guest's
 **`journal` feature off** (default, the journal-only codec helpers are gated out so they never enter

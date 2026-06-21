@@ -4,7 +4,7 @@
 //! does not lose the committed root *or* the unsealed mempool, and recovery is exact
 //! (same leaves, same counters), because it re-runs the same deterministic STF commands.
 
-use liquid_cells_sequencer::{DurableSequencer, FileJournal, MemJournal, Sequencer};
+use liquid_cells_sequencer::{DurableSequencer, MemJournal, Sequencer};
 use liquid_cells_stf::*;
 use std::collections::BTreeMap;
 

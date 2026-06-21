@@ -3,7 +3,7 @@ name = "liquid-cells-wasm"
 version = "0.0.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/tecmeup123/Liquid-Cells"
+repository = "https://github.com/LusoCryptoLabs/Liquid-Cells"
 
 # Standalone (not in the lean root workspace): a wasm32 cdylib for the browser/JS, plus an rlib so
 # the pure serialization helpers test natively. The WHOLE point is that this wraps the SAME

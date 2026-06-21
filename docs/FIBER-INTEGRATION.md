@@ -27,7 +27,7 @@ H = sha256(pre) = 0x4a7c1118c01e0f7cd488185180c2bcefa79bf3928eb63819189039820033
 ## Live funded swap (end to end)
 
 Run against two local `fnn` v0.8.1 testnet nodes (June 2026), a funded channel between them, driven
-by `/root/fnn-run/swap-run.py`:
+by `scripts/fiber/swap-run.py`:
 
 * **node1** (taker, port `8227`, pubkey `022a6991...`): channel funder, ~2401 CKB local balance.
 * **node2** (maker, port `8237`, pubkey `02b90ee1...`): holds the `sha256` hold invoice, settles it.
@@ -121,8 +121,9 @@ curl -sL -o fnn.tar.gz \
 mkdir node && tar -xzf fnn.tar.gz -C node && cd node
 cp config/testnet/config.yml .
 mkdir ckb && python3 -c "import secrets;open('ckb/key','w').write(secrets.token_hex(32)+'\n')"
-FIBER_SECRET_KEY_PASSWORD=swappw RUST_LOG=info ./fnn -c config.yml -d .
+FIBER_SECRET_KEY_PASSWORD=<choose-a-password> RUST_LOG=info ./fnn -c config.yml -d .
 ```
+This password only encrypts the freshly generated local testnet key from the line above, so there is no value at stake.
 The testnet config points CKB at `https://testnet.ckbapp.dev/`, RPC at `127.0.0.1:8227`, p2p at
 `:8228`, and dials the testnet bootnodes. `node_info` confirms `peers_count > 0`.
 

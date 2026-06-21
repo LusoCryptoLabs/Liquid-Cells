@@ -20,7 +20,7 @@ exclude = ["crates/sp1-guest", "crates/sp1-host", "crates/ckb-contract", "crates
 [workspace.package]
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/tecmeup123/Liquid-Cells"
+repository = "https://github.com/LusoCryptoLabs/Liquid-Cells"
 
 [profile.release]
 opt-level = 3

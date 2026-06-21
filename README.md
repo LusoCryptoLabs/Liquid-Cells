@@ -15,7 +15,7 @@ itself, the same base as any on-chain transaction.
 
 > Status: **Live on Pudge testnet, pre-alpha.** The deterministic STF, its SP1 proof
 > wrapped to Groth16, and the on-chain anchor type script are implemented and tested
-> end-to-end (49 STF + 100 contract integration tests): proof verification on CKB-VM bound to real
+> end-to-end (80 STF + 111 contract integration tests): proof verification on CKB-VM bound to real
 > deposit/withdrawal cells, value conservation, a proven L1 fee model, **data availability**,
 > a **force-exit escape hatch**, **in-pool HTLCs** for atomic-swap dust egress, and an
 > on-chain **force-refund** hatch that lets a swap's sender unilaterally reclaim a timed-out
@@ -183,6 +183,10 @@ liquid-cells/
     sp1-host/            # cycle/equivalence driver + fixture/proof generator
     ckb-contract/        # anchor type script: Groth16 verify + force-exit + force-refund
     ckb-contract-tests/  # ckb-testtool integration suite (+ redteam_*.rs adversarial cases)
+    groth16/             # the deployed BN254 Groth16 verifier lib used by the anchor type script
+    verifier-difftest/   # differential test: hand-ported verifier vs an independent impl (correctness safeguard)
+    wasm/                # liquid-cells-wasm, the browser SDK: wasm-bindgen skin so the same STF runs in-browser
+    sequencer-service/   # tiny HTTP front for the sequencer (submit/seal/info/leaf/da), prover runs separately
   docs/
     SPEC.md              # consolidated technical spec (working draft; links the per-topic docs)
     COMPLETION.md        # living path-to-mainnet tracker (findings, v2 re-bake, gates)
@@ -248,6 +252,12 @@ and the operator can never move or redirect your funds. The server holds the `Se
 to the live anchor and spawns the prove+submit pipeline per checkpoint (`crates/demo-ui`).
 Operator deploy/driver scripts (genesis, checkpoint submit) build the real Pudge transactions.
 
+> **Heads up (a fresh clone will not run the live demo out of the box):** the operator deploy and
+> driver scripts (the `lc-*.mjs` files) live off-repo on the operator machine, they are not in this
+> repository. The demo-ui also requires a generated `fixtures/demo/state.json`. You can still run the
+> off-chain client lifecycle (`cargo run -p liquid-cells-client --example payment_pool`) with no L1,
+> prover, or operator scripts needed.
+
 ---
 
 ## Roadmap
@@ -268,7 +278,7 @@ Operator deploy/driver scripts (genesis, checkpoint submit) build the real Pudge
 | **5b** | **On-chain force-refund**: a third anchor mode, the swap *sender* unilaterally reclaims a *timed-out* HTLC escrow against the committed root (htlc_id re-derived, SMT inclusion, payout forced to the sender's secp lock), gated by `since ≥ timeout` **and** operator silence. 9 ckb-testtool tests. Closes the sender's exposure; the receiver-side residual is architectural (single anchor → Phase 6), documented honestly in [docs/EGRESS.md](docs/EGRESS.md) | **done** (live on Pudge, upgrade tx `0xf393b367…`) |
 | **2b-6** | **Deployed to Pudge**: code cell + genesis anchor live, first checkpoint with the BN254 proof verified on live CKB-VM. Needed the 3-pairing precompute (`e(alpha,beta)` baked) to fit CKB's ~3.50B block cycle limit ([DEPLOY.md](DEPLOY.md)) | **done** |
 | **Seq** | **Sequencer loop** (`crates/sequencer`): the off-chain STF runner, a mempool of signed intents + `seal_batch()` that emits a `CheckpointJob` (SP1 guest input, both anchor-cell byte images, DA blob, deposit/withdrawal cell specs) and advances the in-memory root, so **successive checkpoints chain**. STF-only dep (no SP1), tests in ms. 2 loop tests assert genesis-pinning, anchor-chaining (`seq+1`), value conservation across the chain, and DA reconstruction (final root + a force-exit proof from L1 alone). **Driven live on Pudge: the deployed pool advanced seq 1→2→3, each a BN254 proof verified on-chain** (`crates/sp1-host/src/bin/sequence.rs`, [DEPLOY.md](DEPLOY.md)) | **done** |
-| **SDK** | **Client SDK** (`crates/client`): build + sign `Transfer`/`Withdrawal`/`HTLC` intents and reconstruct your `{balance, nonce}` + an SMT inclusion proof from L1 DA, plus assemble the exact force-exit / force-refund witness bytes, all on the **same** `liquid-cells-stf`, so a client can never diverge from the sequencer or contract. 13 tests: intents accepted by the STF, reconstruction recovers the true leaf, witnesses verify against the committed root, `batch_transfer` fan-out + snapshot/reconstruct | **done** (Rust; subsumes the standalone DA CLI) |
+| **SDK** | **Client SDK** (`crates/client`): build + sign `Transfer`/`Withdrawal`/`HTLC` intents and reconstruct your `{balance, nonce}` + an SMT inclusion proof from L1 DA, plus assemble the exact force-exit / force-refund witness bytes, all on the **same** `liquid-cells-stf`, so a client can never diverge from the sequencer or contract. 32 tests: intents accepted by the STF, reconstruction recovers the true leaf, witnesses verify against the committed root, `batch_transfer` fan-out + snapshot/reconstruct | **done** (Rust; subsumes the standalone DA CLI) |
 | **6a** | **Permissionless sequencing** (foundational): anchor **lock continuity** (`output anchor lock == input anchor lock`) turns the genesis lock into a permanent policy for who may sequence, so an always-success genesis lock yields a permanently permissionless, capture-proof pool. Capture-rejection test added. **Live on Pudge: a second pool with an always-success lock, where cp2 (seq 1 to 2) advanced the root UNSIGNED**, gated only by the proof + lock continuity ([DEPLOY.md](DEPLOY.md)) | **done** (safety + capture-proofness; reward + anti-griefing next) |
 | **6b-1** | **Sequencer reward** (contract-only): the operator pays itself out of the proven `fee_withdrawal` via a marked reward output (excluded from withdrawals, bounded by fee revenue so never from a user balance), which makes permissionless sequencing self-sustaining. No proof change. **Live on Pudge** (upgrade tx `0x4ea3eb48…`). anchor.rs 11 | **done** |
 | **6b-2** | **Anti-griefing**: a deterministic off-chain leader schedule (`keccak(id ‖ root)`, lowest leads) so only one sequencer proves per round, with ranked failover (`crates/sequencer/src/coordinator.rs`). Racing is an efficiency problem, not a trust one, so the on-chain commit-reveal alternative is deliberately deferred. 4 tests | **done** |
@@ -282,7 +292,7 @@ trust assumptions.
 
 ## Security properties & non-goals
 
-**Guaranteed (once Phases 1-4 land):** no operator theft; no balance inflation; no
+**Guaranteed (Phases 1-4, live on testnet):** no operator theft; no balance inflation; no
 permanent censorship; no data withholding; trustless exit at any denomination.
 
 **Out of scope (v1):** privacy, on-chain DA reveals transfer diffs (a future
@@ -293,4 +303,4 @@ version can add encrypted DA + amount-hiding proofs); general-purpose smart cont
 
 ## License
 
-MIT. This is a private repository; do not redistribute.
+Licensed under MIT (see LICENSE).

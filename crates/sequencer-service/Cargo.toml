@@ -3,7 +3,7 @@ name = "liquid-cells-sequencer-service"
 version = "0.0.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/tecmeup123/Liquid-Cells"
+repository = "https://github.com/LusoCryptoLabs/Liquid-Cells"
 
 # Standalone (not in the lean root workspace): the off-chain sequencer behind a tiny HTTP front, so a
 # client (the WASM SDK, or any HTTP caller) can submit signed intents and have them sealed into

@@ -28,7 +28,7 @@ design can be optimized.
 | Proof system | SP1 zkVM (RISC-V STARK) → **Groth16 BN254** wrap (356 B proof) | KZG10 aSVC position proofs (BN256/BLS12-381) | recursive client-side ZK |
 | Trusted setup | yes (Groth16) | yes (KZG CRS) | minimised (client-side) |
 | Data availability | **full touched-leaf diffs** posted on-chain, keccak-bound | ~13 bytes/tx in the witness field + new commitment | ~4-5 byte **nullifiers** on-chain; bulk pushed to client |
-| On-chain cost / batch | **~3.47B CKB-VM cycles** (3 pairings; near the 3.5B block limit) | ~160-230M cycles per op | Ethereum gas (aggregated) |
+| On-chain cost / batch | **~80M CKB-VM cycles** (about 2.3% of the 3.5B limit; ark-bn254 4-pairing) | ~160-230M cycles per op | Ethereum gas (aggregated) |
 | Privacy | none (diffs are public) | none | **yes** (client-side proofs) |
 | Permissionless deposit/withdraw | deposit cell + checkpoint; **force-exit** after operator silence | **direct lock-script** commitment update, no operator, no proof | client-driven |
 | Permissionless block production | yes (always-success lock + lock continuity) | multi-operator via type script | yes (stateless) |
@@ -39,8 +39,10 @@ design can be optimized.
 1. **Versus Clover (same chain, same goal):** Clover hand-builds aSVC circuits; we run the
    payment state machine as **plain Rust inside a zkVM (SP1) and prove it verbatim**, so the
    off-chain sequencer and the proved program are byte-identical ("the sequencer is the guest").
-   That is a *developer-ergonomics and logic-transparency* difference, not a capability one, and
-   it costs **~15-20x more on-chain cycles** than Clover's aSVC verify. We are **deployed and
+   That is a *developer-ergonomics and logic-transparency* difference, not a capability one. With
+   the ark-bn254 verifier (~80M cycles per checkpoint) the on-chain cost is now **roughly on par
+   with Clover's aSVC verify** (~160-230M cycles per op), where the old 3-pairing build cost an
+   order of magnitude more. We are **deployed and
    running on a public testnet**; Clover was a local demo. Clover's deposit/withdraw are arguably
    *better* than ours: a direct lock-script commitment update needs **no operator and no proof**,
    whereas we currently spend a full checkpoint (and a ~7-min proof) to credit a deposit.
@@ -57,37 +59,41 @@ design can be optimized.
 
 Ordered by leverage:
 
-1. **Swap the BN254 library, DONE.** The verifier was ported to `ark-bn254`, removing the
-   3-pairing `e(alpha,beta)` precompute hack (now a plain 4-pairing check), with the **same SP1
-   proofs verifying and all 40 contract tests green** (good proof accepted, every tampered
-   proof/root/accounting case still rejected). Speed-optimized, the port measured (not projected)
-   **3,474,607,239 → 53,308,780 cycles** at a ~420KB binary, but that binary was too big for the
-   code cell, so the **deployed** build is optimized for *size* (`opt-level="z"` + LTO + strip),
-   trading speed for capacity: **~112KB binary at ~80M cycles** (still a **~43x reduction**, ~2.3%
-   of the block limit). Details below were the investigation that led here.
+1. **Swap the BN254 library, DONE and LIVE.** The verifier was ported to `ark-bn254` (the
+   `crates/groth16` lib, imported by `crates/ckb-contract`), removing the 3-pairing `e(alpha,beta)`
+   precompute hack (now a plain 4-pairing check), with the **same SP1 proofs verifying and all 40
+   contract tests green** (good proof accepted, every tampered proof/root/accounting case still
+   rejected). Speed-optimized, the port measured (not projected) **3,474,607,239 → 53,308,780
+   cycles** at a ~420KB binary, but that binary was too big for the code cell, so the **deployed**
+   build is optimized for *size* (`opt-level="z"` + LTO + strip), trading speed for capacity:
+   **~112KB binary at ~80M cycles** (still a **~43x reduction**, ~2.3% of the block limit). This
+   landed on Pudge via upgrade tx `0x68f9730a` (see DEPLOY.md live-artifacts table). Details below
+   record the investigation that led here.
 
-   Our verify *was* **3,474,607,239 cycles** (`valid_checkpoint_verifies`), only **0.66% under**
-   the 3.498B block limit, using the unoptimized vendored `substrate-bn`, which forced the
-   4→3-pairing hack to fit.
-   Two independent CKB-VM data points put a tuned BN254 verify **~45-55x lower**: ckb-zkp does a
-   Groth16 BN254 verify at **~77.5M cycles** (pure Rust), and the "Optimized SP1 Verifier for
-   ckb-vm" cut Plonk **6,000M → 63M** using `ckb-alt-bn128`. So the projected verify after a swap
-   is **~70-100M cycles (a ~35-50x reduction)**, comfortably under the limit, and the 3-pairing
-   precompute hack disappears.
-   *Investigation status (MEASURED, on this CKB-VM).* A microbench (`crates/bn-bench`, run under
-   `ckb-debugger`) timed **one** BN254 pairing each way:
-   - `substrate-bn` (our current verifier's lib): **1,119,056,067 cycles** (~1067M/pairing).
+   The verify *was* **3,474,607,239 cycles** (`valid_checkpoint_verifies`, historical state), only
+   **0.66% under** the 3.498B block limit, using the unoptimized vendored `substrate-bn`, which
+   forced the 4→3-pairing hack to fit. That figure is now history; the live verifier measures
+   **~80M cycles**.
+   Two independent CKB-VM data points predicted a tuned BN254 verify **~45-55x lower**: ckb-zkp does
+   a Groth16 BN254 verify at **~77.5M cycles** (pure Rust), and the "Optimized SP1 Verifier for
+   ckb-vm" cut Plonk **6,000M → 63M** using `ckb-alt-bn128`. The ark-bn254 port confirmed this: the
+   live verify is **~80M cycles**, comfortably under the limit, and the 3-pairing precompute hack is
+   gone.
+   *Investigation note (one-time historical measurement, on this CKB-VM).* Early in the
+   investigation, a throwaway microbench (run under `ckb-debugger`) timed **one** BN254 pairing each
+   way:
+   - `substrate-bn` (our former verifier's lib, now the difftest reference): **1,119,056,067
+     cycles** (~1067M/pairing).
    - `ark-bn254` (modern pure Rust, `no_std`): **16,853,046 cycles** (~16.1M/pairing).
 
-   That is a **~66x speedup per pairing, in pure Rust**, no C++/FFI. (The C++ `ckb-alt-bn128` =
-   mohanson `bn128` was a dead end here: it needs a ckb-patched `intx` not publicly cloneable, the
-   bare-metal `riscv64-unknown-elf-g++` lacks the full C++20 STL upstream `intx` pulls, and FFI
-   into `no_std` Rust is its own task, **and it turns out to be unnecessary**.) Our 3.47B verify is
-   3 `substrate-bn` pairings (~1B each) + final-exp + MSM; porting to `ark-bn254` projects the full
-   verifier to **~40-80M cycles**, i.e. from **99.3% of the block limit to ~1-2%**, and the
-   3-pairing precompute hack can be dropped. **Next step: port the anchor verifier to `ark-bn254`
-   / `ark-groth16`, re-bake the VK in ark encoding, and confirm the SAME SP1 proofs still verify
-   via `valid_checkpoint_verifies` (which also re-measures the new cycle count).**
+   That was a **~66x speedup per pairing, in pure Rust**, no C++/FFI, and motivated the port. (The
+   C++ `ckb-alt-bn128` = mohanson `bn128` was a dead end here: it needs a ckb-patched `intx` not
+   publicly cloneable, the bare-metal `riscv64-unknown-elf-g++` lacks the full C++20 STL upstream
+   `intx` pulls, and FFI into `no_std` Rust is its own task, **and it turned out to be
+   unnecessary**.) The old 3.47B verify was 3 `substrate-bn` pairings (~1B each) + final-exp + MSM;
+   the `ark-bn254` port brought the full verifier to **~80M cycles**, i.e. from **99.3% of the block
+   limit to ~2.3%**, and the 3-pairing precompute hack was dropped. `substrate-bn` now survives only
+   as the reference impl in `crates/verifier-difftest`.
 2. **Reconsider the proof system for the on-chain leg.** Groth16-via-zkVM is ergonomic but the
    most expensive on-chain option. Cheaper paths: the optimized **Plonk** SP1 verifier (~63M
    cycles, already exists for ckb-vm), or a **Clover-style aSVC / hand-rolled circuit** for the
@@ -116,9 +122,10 @@ Liquid Cells is a **complete, working, CKB-cell-native instance** of a well-esta
 (payment zk-rollup), sitting between Clover (CKB aSVC rollup, demo) and the stateless model
 (Intmax). Its contribution is **engineering and integration on a live chain**, plus a couple of
 clean CKB-idiomatic choices (anchor-cell-as-pool, lock-continuity permissionlessness). It is
-**not** a novel protocol, and its on-chain verifier is currently **far from optimal** (item 1
-above is the obvious fix). Treat it as a strong reference implementation and product base, not as
-a research result.
+**not** a novel protocol; its on-chain verifier is now the `ark-bn254` build (~80M cycles, ~2.3%
+of the block limit, live via upgrade tx `0x68f9730a`), so the once-dominant verifier cost is no
+longer the bottleneck (item 1 above records that work). Treat it as a strong reference
+implementation and product base, not as a research result.
 
 *Sources: github.com/sec-bit/clover-protocol, github.com/sec-bit/ckb-zkp, eprint.iacr.org/2023/1082,
 github.com/godwokenrises/godwoken, github.com/nervosnetwork/fiber,

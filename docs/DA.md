@@ -49,7 +49,7 @@ proof for a leaf verifies against that root.
 
 The blob is `56 · (touched leaves)` bytes, for the `MAX_LEAVES_PER_BATCH = 1024` ceiling,
 ~57 KB, paid as tx fee, once per checkpoint. The contract's extra work is a single keccak
-over the blob, negligible beside the ~3.6B-cycle BN254 pairing.
+over the blob, negligible beside the ~80M-cycle BN254 pairing.
 
 ## Reconstruction cost (and the snapshot path)
 

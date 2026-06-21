@@ -7,13 +7,19 @@ set -u
 source "$HOME/.cargo/env" 2>/dev/null
 export PATH="$HOME/.sp1/bin:$HOME/.cargo/bin:$PATH"
 JOBNAME="${1:?usage: lc-run-checkpoint.sh <jobname>}"
-ROOT=/root/liquid-cells
+# ROOT defaults to the repo root resolved from this script's own location (fixtures/demo),
+# so it is not tied to one operator's absolute layout. Override with ROOT=... if needed.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 JOB="$ROOT/fixtures/demo/$JOBNAME"
 ELF="$ROOT/crates/sp1-guest/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/liquid-cells-guest"
 PROVER="$ROOT/crates/sp1-host/target/release/prove_one"
 LOG="$JOB/run.log"
-NODE="/mnt/c/Program Files/nodejs/node.exe"
-CCC="/mnt/c/Users/telmo/Downloads/cellswap/cellswap-complete"
+# NODE: the node binary used to run the CCC submit driver (defaults to node on PATH).
+NODE="${NODE:-node}"
+# CCC: directory holding the CCC submit driver (lc-demo-checkpoint.mjs). Override CCC=... to
+# point at your local cellswap-complete checkout; defaults to a sibling dir next to the repo.
+CCC="${CCC:-$ROOT/../cellswap-complete}"
 
 echo "=== prove $JOBNAME $(date) ===" > "$LOG"
 cd "$ROOT/crates/sp1-host" || { echo "no sp1-host" >> "$LOG"; exit 1; }

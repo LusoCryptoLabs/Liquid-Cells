@@ -52,8 +52,12 @@ const BOOT_RESERVE: u128 = 500_000_000; // 5 CKB seeded into fee_acc
 const BOOT_FEE_WD: u128 = 1_000_000; // 0.01 CKB drawn for cp1's miner fee
 const LIVE_BOOTSTRAP_ROOT: &str = "ea1da02dddbce9707ce8bf95dc46e48643bd3c4c17c0f5e07f08ff245176ed7d";
 
-const DEMO_DIR: &str = "/root/liquid-cells/fixtures/demo";
-const WRAPPER: &str = "/root/liquid-cells/fixtures/demo/lc-run-checkpoint.sh";
+// Paths are derived at compile time from the crate manifest dir (crates/demo-ui), so the
+// build is not tied to one operator's absolute layout. The repo fixtures/demo dir sits two
+// levels up from this crate.
+const DEMO_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/demo");
+const WRAPPER: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/demo/lc-run-checkpoint.sh");
+const INDEX_HTML: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/index.html");
 const AS_CODE_HASH: &str = "0xd8c2346649752dc03e8e747ae6152fe13675be36b3c77e459d6f841988c2d06e";
 
 fn pool_id() -> Hash {
@@ -129,17 +133,12 @@ struct AnchorRef {
 #[derive(Clone)]
 struct AccountInfo {
     label: String,
-    pubkey: [u8; 33],
-    key: Hash,
-    is_user: bool,
 }
 
 #[derive(Clone)]
 struct PendingTip {
     from_key: Hash,
     to_key: Hash,
-    from_label: String,
-    to_label: String,
     amount: u128,
     fee: u128,
     transfer: Transfer,
@@ -148,7 +147,6 @@ struct PendingTip {
 /// A deposit waiting to be swept into the next batched checkpoint.
 #[derive(Clone)]
 struct DepositReq {
-    label: String,
     to_key: Hash,
     amount: u128,
     tx: String,
@@ -160,7 +158,6 @@ struct DepositReq {
 struct WithdrawReq {
     w: Withdrawal,
     lock: Value,
-    label: String,
 }
 
 #[derive(Clone)]
@@ -208,8 +205,14 @@ impl Demo {
             "bootstrap replay did not reproduce the live cp1 root; redeploy the demo pool"
         );
 
-        let state = read_json_file(&format!("{DEMO_DIR}/state.json"))
-            .expect("state.json (run lc-demo-genesis.mjs + cp1)");
+        let state = read_json_file(&format!("{DEMO_DIR}/state.json")).unwrap_or_else(|| {
+            eprintln!(
+                "error: {DEMO_DIR}/state.json not found or unreadable.\n\
+                 Generate it first by deploying the demo pool (run lc-demo-genesis.mjs then land cp1); \
+                 see the README for the demo setup steps."
+            );
+            std::process::exit(1);
+        });
         let a = &state["anchor"];
         let anchor = AnchorRef {
             tx: a["txHash"].as_str().unwrap().to_string(),
@@ -236,8 +239,7 @@ impl Demo {
         for name in ["Streamer", "ArtistAna", "GamerGus"] {
             let pubkey = sig::pubkey(&creator_secret(name));
             let key = key_of_pubkey(&pubkey);
-            d.accounts
-                .insert(key, AccountInfo { label: name.into(), pubkey, key, is_user: false });
+            d.accounts.insert(key, AccountInfo { label: name.into() });
             d.creators.push(key);
         }
         d
@@ -300,9 +302,7 @@ impl Demo {
     /// keyed by `keccak(pubkey)`; balances are never shared between wallets.
     fn register_user(&mut self, pubkey: [u8; 33]) -> Hash {
         let key = key_of_pubkey(&pubkey);
-        self.accounts
-            .entry(key)
-            .or_insert_with(|| AccountInfo { label: "You".into(), pubkey, key, is_user: true });
+        self.accounts.entry(key).or_insert_with(|| AccountInfo { label: "You".into() });
         key
     }
 
@@ -323,13 +323,9 @@ impl Demo {
         if !self.accounts.contains_key(&t.to_key) {
             return Err("unknown recipient".into());
         }
-        let from_label = self.accounts.get(&from_key).map(|a| a.label.clone()).unwrap_or_default();
-        let to_label = self.accounts.get(&t.to_key).map(|a| a.label.clone()).unwrap_or_default();
         self.pending.push(PendingTip {
             from_key,
             to_key: t.to_key,
-            from_label,
-            to_label,
             amount: t.amount,
             fee: t.fee,
             transfer: t,
@@ -338,15 +334,15 @@ impl Demo {
     }
 
     /// Queue a deposit for the next batched checkpoint (the deposit cell is already on Pudge).
-    fn enqueue_deposit(&mut self, label: String, to_key: Hash, amount: u128, tx: String, index: u64) {
-        self.pending_deposits.push(DepositReq { label, to_key, amount, tx, index });
+    fn enqueue_deposit(&mut self, to_key: Hash, amount: u128, tx: String, index: u64) {
+        self.pending_deposits.push(DepositReq { to_key, amount, tx, index });
         if self.batch_since.is_none() {
             self.batch_since = Some(Instant::now());
         }
     }
     /// Queue a (validated) withdrawal for the next batched checkpoint.
-    fn enqueue_withdraw(&mut self, w: Withdrawal, lock: Value, label: String) {
-        self.pending_withdrawals.push(WithdrawReq { w, lock, label });
+    fn enqueue_withdraw(&mut self, w: Withdrawal, lock: Value) {
+        self.pending_withdrawals.push(WithdrawReq { w, lock });
         if self.batch_since.is_none() {
             self.batch_since = Some(Instant::now());
         }
@@ -609,9 +605,7 @@ fn handle(shared: &Shared, path: &str, b: &Value) -> Value {
             }
             let index = u64_of(b, "index").unwrap_or(0);
             let mut d = shared.lock().unwrap();
-            let label =
-                d.accounts.get(&to_key).map(|a| a.label.clone()).unwrap_or_else(|| "someone".into());
-            d.enqueue_deposit(label, to_key, amount, tx, index);
+            d.enqueue_deposit(to_key, amount, tx, index);
             json!({"ok": true, "queued": true, "pendingDeposits": d.pending_deposits.len(),
                    "sealingInSecs": d.seconds_until_seal()})
         }
@@ -644,8 +638,7 @@ fn handle(shared: &Shared, path: &str, b: &Value) -> Value {
             if d.display_balance(&from_key) < w.amount {
                 return json!({"error": "cannot withdraw more than your balance"});
             }
-            let label = d.accounts.get(&from_key).map(|a| a.label.clone()).unwrap_or_default();
-            d.enqueue_withdraw(w, lock, label);
+            d.enqueue_withdraw(w, lock);
             json!({"ok": true, "queued": true, "sealingInSecs": d.seconds_until_seal()})
         }
         "/api/settle" => {
@@ -688,7 +681,7 @@ fn main() {
         let resp = match (&method, path.as_str()) {
             (Method::Get, "/") => {
                 // Served from disk so UI edits don't need a server rebuild/restart.
-                let html = fs::read_to_string("/root/liquid-cells/crates/demo-ui/src/index.html")
+                let html = fs::read_to_string(INDEX_HTML)
                     .unwrap_or_else(|_| "<h1>index.html not found</h1>".into());
                 let h =
                     Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap();

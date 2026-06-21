@@ -28,6 +28,20 @@ carrier of old `claude.ai` commit footers (the main history was already clean). 
 `node_modules/` to `.gitignore`. The `.bin` files under `fixtures/` are intentional test fixtures
 and stay tracked.
 
+**Pre-public credibility pass.** Ran a committee review (docs vs code, hygiene, credibility) before
+making the repo public, then applied every confirmed fix. Reconciled the stale verifier story across
+PRIOR-ART, DEPLOY, DA: the live on-chain verifier is ark-bn254 at about 80M CKB-VM cycles (upgrade tx
+0x68f9730a), and the old substrate-bn 3-pairing build (about 3.47B cycles) is now labeled history.
+Corrected ONCHAIN-VERIFY and ARCHITECTURE to the live constants (vkey 0x00213af5, PublicValues 288
+bytes, SP1 6.2.3 / image v6.2.4, 80-byte anchor, 14 PV fields). Reconciled test counts across README,
+LIGHTPAPER, HARDENING to static counts (STF 80, sequencer 44, client 32, sequencer-service 5, contract
+111) and the vkey-pin count to 9. README: dropped the contradictory private-repo line, added the
+missing crates to the layout, noted the off-repo driver scripts, present-tense guarantees. demo-ui:
+removed dead fields, derived paths from CARGO_MANIFEST_DIR, graceful missing-state error; parameterized
+lc-run-checkpoint.sh; dropped an unused test import; fixed a Fiber doc path and placeholdered a demo
+password; pointed Cargo.toml repository at LusoCryptoLabs. Verified: cargo check --workspace
+--all-targets clean, no em dashes.
+
 **Next.** Mainnet still gated on the external audit and the C-1 upgrade-key lockdown; the v2 vkey
 re-bake remains audit-gated.
 
