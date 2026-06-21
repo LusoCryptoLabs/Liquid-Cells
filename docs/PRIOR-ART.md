@@ -27,8 +27,8 @@ design can be optimized.
 | Who generates proofs | the **sequencer** (it *is* the zkVM guest) | the **operator** aggregates aSVC position proofs | the **client** (each user proves own balance) |
 | Proof system | SP1 zkVM (RISC-V STARK) → **Groth16 BN254** wrap (356 B proof) | KZG10 aSVC position proofs (BN256/BLS12-381) | recursive client-side ZK |
 | Trusted setup | yes (Groth16) | yes (KZG CRS) | minimised (client-side) |
-| Data availability | **full touched-leaf diffs** posted on-chain, keccak-bound | ~13 bytes/tx in the witness field + new commitment | ~4–5 byte **nullifiers** on-chain; bulk pushed to client |
-| On-chain cost / batch | **~3.47B CKB-VM cycles** (3 pairings; near the 3.5B block limit) | ~160–230M cycles per op | Ethereum gas (aggregated) |
+| Data availability | **full touched-leaf diffs** posted on-chain, keccak-bound | ~13 bytes/tx in the witness field + new commitment | ~4-5 byte **nullifiers** on-chain; bulk pushed to client |
+| On-chain cost / batch | **~3.47B CKB-VM cycles** (3 pairings; near the 3.5B block limit) | ~160-230M cycles per op | Ethereum gas (aggregated) |
 | Privacy | none (diffs are public) | none | **yes** (client-side proofs) |
 | Permissionless deposit/withdraw | deposit cell + checkpoint; **force-exit** after operator silence | **direct lock-script** commitment update, no operator, no proof | client-driven |
 | Permissionless block production | yes (always-success lock + lock continuity) | multi-operator via type script | yes (stateless) |
@@ -40,7 +40,7 @@ design can be optimized.
    payment state machine as **plain Rust inside a zkVM (SP1) and prove it verbatim**, so the
    off-chain sequencer and the proved program are byte-identical ("the sequencer is the guest").
    That is a *developer-ergonomics and logic-transparency* difference, not a capability one, and
-   it costs **~15–20x more on-chain cycles** than Clover's aSVC verify. We are **deployed and
+   it costs **~15-20x more on-chain cycles** than Clover's aSVC verify. We are **deployed and
    running on a public testnet**; Clover was a local demo. Clover's deposit/withdraw are arguably
    *better* than ours: a direct lock-script commitment update needs **no operator and no proof**,
    whereas we currently spend a full checkpoint (and a ~7-min proof) to credit a deposit.
@@ -69,10 +69,10 @@ Ordered by leverage:
    Our verify *was* **3,474,607,239 cycles** (`valid_checkpoint_verifies`), only **0.66% under**
    the 3.498B block limit, using the unoptimized vendored `substrate-bn`, which forced the
    4→3-pairing hack to fit.
-   Two independent CKB-VM data points put a tuned BN254 verify **~45–55x lower**: ckb-zkp does a
+   Two independent CKB-VM data points put a tuned BN254 verify **~45-55x lower**: ckb-zkp does a
    Groth16 BN254 verify at **~77.5M cycles** (pure Rust), and the "Optimized SP1 Verifier for
    ckb-vm" cut Plonk **6,000M → 63M** using `ckb-alt-bn128`. So the projected verify after a swap
-   is **~70–100M cycles (a ~35–50x reduction)**, comfortably under the limit, and the 3-pairing
+   is **~70-100M cycles (a ~35-50x reduction)**, comfortably under the limit, and the 3-pairing
    precompute hack disappears.
    *Investigation status (MEASURED, on this CKB-VM).* A microbench (`crates/bn-bench`, run under
    `ckb-debugger`) timed **one** BN254 pairing each way:

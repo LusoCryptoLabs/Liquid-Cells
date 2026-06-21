@@ -20,7 +20,7 @@ in the README rather than hidden as "dust." Implementation: Phase 5.
 ### C2, Operator-only receipts made the dispute game unsound · ✅ eliminated
 There is **no dispute game**. Validity is proven by the SP1→Groth16 proof, and the
 circuit enforces *no debit without the owner's signature*. The operator cannot forge
-a balance change or refute a valid exit. Implementation: Phases 1–2.
+a balance change or refute a valid exit. Implementation: Phases 1-2.
 
 ### C3, Root on-chain but preimage off-chain (validium) · ✅ eliminated
 Each checkpoint posts the state **diff blob on-chain** (in witnesses, fee-priced),
@@ -38,7 +38,7 @@ credits, no dropped deposits). No off-chain "registration" is load-bearing.
 
 ### H2, Roadmap front-loaded custodial risk · ✅ eliminated
 The protocol is never custodial at any phase: real value only moves once the proof +
-on-chain binding (Phases 1–2) and force-exit (Phase 3) exist. Until then nothing
+on-chain binding (Phases 1-2) and force-exit (Phase 3) exist. Until then nothing
 holds user funds.
 
 ### H3, Single-anchor hot-cell contention / mass-exit serialization · ⚙️ performance

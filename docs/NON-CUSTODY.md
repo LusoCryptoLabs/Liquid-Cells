@@ -47,7 +47,7 @@ What you *are* trusting, today:
    hidden caveat.
 4. **Unaudited, testnet-only** today.
 
-For an integrator: items 1–2 are the same base any on-chain system trusts; item 3 is the concrete
+For an integrator: items 1-2 are the same base any on-chain system trusts; item 3 is the concrete
 thing to track (and the timelocked-upgrade work is what removes the "instant malicious upgrade" risk
-even before a multisig). Pillars 1–4 above are what make everything else the operator might have been
+even before a multisig). Pillars 1-4 above are what make everything else the operator might have been
 trusted for *not* a trust assumption.

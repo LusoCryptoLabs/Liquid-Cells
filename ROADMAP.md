@@ -92,7 +92,7 @@ already done. **Detailed scope below.**
   child, no hash), and binds each leaf's key so the collapse can't relocate it. Measured win
   (`cargo test -p liquid-cells-stf --features "compact_smt hash_count"`, pool=512 / batch=16):
   **batch reconstruction 4046 → 115 keccaks (~35×), single-leaf force-exit verify 256 → 10 keccaks
-  (~26×)**, well past the original ~30–50% estimate, because SMT keccaks (not the only proving cost,
+  (~26×)**, well past the original ~30-50% estimate, because SMT keccaks (not the only proving cost,
   k256 sig-verify is the other big one) drop ~97%. OFF in the deployed guest so the vkey is untouched
   (asserted by `verify-vkey.sh`); the *entire* existing STF suite also passes under `compact_smt`,
   evidence it is a correct drop-in. Witness-size compaction (dropping the pass-through empty siblings
@@ -168,7 +168,7 @@ already done. **Detailed scope below.**
 
 ## Next real work: detailed scope
 
-### B1. DA-reconstruction + force-exit-witness CLI  `[S–M]`  ✅ **DONE**  *strengthens the DA + exit pillars*
+### B1. DA-reconstruction + force-exit-witness CLI  `[S-M]`  ✅ **DONE**  *strengthens the DA + exit pillars*
 
 **Shipped:** `crates/client/src/bin/lc-exit.rs` (build `cargo build -p liquid-cells-client --features cli`).
 It scrapes the pool's checkpoint chain from a CKB RPC via the indexer, folds the DA blobs through

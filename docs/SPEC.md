@@ -29,7 +29,7 @@ instance on CKB behind a real product trajectory (Scryve).
 
 A checkpoint cannot **steal** (no debit without a signature), **inflate** (value conservation),
 **censor permanently** (permissionless sequencing + unilateral force-exit), or **withhold exit data**
-(on-chain DA). Details in §5–§8.
+(on-chain DA). Details in §5-§8.
 
 ## 2. Roles
 

@@ -13,6 +13,9 @@ elf/
 .idea/
 .vscode/
 
+# Node tooling deps (demo UI, local scripts)
+node_modules/
+
 # Scratch
 *.profraw
 .unc_probe
@@ -23,5 +26,5 @@ fixtures/demo/cp*/
 fixtures/demo/state.json
 fixtures/demo/*.log
 
-# Claude Code local state (agent worktrees, session data) — not project code
+# Local agent/editor session state, not project code
 .claude/

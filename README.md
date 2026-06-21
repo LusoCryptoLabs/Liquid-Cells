@@ -282,7 +282,7 @@ trust assumptions.
 
 ## Security properties & non-goals
 
-**Guaranteed (once Phases 1–4 land):** no operator theft; no balance inflation; no
+**Guaranteed (once Phases 1-4 land):** no operator theft; no balance inflation; no
 permanent censorship; no data withholding; trustless exit at any denomination.
 
 **Out of scope (v1):** privacy, on-chain DA reveals transfer diffs (a future

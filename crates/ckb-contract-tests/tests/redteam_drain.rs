@@ -27,7 +27,7 @@ const CONTRACT_BIN: &str =
 const TIMEOUT: u64 = 180;
 const LAST_EPOCH: u64 = 5;
 /// A conservative lower bound on a real anchor cell's occupied capacity (capacity(8) + an
-/// always-success/secp lock + the anchor type script + the 80-byte data ≈ 150–190 CKB). The
+/// always-success/secp lock + the anchor type script + the 80-byte data ≈ 150-190 CKB). The
 /// genesis slack, seeded once, never withdrawable below this, must clear it.
 const ANCHOR_OCCUPIED: u64 = 18_600_000_000; // ~186 CKB
 /// Realistic genesis slack (matches the live pools' 250 CKB genesis anchor over total 0).
