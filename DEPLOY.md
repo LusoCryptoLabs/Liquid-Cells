@@ -11,6 +11,15 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 > was **swept by a Groth16-proven checkpoint that advanced that pool seq 0 → 1** (rows below), so
 > the lock's `to_key` was credited inside the proof and the funds folded into the anchor. This
 > closes the previously-remaining "route the demo deposit flow through the deposit lock" step.
+>
+> **H-2 hardening (2026-06-21).** The deposit lock was upgraded in place (type-id preserved, same
+> codeHash `0x0d610c61…`, upgrade tx `0x02f6f52e…`, old code cell consumed) to close the H-2
+> escape-mode siphon. The sweep path now requires the consumed anchor to be in **checkpoint mode**
+> (witness length `protocol::CHECKPOINT_WITNESS_LEN`), so a force-exit or force-refund tx, which
+> consumes the anchor but never credits deposits, can no longer divert a deposit cell to a third
+> party. The previous live code cell predated this fix. Behaviour is proven by the offline suite
+> (`sweep_in_force_exit_mode_rejected`, `sweep_in_force_refund_mode_rejected`,
+> `e2e_sweep_diverted_to_attacker_must_reject`; 23 deposit-lock tests green).
 
 ## Live artifacts
 
@@ -37,8 +46,9 @@ value.** This records the live artifacts so a checkpoint or force-exit can be re
 | Baked program vkey | `0x00213af5b4cc8922754e5b8ee7e610de703d4cb17fabb0a187c95c37fe67c1e8` |
 | Genesis (empty SMT) root | `0xa7ff9e28ffd3def443d324547688c2c4eb98edf7da757d6bfa22bff55b9ce24a` |
 | **Deposit-lock `codeHash`** | `0x0d610c619c396b93282a1c7bbe6a89d5e5b882801baedba1ac73c6b2af3d3574` (type-id; sweep-or-refund) |
-| Deposit-lock code-cell dep | `0xcb4b5a24994522084fe3c4078e02ff6550ed7b0b95d953d39d9736dcfb0babfc:0` (depType `code`) |
-| Deposit-lock deploy tx | `0xcb4b5a24994522084fe3c4078e02ff6550ed7b0b95d953d39d9736dcfb0babfc` |
+| Deposit-lock code-cell dep (current) | `0x02f6f52e6b491b5cfac7e811ccaa92f4ed6971b70a0e3f757962d18074661e71:0` (depType `code`) |
+| Deposit-lock first deploy tx | `0xcb4b5a24994522084fe3c4078e02ff6550ed7b0b95d953d39d9736dcfb0babfc` |
+| **Deposit-lock H-2 hardening upgrade tx** | `0x02f6f52e6b491b5cfac7e811ccaa92f4ed6971b70a0e3f757962d18074661e71` (in-place type-id upgrade 2026-06-21; same codeHash `0x0d610c61…`, data_hash `0xb9bdbfc4…` to `0x977db97a…`, old code cell consumed; adds the checkpoint-mode gate so a force-exit or force-refund tx can no longer sweep a deposit cell) |
 | Deposit-lock live test, deposit cell | `0xf05bfea8220386d25c62bacfff351f37979eea62189d612c80c89788c6bcb65e:0` (200 CKB, bound to pool type hash `0xf4c1baf2…`) |
 | Deposit-lock live test, third-party spend | **rejected on-chain** (`Inputs[0].Lock ValidationFailure`) |
 | Deposit-lock live test, refund to depositor | `0xcb512bc295c21576700893b6afd72822110fbce2b9648748e5aefa0febfbbd0d` (**accepted**) |

@@ -8,6 +8,29 @@ decided, what is next.
 
 ---
 
+## 2026-06-21, deposit-lock H-2 hardening live on Pudge; repo tidy-up
+
+**Deposit-lock H-2 hardening (live).** The live Pudge deposit lock predated the H-2
+checkpoint-mode-gate fix (V2-REBAKE step 7), so until now an escape-mode tx could still siphon a
+deposit cell. Rebuilt `liquid-cells-deposit-lock` from the current source (19,864-byte ELF, sha256
+`fc0d8082…`, distinct from the Jun-12 binary), validated it offline (23 deposit-lock tests green,
+including `sweep_in_force_exit_mode_rejected`, `sweep_in_force_refund_mode_rejected`,
+`e2e_sweep_diverted_to_attacker_must_reject`), then deployed it as an in-place type-id upgrade: tx
+`0x02f6f52e…`, same codeHash `0x0d610c61…`, data_hash `0xb9bdbfc4…` to `0x977db97a…`, old code cell
+consumed. DEPLOY.md updated (current dep `0x02f6f52e…:0`). This is independent of the audit-gated
+vkey re-bake, since the deposit lock is a lock script, not the proven circuit.
+
+**Repo tidy-up.** Removed all long dashes from project-authored files (the lone em dash plus en
+dashes across README, ROADMAP, four docs, and one test comment became hyphens; the vendored `bn`
+crate is left untouched). Removed the last Claude reference in tracked files by rewording the
+`.gitignore` comment, and deleted the local `backup/pre-attribution-scrub` tag, the only remaining
+carrier of old `claude.ai` commit footers (the main history was already clean). Added
+`node_modules/` to `.gitignore`. The `.bin` files under `fixtures/` are intentional test fixtures
+and stay tracked.
+
+**Next.** Mainnet still gated on the external audit and the C-1 upgrade-key lockdown; the v2 vkey
+re-bake remains audit-gated.
+
 ## 2026-06-13, deposit lock: cross-pool isolation now test-proven
 
 The deposit lock's sweep path matches a deposit against ONE `pool_type_hash`, and the source has
