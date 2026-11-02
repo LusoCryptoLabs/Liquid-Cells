@@ -59,7 +59,12 @@ jobs:
 
   contract-tests:
     name: Anchor contract + red-team suite (CKB-VM)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    # ckb-std builds a small C shim for the RISC-V target through cc-rs, which looks for
+    # riscv64-unknown-elf-gcc unless told otherwise. clang targets RISC-V out of the box.
+    env:
+      CC_riscv64imac_unknown_none_elf: clang
+      AR_riscv64imac_unknown_none_elf: llvm-ar
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -67,7 +72,7 @@ jobs:
           targets: riscv64imac-unknown-none-elf
       - uses: Swatinem/rust-cache@v2
       - name: Install riscv build deps
-        run: sudo apt-get update && sudo apt-get install -y clang lld
+        run: sudo apt-get update && sudo apt-get install -y clang lld llvm
       - name: Build the anchor contract (riscv64imac-unknown-none-elf)
         working-directory: crates/ckb-contract
         run: cargo build --release
